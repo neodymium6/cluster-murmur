@@ -186,9 +186,10 @@ keys and WAL mode, and waits at most five seconds for a busy database. SQL query
 logging and sensitive connection-error details are disabled. These connection
 settings and the first stochastic-schedule schema and migration are implemented.
 The first domain store transaction restores an existing stochastic schedule or
-inserts its initial next run without replacing durable state. Due claiming,
-advancement, other schemas and stores, automatic migration execution, and
-retention behavior remain later implementation stages.
+inserts its initial next run without replacing durable state. Its read-only due
+query returns at most 100 redacted records in deterministic order and does not
+claim them. Due claiming, advancement, other schemas and stores, automatic
+migration execution, and retention behavior remain later implementation stages.
 
 Generic Ecto URL configuration is rejected because URL parsing occurs after the
 repository callback and could otherwise replace the validated database path or

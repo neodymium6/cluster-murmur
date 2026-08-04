@@ -7,10 +7,15 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStore do
   operations with their own transaction contracts.
   """
 
+  import Ecto.Query, only: [from: 2]
+
+  alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.Persistence.StochasticSchedule
   alias ClusterMurmur.Repo
 
-  @type error :: :invalid_schedule | :storage_unavailable
+  @max_due_schedules 100
+
+  @type error :: :invalid_datetime | :invalid_schedule | :storage_unavailable
 
   @doc "Restores an existing schedule or atomically inserts its initial next run."
   @spec restore_or_initialize(term(), term()) ::
@@ -26,6 +31,26 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStore do
       persist(changeset, trigger_id)
     else
       {:error, :invalid_schedule}
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  @doc "Returns at most 100 schedules due at or before one supplied UTC instant."
+  @spec list_due(term()) :: {:ok, [StochasticSchedule.t()]} | {:error, error()}
+  def list_due(now) do
+    if valid_storage_datetime?(now) do
+      query =
+        from schedule in StochasticSchedule,
+          where: schedule.next_run_at <= ^now,
+          order_by: [asc: schedule.next_run_at, asc: schedule.trigger_id],
+          limit: @max_due_schedules
+
+      {:ok, Repo.all(query)}
+    else
+      {:error, :invalid_datetime}
     end
   rescue
     _error -> {:error, :storage_unavailable}
@@ -56,4 +81,10 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStore do
         Repo.rollback(:invalid_schedule)
     end
   end
+
+  defp valid_storage_datetime?(%DateTime{time_zone: "Etc/UTC", year: year} = datetime)
+       when year in 0..9999,
+       do: DateTimeValidator.validate(datetime) == :ok
+
+  defp valid_storage_datetime?(_datetime), do: false
 end
