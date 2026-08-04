@@ -15,9 +15,10 @@ identifiers.
 
 Configuration uses YAML 1.2. Bounded document decoding, strict top-level
 manifest validation, duration and common scalar validation, bounded include
-resolution, and composition of those manifest stages into a load plan are
-implemented, but the remaining validation pipeline is still a design target. A
-fixed top-level file includes files by category:
+resolution, composition of those manifest stages into a load plan, and bounded
+decoding of the included YAML documents are implemented, but the remaining
+validation pipeline is still a design target. A fixed top-level file includes
+files by category:
 
 ```text
 config/
@@ -79,11 +80,15 @@ configuration tree must be trusted and read-only until loading finishes.
 Results are deduplicated and sorted, so glob expansion order has no semantic
 meaning. Identical patterns are evaluated once when shared by categories. The
 1,024 inspected-entry and 256 unique-file budgets apply across the complete
-manifest, not independently to each category. The manifest loader returns the
-validated manifest and these canonical paths as a categorized load plan; it
-does not decode included documents. Failures identify the document, manifest,
-or include stage without including rejected values or paths. Configuration is
-loaded once at startup; hot reload is outside the MVP.
+manifest, not independently to each category. The manifest loader first returns
+the validated manifest and these canonical paths as a categorized load plan.
+Its next stage decodes each unique included YAML file once, retains its source
+path for later relative-reference handling, and preserves the category lists.
+It does not apply category-specific schemas or semantic validation. Failures
+identify the top-level document, manifest, includes, or included-document stage
+without including rejected values or paths. Configuration structs omit include
+patterns, paths, and decoded values from their inspection output. Configuration
+is loaded once at startup; hot reload is outside the MVP.
 
 Each YAML file is limited to 256 KiB and must contain exactly one mapping-rooted
 document. Keys must be strings. Decoding accepts only strings, nulls, booleans,
