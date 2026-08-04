@@ -42,11 +42,13 @@
         {
           default = pkgs.mkShell {
             ELIXIR_ERL_OPTIONS = "+fnu";
+            MIX_REBAR3 = "${pkgs.rebar3}/bin/rebar3";
 
             packages = with pkgs; [
               actionlint
               beamPackages.elixir
               beamPackages.erlang
+              beamPackages.hex
               gh
               git
               gitleaks

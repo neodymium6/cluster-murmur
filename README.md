@@ -48,6 +48,12 @@ Enter the pinned development environment:
 nix develop
 ```
 
+Fetch the locked Mix dependencies:
+
+```bash
+mix deps.get
+```
+
 Install repository hooks after cloning:
 
 ```bash
