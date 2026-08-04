@@ -18,6 +18,7 @@ defmodule ClusterMurmur.Config.Manifest do
   @fields ["includes", "version"]
   @max_patterns 64
 
+  @derive {Inspect, only: [:version]}
   @enforce_keys [:version, :includes]
   defstruct [:version, :includes]
 

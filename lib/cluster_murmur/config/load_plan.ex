@@ -8,6 +8,7 @@ defmodule ClusterMurmur.Config.LoadPlan do
 
   alias ClusterMurmur.Config.Manifest
 
+  @derive {Inspect, only: [:manifest]}
   @enforce_keys [:manifest, :files]
   defstruct [:manifest, :files]
 
