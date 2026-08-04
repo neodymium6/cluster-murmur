@@ -1,0 +1,8 @@
+title = "cluster-murmur gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Ignore generated third-party dependency and build trees"
+paths = ['''^(deps|_build)/''']

@@ -5,7 +5,7 @@ defmodule ClusterMurmur.Application do
 
   @impl true
   def start(_type, _args) do
-    children = []
+    children = [ClusterMurmur.Repo]
 
     Supervisor.start_link(children,
       strategy: :one_for_one,

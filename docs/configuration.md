@@ -147,6 +147,50 @@ an ASCII letter or digit and continue with ASCII letters, digits, `.`, `_`, or
 an integer followed by one of `ms`, `s`, `m`, `h`, or `d`. Times use 24-hour
 `HH:MM` notation. Timezones use IANA names such as `Asia/Tokyo` or `Etc/UTC`.
 
+## Database path
+
+The supervised SQLite repository uses an in-memory database only in the test
+environment. Production requires `CLUSTER_MURMUR_DATABASE_PATH` to contain a
+non-empty absolute path of at most 4,096 bytes. Development accepts the same
+override and otherwise uses `.local/cluster-murmur.sqlite3` below the repository
+root. `:memory:` is rejected outside tests even when supplied through the
+environment.
+
+At repository startup, the database's immediate parent directory must already
+exist with mode `0700`; missing or more permissive directories are rejected.
+A missing database file is created inside that private directory with mode
+`0600`, while an existing file must already have that exact mode. An immediate
+parent or database symlink and non-directory or non-regular targets are
+rejected. The private directory also prevents other local users from accessing
+SQLite WAL and shared-memory files created beside the database.
+
+The complete path ancestry is trusted deployment input. Every ancestor must be
+controlled by the operator, contain no symlink components, and be unwritable by
+untrusted principals. The startup checks use pathname-based filesystem calls,
+and the current SQLite adapter does not expose a race-safe no-follow open.
+Consequently, these checks reject accidental unsafe configuration but do not
+defend against a principal that can rename or replace an ancestor or path while
+startup is in progress. Do not place the database below a shared writable
+directory. Operators must prepare the private development or PVC mount
+directory before startup.
+
+Prepare the default development directory from the repository root with:
+
+```bash
+mkdir -p .local
+chmod 0700 .local
+```
+
+The repository has one connection, uses immediate transactions, enables foreign
+keys and WAL mode, and waits at most five seconds for a busy database. SQL query
+logging and sensitive connection-error details are disabled. These connection
+settings establish the persistence boundary only; schemas, migrations, and
+retention behavior remain later implementation stages.
+
+Generic Ecto URL configuration is rejected because URL parsing occurs after the
+repository callback and could otherwise replace the validated database path or
+connection bounds.
+
 ## Runtime defaults
 
 Defaults belong to the versioned schema. Implementations must not silently
