@@ -2,6 +2,7 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleMigrationTest do
   use ExUnit.Case, async: false
 
   alias ClusterMurmur.Repo
+  alias ClusterMurmur.Repo.Migrations.CreateStochasticSchedules
 
   @migration_version 20_260_804_130_000
 
@@ -17,15 +18,12 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleMigrationTest do
              )
 
     try do
-      migrations = Ecto.Migrator.migrations_path(Repo)
-
-      assert Ecto.Migrator.run(Repo, migrations, :up,
-               to: @migration_version,
+      assert Ecto.Migrator.up(Repo, @migration_version, CreateStochasticSchedules,
                dynamic_repo: pid,
                log: false,
                log_migrations_sql: false,
                log_migrator_sql: false
-             ) == [@migration_version]
+             ) == :ok
 
       assert table_columns(pid) == [
                "trigger_id",

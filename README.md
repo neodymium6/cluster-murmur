@@ -27,10 +27,12 @@ calculation and stochastic active-hours evaluation have explicit DST behavior.
 Pure stochastic eligibility also combines local-date daily limits with active
 hours. A supervised, single-writer Ecto/SQLite repository now provides the
 runtime persistence foundation. The first constrained migration and redacted
-record cover restart-safe stochastic schedule state, but domain stores are not
-yet implemented. Observation ingestion, trigger execution, LLM generation,
-and Discord publication are not implemented yet. Do not deploy this revision
-or connect it to infrastructure, model providers, or Discord.
+record cover restart-safe stochastic schedule state, and a transactional store
+can restore or initialize each configured schedule without overwriting durable
+state. Due claiming and advancement are not implemented. Observation ingestion,
+trigger execution, LLM generation, and Discord publication are not implemented
+yet. Do not deploy this revision or connect it to infrastructure, model
+providers, or Discord.
 
 ## Boundary
 
