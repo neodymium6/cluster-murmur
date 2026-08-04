@@ -1,7 +1,7 @@
 defmodule ClusterMurmur.Config.LoaderTest do
   use ExUnit.Case, async: true
 
-  alias ClusterMurmur.Config.{DocumentSet, LoadedDocument, LoadPlan, Loader, Manifest}
+  alias ClusterMurmur.Config.{Catalog, DocumentSet, LoadedDocument, LoadPlan, Loader, Manifest}
 
   setup do
     test_root =
@@ -151,6 +151,42 @@ defmodule ClusterMurmur.Config.LoaderTest do
     refute inspect(result) =~ private_path
   end
 
+  test "loads the implemented catalog and labels reference failures", context do
+    write_fixture(context.config_root, "event-groups.yaml", """
+    event_groups:
+      operations:
+        reply_probability: 0.25
+    """)
+
+    write_fixture(context.config_root, "prompts/observer.md", "Use supplied facts only.\n")
+
+    write_fixture(context.config_root, "personas/observer.yaml", """
+    personas:
+      - id: observer
+        display_name: Observer
+        prompt_file: ../prompts/observer.md
+    """)
+
+    binding_path =
+      write_fixture(context.config_root, "bindings/monitoring.yaml", """
+      bindings:
+        - id: monitoring
+          match:
+            group: operations
+          candidates:
+            - persona: observer
+              weight: 1
+      """)
+
+    write_manifest(context.config_file, catalog_manifest())
+    assert {:ok, %Catalog{version: 1}} = Loader.load_catalog(context.config_file)
+
+    File.write!(binding_path, String.replace(File.read!(binding_path), "operations", "missing"))
+
+    assert Loader.load_catalog(context.config_file) ==
+             {:error, {:catalog, :unknown_binding_group}}
+  end
+
   test "configuration loading structs redact paths, patterns, and decoded values from inspection",
        context do
     private_path = Path.join(context.config_root, "private-node.yaml")
@@ -199,5 +235,20 @@ defmodule ClusterMurmur.Config.LoaderTest do
 
   defp valid_documents do
     %{event_groups: [], personas: [], bindings: [], triggers: [], routing: []}
+  end
+
+  defp catalog_manifest do
+    """
+    version: 1
+    includes:
+      event_groups:
+        - event-groups.yaml
+      personas:
+        - personas/*.yaml
+      bindings:
+        - bindings/*.yaml
+      triggers: []
+      routing: []
+    """
   end
 end

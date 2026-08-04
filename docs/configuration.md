@@ -19,8 +19,9 @@ resolution, composition of those manifest stages into a load plan, and bounded
 decoding of the included YAML documents are implemented, but the remaining
 validation pipeline is still a design target. A value-free Draft 7 validation
 adapter for application-owned schemas and bounded event-group, persona, and
-binding validation are implemented; the remaining category schemas and semantic
-validators remain future changes. A fixed top-level file
+binding validation and cross-category catalog assembly are implemented; the
+remaining category schemas and semantic validators remain future changes. A
+fixed top-level file
 includes files by category:
 
 ```text
@@ -279,6 +280,9 @@ runtime. Binding IDs must be unique across all included files, and version 1
 accepts at most 256 bindings with 1 to 256 candidates each. A persona may occur
 only once within a binding. Binding and candidate order has no semantic meaning;
 group and persona references are resolved after all categories are parsed.
+The implemented catalog loader rejects bindings that reference an unknown group
+or persona. Disabled personas remain valid references and are excluded later by
+runtime selection.
 
 ## Triggers
 
