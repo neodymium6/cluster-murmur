@@ -40,7 +40,7 @@ defmodule ClusterMurmur.Triggers.EventTriggerCooldown do
     if active_cooldown?(cooldown_until, now) do
       {:ok, {:skip, :cooldown}}
     else
-      next_cooldown_until = DateTime.add(now, trigger.cooldown_ms, :millisecond)
+      next_cooldown_until = DateTime.add(now, trigger.cooldown_ms * 1_000, :microsecond)
 
       case validate_datetime(next_cooldown_until) do
         :ok -> {:ok, {:eligible, next_cooldown_until}}

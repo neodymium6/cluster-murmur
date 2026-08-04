@@ -16,7 +16,8 @@ Add a pure cooldown evaluator that accepts a complete event trigger, an optional
 persisted UTC cooldown deadline, and an injected current UTC instant. Skip while
 the persisted deadline is strictly later than the current instant. At the exact
 deadline or after it, return an eligible decision with a newly calculated
-deadline using the trigger's bounded cooldown duration.
+deadline using the trigger's bounded cooldown duration and microsecond storage
+precision.
 
 Require exact canonical UTC DateTime values in SQLite's supported year range.
 Return only stable classifications and a calculated deadline; do not return

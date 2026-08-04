@@ -17,6 +17,11 @@ defmodule ClusterMurmur.Triggers.EventTriggerCooldownTest do
 
     assert EventTriggerCooldown.evaluate(trigger(0), nil, @now) ==
              {:ok, {:eligible, @now}}
+
+    for lower_precision <- [~U[2026-08-04 12:00:00Z], ~U[2026-08-04 12:00:00.123Z]] do
+      assert {:ok, {:eligible, %DateTime{microsecond: {_value, 6}}}} =
+               EventTriggerCooldown.evaluate(trigger(60_000), nil, lower_precision)
+    end
   end
 
   test "skips only while the persisted cooldown is strictly active" do
