@@ -18,11 +18,10 @@ manifest validation, duration and common scalar validation, bounded include
 resolution, composition of those manifest stages into a load plan, and bounded
 decoding of the included YAML documents are implemented, but the remaining
 validation pipeline is still a design target. A value-free Draft 7 validation
-adapter for application-owned schemas and bounded event-group, persona, and
-binding and routing validation and cross-category catalog assembly are
-implemented; trigger validation and complete assembly remain future changes. A
-fixed top-level file
-includes files by category:
+adapter for application-owned schemas and bounded event-group, persona,
+binding, routing, and event-trigger validation and cross-category character
+catalog assembly are implemented; complete assembly remains a future change. A
+fixed top-level file includes files by category:
 
 ```text
 config/
@@ -316,7 +315,14 @@ strings are limited to 1,024 UTF-8 bytes. Configuration cannot contain
 disjunctions, regular expressions, deeper paths, Elixir, Lua, JavaScript,
 shell, SQL, PromQL, or arbitrary HTTP expressions.
 
+Implemented event-trigger documents accept at most 256 triggers across all
+included files. Trigger IDs must be unique, `action.type` is currently limited
+to `start_conversation`, cooldowns use the duration grammar, and binding
+references remain unresolved until complete configuration assembly.
+
 ### Schedule triggers
+
+Schedule trigger validation is not implemented yet.
 
 ```yaml
 triggers:
@@ -333,6 +339,8 @@ triggers:
 ```
 
 ### Stochastic triggers
+
+Stochastic trigger validation is not implemented yet.
 
 ```yaml
 triggers:
