@@ -16,12 +16,12 @@ manifest load-plan construction, and categorized included-document decoding are
 also available. A local-only, value-free JSON Schema validation boundary,
 bounded version 1 event-group, persona, binding, and routing validation, a bounded
 persona-prompt file reader, and cross-category character catalog assembly are
-in place. The bounded version 1 event-matcher grammar and event-trigger category
-validation are also implemented. Schedule and stochastic trigger validation,
-complete configuration assembly, observation ingestion, persistence, trigger
-execution, LLM generation, and Discord publication are not implemented yet. Do
-not deploy this revision or connect it to infrastructure, model providers, or
-Discord.
+in place. The bounded version 1 event-matcher grammar, event-trigger category
+validation, and complete startup configuration assembly are also implemented.
+Schedule and stochastic trigger validation, observation ingestion, persistence,
+trigger execution, LLM generation, and Discord publication are not implemented
+yet. Do not deploy this revision or connect it to infrastructure, model
+providers, or Discord.
 
 ## Boundary
 
