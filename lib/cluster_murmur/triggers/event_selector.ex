@@ -6,11 +6,9 @@ defmodule ClusterMurmur.Triggers.EventSelector do
   bookkeeping remain later persistence-backed policy stages.
   """
 
-  alias ClusterMurmur.Events.Matcher
   alias ClusterMurmur.Events.MatcherEvaluator
-  alias ClusterMurmur.Triggers.EventTrigger
+  alias ClusterMurmur.Triggers.{EventTrigger, EventTriggerValidator}
 
-  @id_pattern ~r/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/
   @max_triggers 256
 
   @type error ::
@@ -47,7 +45,7 @@ defmodule ClusterMurmur.Triggers.EventSelector do
   defp validate_and_sort(triggers) do
     triggers
     |> Enum.reduce_while({:ok, []}, fn trigger, {:ok, validated} ->
-      case validate_trigger(trigger) do
+      case EventTriggerValidator.validate(trigger) do
         :ok -> {:cont, {:ok, [trigger | validated]}}
         {:error, _reason} = error -> {:halt, error}
       end
@@ -57,21 +55,6 @@ defmodule ClusterMurmur.Triggers.EventSelector do
       {:error, _reason} = error -> error
     end
   end
-
-  defp validate_trigger(%EventTrigger{
-         id: id,
-         matcher: %Matcher{},
-         action: :start_conversation,
-         binding: binding,
-         cooldown_ms: cooldown_ms
-       })
-       when is_binary(id) and is_binary(binding) and is_integer(cooldown_ms) and cooldown_ms >= 0 do
-    if valid_id?(id) and valid_id?(binding), do: :ok, else: {:error, :invalid_trigger}
-  end
-
-  defp validate_trigger(_trigger), do: {:error, :invalid_trigger}
-
-  defp valid_id?(value), do: String.valid?(value) and Regex.match?(@id_pattern, value)
 
   defp reject_duplicate_ids([]), do: :ok
 
