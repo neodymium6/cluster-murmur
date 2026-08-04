@@ -93,6 +93,20 @@ mix escript.build
 ./cluster-murmur --version
 ```
 
+The bootstrap escript does not carry native dependencies or migrations. After
+preparing the private database directory described in the configuration guide,
+build an OTP release and apply its packaged migrations explicitly after every
+application instance using the database has stopped:
+
+```bash
+MIX_ENV=prod mix release
+CLUSTER_MURMUR_DATABASE_PATH="$PWD/.local/cluster-murmur.sqlite3" \
+  _build/prod/rel/cluster_murmur/bin/cluster_murmur eval \
+  'ClusterMurmur.Release.migrate!()'
+```
+
+Application startup never runs migrations automatically.
+
 Direnv users can approve the included `.envrc` with `direnv allow`.
 
 ## Public and private configuration
