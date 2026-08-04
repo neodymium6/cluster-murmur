@@ -11,7 +11,11 @@ defmodule ClusterMurmur.Config.Value do
 
   @spec id(term()) :: {:ok, String.t()} | {:error, :invalid_id}
   def id(value) when is_binary(value) do
-    if valid_id?(value), do: {:ok, value}, else: {:error, :invalid_id}
+    if String.valid?(value) and Regex.match?(~r/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/, value) do
+      {:ok, value}
+    else
+      {:error, :invalid_id}
+    end
   end
 
   def id(_value), do: {:error, :invalid_id}
@@ -29,9 +33,4 @@ defmodule ClusterMurmur.Config.Value do
   @spec weight(term()) :: {:ok, number()} | {:error, :invalid_weight}
   def weight(value) when is_number(value) and value >= 0, do: {:ok, value}
   def weight(_value), do: {:error, :invalid_weight}
-
-  defp valid_id?(value) do
-    value != "" and String.valid?(value) and value == String.trim(value) and
-      not Regex.match?(~r/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u, value)
-  end
 end

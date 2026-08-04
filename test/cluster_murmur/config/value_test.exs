@@ -3,22 +3,29 @@ defmodule ClusterMurmur.Config.ValueTest do
 
   alias ClusterMurmur.Config.Value
 
-  test "accepts non-empty stable IDs" do
+  test "accepts portable machine-readable IDs" do
     assert Value.id("observer") == {:ok, "observer"}
-    assert Value.id("example target") == {:ok, "example target"}
-    assert Value.id("観測者") == {:ok, "観測者"}
+    assert Value.id("Observer-2_internal.v1") == {:ok, "Observer-2_internal.v1"}
   end
 
-  test "rejects empty, padded, invalid UTF-8, control-containing, and non-string IDs" do
+  test "rejects non-portable and non-string IDs" do
     invalid_values = [
       "",
+      "-observer",
       " observer",
       "observer ",
+      "example target",
+      "観測者",
+      "e" <> <<0x0301::utf8>>,
       "line\nbreak",
       "line" <> <<0x2028::utf8>> <> "separator",
       "paragraph" <> <<0x2029::utf8>> <> "separator",
       "right-to-left" <> <<0x202E::utf8>> <> "override",
       "zero" <> <<0x200B::utf8>> <> "width",
+      <<0x034F::utf8>>,
+      <<0x3164::utf8>>,
+      <<0xFE0F::utf8>>,
+      <<0xE0100::utf8>>,
       <<255>>,
       :observer,
       nil
