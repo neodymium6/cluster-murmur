@@ -3,7 +3,7 @@ defmodule ClusterMurmur.Config.TriggersTest do
 
   alias ClusterMurmur.Config.{LoadedDocument, Triggers}
   alias ClusterMurmur.Events.Matcher.Predicate
-  alias ClusterMurmur.Triggers.EventTrigger
+  alias ClusterMurmur.Triggers.{EmittedEvent, EventTrigger, ScheduleTrigger}
 
   test "validates, normalizes, and combines event-trigger documents" do
     first =
@@ -52,6 +52,77 @@ defmodule ClusterMurmur.Config.TriggersTest do
              {:ok, %Triggers{triggers: %{}}}
   end
 
+  test "validates and normalizes schedule triggers alongside event triggers" do
+    event = trigger("monitoring", "characters", "30m")
+    schedule = schedule_trigger("daily-summary", "0 21 * * *", "Asia/Tokyo", "social")
+
+    assert {:ok, %Triggers{triggers: triggers}} =
+             Triggers.parse_documents([
+               loaded(%{"triggers" => [schedule, event]})
+             ])
+
+    assert %EventTrigger{id: "monitoring"} = triggers["monitoring"]
+
+    assert %ScheduleTrigger{
+             id: "daily-summary",
+             cron: %Crontab.CronExpression{
+               extended: false,
+               minute: [0],
+               hour: [21]
+             },
+             timezone: "Asia/Tokyo",
+             action: :emit_event,
+             event: %EmittedEvent{
+               type: "schedule.fired",
+               group: "social",
+               subject: "daily-summary"
+             }
+           } = triggers["daily-summary"]
+  end
+
+  test "accepts standard five-field cron syntax and embedded IANA links" do
+    schedules = [
+      schedule_trigger("ranges", "*/15 8-18 * JAN,MAR MON-FRI", "Etc/UTC", "social"),
+      schedule_trigger("link", "0 0 1 * *", "Japan", "social")
+    ]
+
+    assert {:ok, %Triggers{triggers: triggers}} =
+             Triggers.parse_documents([loaded(%{"triggers" => schedules})])
+
+    assert map_size(triggers) == 2
+  end
+
+  test "rejects malformed schedules, nonstandard cron shapes, and unknown timezones" do
+    valid = schedule_trigger("daily", "0 21 * * *", "Asia/Tokyo", "social")
+
+    invalid = [
+      put_in(valid, ["schedule", "cron"], "not a cron expression"),
+      put_in(valid, ["schedule", "cron"], "*/1/2 * * * *"),
+      put_in(valid, ["schedule", "cron"], "*/-1 * * * *"),
+      put_in(valid, ["schedule", "cron"], "1-2/-3 * * * *"),
+      put_in(valid, ["schedule", "cron"], "0 0 21 * * *"),
+      put_in(valid, ["schedule", "cron"], "@daily"),
+      put_in(valid, ["schedule", "cron"], "0  21 * * *"),
+      put_in(valid, ["schedule", "cron"], "0 21 L * *"),
+      put_in(valid, ["schedule", "cron"], "0 21 1W * *"),
+      put_in(valid, ["schedule", "cron"], "0 21 * * MON#2"),
+      put_in(valid, ["schedule", "cron"], "0 21 * * 5L"),
+      put_in(valid, ["schedule", "cron"], "0 0 1 * MON"),
+      put_in(valid, ["schedule", "cron"], "0 0 */2 * MON"),
+      put_in(valid, ["schedule", "timezone"], "example.invalid"),
+      put_in(valid, ["action", "type"], "start_conversation"),
+      put_in(valid, ["action", "event", "group"], "invalid group"),
+      put_in(valid, ["schedule", "extra"], true),
+      put_in(valid, ["action", "event", "extra"], true),
+      Map.put(valid, "cooldown", "1h")
+    ]
+
+    for attributes <- invalid do
+      assert Triggers.parse_documents([loaded(%{"triggers" => [attributes]})]) ==
+               {:error, :invalid_trigger_document}
+    end
+  end
+
   test "rejects malformed and unsupported trigger shapes" do
     valid = trigger("monitoring", "characters", "30m", [predicate("type", "exists")])
 
@@ -95,6 +166,13 @@ defmodule ClusterMurmur.Config.TriggersTest do
     assert Triggers.parse_documents([first, second]) == {:error, :duplicate_trigger}
   end
 
+  test "rejects duplicate IDs across event and schedule triggers" do
+    event = loaded(%{"triggers" => [trigger("same", "characters", "1m")]})
+    schedule = loaded(%{"triggers" => [schedule_trigger("same", "0 0 * * *", "Etc/UTC")]})
+
+    assert Triggers.parse_documents([event, schedule]) == {:error, :duplicate_trigger}
+  end
+
   test "bounds the combined trigger category" do
     triggers = Enum.map(1..256, &trigger("trigger-#{&1}", "characters", "1m"))
 
@@ -134,12 +212,30 @@ defmodule ClusterMurmur.Config.TriggersTest do
       cooldown_ms: 1_000
     }
 
-    set = %Triggers{triggers: %{"private-trigger" => trigger}}
+    schedule = %ScheduleTrigger{
+      id: "private-schedule",
+      cron: %Crontab.CronExpression{},
+      timezone: "private/zone",
+      action: :emit_event,
+      event: %EmittedEvent{
+        type: "private.event",
+        group: "private-group",
+        subject: "private-subject"
+      }
+    }
 
-    for inspected <- [inspect(trigger), inspect(set)] do
+    set = %Triggers{triggers: %{"private-trigger" => trigger, "private-schedule" => schedule}}
+
+    for inspected <- [inspect(trigger), inspect(schedule), inspect(schedule.event), inspect(set)] do
       refute inspected =~ "private"
       refute inspected =~ "binding"
     end
+  end
+
+  test "uses the configured embedded timezone database without runtime updates" do
+    assert Calendar.get_time_zone_database() == TimeZoneInfo.TimeZoneDatabase
+    assert Application.fetch_env!(:time_zone_info, :update) == :disabled
+    assert TimeZoneInfo.state() == :ok
   end
 
   defp loaded(document), do: %LoadedDocument{path: "/config/triggers.yaml", document: document}
@@ -150,6 +246,21 @@ defmodule ClusterMurmur.Config.TriggersTest do
       "event" => %{"match" => %{"all" => predicates}},
       "action" => %{"type" => "start_conversation", "binding" => binding},
       "cooldown" => cooldown
+    }
+  end
+
+  defp schedule_trigger(id, cron, timezone, group \\ "social") do
+    %{
+      "id" => id,
+      "schedule" => %{"cron" => cron, "timezone" => timezone},
+      "action" => %{
+        "type" => "emit_event",
+        "event" => %{
+          "type" => "schedule.fired",
+          "group" => group,
+          "subject" => id
+        }
+      }
     }
   end
 

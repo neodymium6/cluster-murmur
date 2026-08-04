@@ -36,6 +36,36 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
     assert Configuration.parse(context.config, set) == {:error, :unknown_trigger_binding}
   end
 
+  test "assembles schedule triggers and resolves emitted event groups", context do
+    documents =
+      put_in(valid_documents(context), [:triggers], [
+        loaded("/config/schedules.yaml", %{
+          "triggers" => [schedule_trigger("daily-summary", "operations")]
+        })
+      ])
+
+    assert {:ok, %Configuration{} = configuration} =
+             Configuration.parse(
+               context.config,
+               %DocumentSet{manifest: manifest(), documents: documents}
+             )
+
+    assert %{action: :emit_event, event: %{group: "operations"}} =
+             configuration.triggers.triggers["daily-summary"]
+  end
+
+  test "rejects schedule triggers that emit into unknown groups", context do
+    documents =
+      put_in(valid_documents(context), [:triggers], [
+        loaded("/config/schedules.yaml", %{
+          "triggers" => [schedule_trigger("daily-summary", "missing")]
+        })
+      ])
+
+    set = %DocumentSet{manifest: manifest(), documents: documents}
+    assert Configuration.parse(context.config, set) == {:error, :unknown_trigger_group}
+  end
+
   test "labels category failures without exposing rejected values", context do
     invalid_triggers =
       put_in(valid_documents(context), [:triggers], [
@@ -154,6 +184,17 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
         ]
       })
     ]
+  end
+
+  defp schedule_trigger(id, group) do
+    %{
+      "id" => id,
+      "schedule" => %{"cron" => "0 21 * * *", "timezone" => "Asia/Tokyo"},
+      "action" => %{
+        "type" => "emit_event",
+        "event" => %{"type" => "schedule.fired", "group" => group, "subject" => id}
+      }
+    }
   end
 
   defp manifest, do: %Manifest{version: 1, includes: includes()}

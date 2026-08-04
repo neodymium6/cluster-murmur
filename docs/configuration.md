@@ -332,8 +332,6 @@ file or connect to Discord.
 
 ### Schedule triggers
 
-Schedule trigger validation is not implemented yet.
-
 ```yaml
 triggers:
   - id: daily-summary
@@ -347,6 +345,23 @@ triggers:
         group: social
         subject: daily-summary
 ```
+
+Schedule cron expressions contain exactly five space-delimited fields: minute,
+hour, day of month, month, and day of week. Seconds, year fields, and special
+aliases such as `@daily` are not accepted. Named months and weekdays, ranges,
+lists, and steps follow standard cron syntax. Timezones must resolve within the
+IANA snapshot embedded in the release; validation never consults host zoneinfo
+or downloads timezone data at runtime.
+
+At least one of day-of-month or day-of-week must be the unrestricted `*` field.
+This avoids the incompatible OR and AND interpretations used by common cron
+implementations when both fields are constrained.
+
+The action is limited to `emit_event`. Event type, group, and subject are
+portable IDs, and complete configuration assembly resolves the group against
+the declared event-group namespace. Schedule and event trigger IDs share one
+namespace and count toward the same version 1 limit of 256 triggers. Validation
+does not execute schedules or emit events.
 
 ### Stochastic triggers
 

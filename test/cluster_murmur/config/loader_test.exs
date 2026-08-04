@@ -230,6 +230,20 @@ defmodule ClusterMurmur.Config.LoaderTest do
           cooldown: 30m
       """)
 
+    write_fixture(context.config_root, "triggers/schedules.yaml", """
+    triggers:
+      - id: daily-summary
+        schedule:
+          cron: "0 21 * * *"
+          timezone: Asia/Tokyo
+        action:
+          type: emit_event
+          event:
+            type: schedule.fired
+            group: operations
+            subject: daily-summary
+    """)
+
     write_fixture(context.config_root, "routing.yaml", """
     routing:
       default:
@@ -238,8 +252,11 @@ defmodule ClusterMurmur.Config.LoaderTest do
 
     write_manifest(context.config_file, configuration_manifest())
 
-    assert {:ok, %Configuration{version: 1}} =
+    assert {:ok, %Configuration{version: 1} = configuration} =
              Loader.load_configuration(context.config_file)
+
+    assert %{action: :emit_event, timezone: "Asia/Tokyo"} =
+             configuration.triggers.triggers["daily-summary"]
 
     File.write!(
       trigger_path,
