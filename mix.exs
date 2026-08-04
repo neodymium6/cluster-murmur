@@ -21,5 +21,9 @@ defmodule ClusterMurmur.MixProject do
     ]
   end
 
-  defp deps, do: []
+  defp deps do
+    [
+      {:yamerl, "~> 0.10.0"}
+    ]
+  end
 end

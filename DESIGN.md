@@ -6,8 +6,8 @@ This document is the initial architecture baseline. The repository is at the
 early foundation stage: core domain values, external dependency behaviours,
 deterministic observation state-transition classification, and common scalar
 configuration validation are present. Bounded configuration include resolution
-is also implemented. The remaining runtime behavior described here is not
-implemented yet.
+and YAML document decoding are also implemented. The remaining runtime behavior
+described here is not implemented yet.
 
 The normative public configuration surface is documented in
 [`docs/configuration.md`](docs/configuration.md). Testable MVP invariants,
@@ -286,7 +286,10 @@ Configuration uses YAML 1.2 with JSON Schema structural validation and Elixir
 semantic validation. Unknown fields, duplicate IDs, unresolved persona,
 binding, or event-group references, malformed durations, cron expressions, and
 timezones are fatal at startup. Configuration loads once; hot reload is not an
-MVP feature. Glob order has no semantic meaning.
+MVP feature. Glob order has no semantic meaning. The implemented decoder
+requires one mapping-rooted document, accepts only the Core Schema value subset,
+and enforces byte, scalar, node-count, and nesting limits before later
+configuration-specific validation.
 
 Configuration is split into a top-level include file plus event groups,
 routing, personas, bindings, triggers, and prompt files. Secret values never

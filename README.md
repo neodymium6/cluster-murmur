@@ -10,10 +10,11 @@ Early foundation. The repository contains a minimal Elixir/OTP application,
 pinned development environment, CI entry point, architecture baseline, core
 domain values, external dependency behaviours, and deterministic observation
 state-transition classification. Version 1 duration and common scalar
-configuration validation and bounded include resolution are also available.
-YAML loading, observation ingestion, persistence, triggers, LLM generation, and
-Discord publication are not implemented yet. Do not deploy this revision or
-connect it to infrastructure, model providers, or Discord.
+configuration validation, bounded include resolution, and bounded YAML document
+decoding are also available. Full configuration assembly, observation
+ingestion, persistence, triggers, LLM generation, and Discord publication are
+not implemented yet. Do not deploy this revision or connect it to
+infrastructure, model providers, or Discord.
 
 ## Boundary
 
