@@ -21,10 +21,11 @@ evaluation, event-trigger category validation, and complete startup
 configuration assembly are also implemented. Matching event-trigger selection
 is deterministic and bounded. Standard five-field schedule-trigger and bounded
 shifted-exponential stochastic-trigger validation use a reviewed, embedded IANA
-timezone snapshot without runtime updates. Observation ingestion, persistence,
-trigger execution, LLM generation, and Discord publication are not implemented
-yet. Do not deploy this revision or connect it to infrastructure, model
-providers, or Discord.
+timezone snapshot without runtime updates. Pure shifted-exponential wait
+sampling is deterministic through injected randomness. Observation ingestion,
+persistence, trigger execution, LLM generation, and Discord publication are not
+implemented yet. Do not deploy this revision or connect it to infrastructure,
+model providers, or Discord.
 
 ## Boundary
 
