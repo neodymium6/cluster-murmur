@@ -8,6 +8,7 @@ defmodule ClusterMurmur.Config.Loader do
   """
 
   alias ClusterMurmur.Config.{
+    Catalog,
     DocumentDecoder,
     DocumentSet,
     IncludeResolver,
@@ -21,6 +22,7 @@ defmodule ClusterMurmur.Config.Loader do
           | {:manifest, Manifest.error()}
           | {:includes, IncludeResolver.error()}
           | {:included_document, DocumentDecoder.error()}
+          | {:catalog, Catalog.error()}
 
   @doc """
   Decodes and validates a manifest, then resolves all of its include categories.
@@ -50,6 +52,15 @@ defmodule ClusterMurmur.Config.Loader do
          {:ok, documents} <-
            annotate(decode_categories(plan.files), :included_document) do
       {:ok, %DocumentSet{manifest: plan.manifest, documents: documents}}
+    end
+  end
+
+  @doc "Loads and validates the implemented event-group, persona, and binding catalog."
+  @spec load_catalog(Path.t()) :: {:ok, Catalog.t()} | {:error, error()}
+  def load_catalog(config_path) do
+    with {:ok, documents} <- load_documents(config_path),
+         {:ok, catalog} <- annotate(Catalog.parse(config_path, documents), :catalog) do
+      {:ok, catalog}
     end
   end
 
