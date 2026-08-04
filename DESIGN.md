@@ -5,9 +5,10 @@
 This document is the initial architecture baseline. The repository is at the
 early foundation stage: core domain values, external dependency behaviours,
 deterministic observation state-transition classification, and common scalar
-configuration validation are present. Bounded configuration include resolution
-and YAML document decoding are also implemented. The remaining runtime behavior
-described here is not implemented yet.
+configuration validation are present. Bounded configuration include resolution,
+YAML document decoding, and strict top-level manifest validation are also
+implemented. The remaining runtime behavior described here is not implemented
+yet.
 
 The normative public configuration surface is documented in
 [`docs/configuration.md`](docs/configuration.md). Testable MVP invariants,

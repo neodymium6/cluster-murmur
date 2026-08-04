@@ -13,10 +13,10 @@ identifiers.
 
 ## Loading model
 
-Configuration uses YAML 1.2. Bounded document decoding, duration and common
-scalar validation, and bounded include resolution are implemented, but the
-remaining validation pipeline is still a design target. A fixed top-level file
-includes files by category:
+Configuration uses YAML 1.2. Bounded document decoding, strict top-level
+manifest validation, duration and common scalar validation, and bounded include
+resolution are implemented, but the remaining validation pipeline is still a
+design target. A fixed top-level file includes files by category:
 
 ```text
 config/
@@ -56,6 +56,12 @@ includes:
     - routing.yaml
 ```
 
+The version 1 manifest contains exactly `version` and `includes`. All five
+include categories shown above must be present, even when a category has no
+patterns, and unknown fields or categories are invalid. Category values are
+lists of strings. The 64-pattern limit applies to the sum across every category,
+not separately to each resolver call.
+
 Relative paths are resolved from the directory containing the top-level file.
 Version 1 include paths use portable ASCII characters and support only
 non-recursive `*` globs. Absolute paths, `..`, other glob operators, symlink
@@ -83,7 +89,8 @@ future change.
 
 ## Validation
 
-Loading has two fail-closed stages:
+After the top-level manifest is decoded and validated, category configuration
+validation has two fail-closed stages:
 
 1. JSON Schema validates document structure and rejects unknown fields.
 2. Elixir semantic validation resolves references and validates values that
