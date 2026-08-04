@@ -29,12 +29,13 @@ hours. A supervised, single-writer Ecto/SQLite repository now provides the
 runtime persistence foundation. The first constrained migration and redacted
 record cover restart-safe stochastic schedule state. A bounded store can restore
 or initialize each configured schedule without overwriting durable state and
-list due schedules deterministically without claiming them. Due claiming and
-external execution are not implemented, while successful executions can be
-recorded optimistically by an explicit caller to advance the next run and daily
-bucket atomically. Observation ingestion, trigger execution, LLM generation,
-and Discord publication are not implemented yet. Do not deploy this revision or
-connect it to infrastructure, model providers, or Discord.
+list available due schedules deterministically. A fixed 60-second opaque lease
+can claim an exact due version, and only its redacted capability can record a
+successful execution while atomically advancing the next run and daily bucket.
+External execution and exactly-once delivery are not implemented. Observation
+ingestion, trigger execution, LLM generation, and Discord publication are not
+implemented yet. Do not deploy this revision or connect it to infrastructure,
+model providers, or Discord.
 
 ## Boundary
 

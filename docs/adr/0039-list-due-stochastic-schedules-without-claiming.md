@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted.
+Accepted; amended by ADR 0042.
+
+ADR 0042 keeps this operation read-only but excludes schedules with live claims
+and omits claim fields from the returned projection.
 
 ## Context
 

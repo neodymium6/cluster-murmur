@@ -6,7 +6,7 @@ defmodule ClusterMurmur.ReleaseTest do
 
   alias ClusterMurmur.{Release, Repo}
 
-  @migration_version 20_260_804_130_000
+  @migration_versions [20_260_804_130_000, 20_260_804_160_000]
 
   setup do
     original_repo_config = Application.fetch_env!(:cluster_murmur, Repo)
@@ -56,7 +56,7 @@ defmodule ClusterMurmur.ReleaseTest do
     {:ok, _started} = Application.ensure_all_started(:cluster_murmur)
 
     assert table_exists?("stochastic_schedules")
-    assert migrated_versions() == [@migration_version]
+    assert migrated_versions() == @migration_versions
   end
 
   test "rejects a running application and repository" do

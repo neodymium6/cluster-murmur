@@ -16,7 +16,16 @@ defmodule ClusterMurmur.Persistence.StochasticSchedule do
   @primary_key {:trigger_id, :string, autogenerate: false, redact: true}
   @max_trigger_id_bytes 16 * 1_024
   @max_daily_count 10_000
-  @attribute_keys [:trigger_id, :next_run_at, :last_run_at, :daily_count, :daily_count_date]
+  @attribute_keys [
+    :trigger_id,
+    :next_run_at,
+    :last_run_at,
+    :daily_count,
+    :daily_count_date,
+    :claim_token,
+    :claim_started_at,
+    :claim_expires_at
+  ]
   @string_attribute_keys Enum.map(@attribute_keys, &Atom.to_string/1)
 
   schema "stochastic_schedules" do
@@ -24,6 +33,9 @@ defmodule ClusterMurmur.Persistence.StochasticSchedule do
     field :last_run_at, :utc_datetime_usec, redact: true
     field :daily_count, :integer, default: 0, redact: true
     field :daily_count_date, :date, redact: true
+    field :claim_token, :string, redact: true
+    field :claim_started_at, :utc_datetime_usec, redact: true
+    field :claim_expires_at, :utc_datetime_usec, redact: true
   end
 
   @type t :: %__MODULE__{
@@ -31,7 +43,10 @@ defmodule ClusterMurmur.Persistence.StochasticSchedule do
           next_run_at: DateTime.t() | nil,
           last_run_at: DateTime.t() | nil,
           daily_count: non_neg_integer(),
-          daily_count_date: Date.t() | nil
+          daily_count_date: Date.t() | nil,
+          claim_token: String.t() | nil,
+          claim_started_at: DateTime.t() | nil,
+          claim_expires_at: DateTime.t() | nil
         }
 
   @doc "Builds a bounded persistence changeset without reading or writing the repository."
@@ -50,17 +65,24 @@ defmodule ClusterMurmur.Persistence.StochasticSchedule do
     |> validate_change(:next_run_at, &validate_storage_year/2)
     |> validate_change(:last_run_at, &validate_storage_year/2)
     |> validate_change(:daily_count_date, &validate_storage_year/2)
+    |> validate_change(:claim_token, &validate_claim_token/2)
+    |> validate_change(:claim_started_at, &validate_storage_year/2)
+    |> validate_change(:claim_expires_at, &validate_storage_year/2)
     |> validate_number(:daily_count,
       greater_than_or_equal_to: 0,
       less_than_or_equal_to: @max_daily_count
     )
     |> validate_run_order()
     |> validate_daily_bucket()
+    |> validate_claim_pair()
     |> check_constraint(:trigger_id, name: "stochastic_schedules_trigger_id")
     |> check_constraint(:next_run_at, name: "stochastic_schedules_next_run_at")
     |> check_constraint(:last_run_at, name: "stochastic_schedules_run_order")
     |> check_constraint(:daily_count, name: "stochastic_schedules_daily_count_bounds")
     |> check_constraint(:daily_count_date, name: "stochastic_schedules_daily_bucket")
+    |> check_constraint(:claim_token, name: "stochastic_schedules_claim_token")
+    |> check_constraint(:claim_started_at, name: "stochastic_schedules_claim_started_at")
+    |> check_constraint(:claim_expires_at, name: "stochastic_schedules_claim_pair")
   end
 
   defp invalid_changeset(schedule) do
@@ -91,6 +113,13 @@ defmodule ClusterMurmur.Persistence.StochasticSchedule do
   defp validate_storage_year(_field, %{year: year}) when year in 0..9999, do: []
   defp validate_storage_year(field, _value), do: [{field, "has an unsupported year"}]
 
+  defp validate_claim_token(:claim_token, token) do
+    case Base.url_decode64(token, padding: false) do
+      {:ok, decoded} when byte_size(decoded) == 32 -> []
+      _failure -> [claim_token: "is invalid"]
+    end
+  end
+
   defp validate_run_order(changeset) do
     case {get_field(changeset, :last_run_at), get_field(changeset, :next_run_at)} do
       {%DateTime{} = last_run_at, %DateTime{} = next_run_at} ->
@@ -110,6 +139,25 @@ defmodule ClusterMurmur.Persistence.StochasticSchedule do
 
       _valid_or_incomplete ->
         changeset
+    end
+  end
+
+  defp validate_claim_pair(changeset) do
+    case {
+      get_field(changeset, :claim_token),
+      get_field(changeset, :claim_started_at),
+      get_field(changeset, :claim_expires_at)
+    } do
+      {nil, nil, nil} ->
+        changeset
+
+      {token, %DateTime{} = started_at, %DateTime{} = expires_at} when is_binary(token) ->
+        if DateTime.compare(expires_at, started_at) == :gt,
+          do: changeset,
+          else: add_error(changeset, :claim_expires_at, "must be after claim start")
+
+      _invalid ->
+        add_error(changeset, :claim_expires_at, "must accompany a claim token")
     end
   end
 end

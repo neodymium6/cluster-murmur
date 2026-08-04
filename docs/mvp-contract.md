@@ -399,6 +399,9 @@ next_run_at
 last_run_at
 daily_count
 daily_count_date
+claim_token
+claim_started_at
+claim_expires_at
 ```
 
 Entity state changes, event insertion, and related trigger bookkeeping should
