@@ -19,8 +19,8 @@ resolution, composition of those manifest stages into a load plan, and bounded
 decoding of the included YAML documents are implemented, but the remaining
 validation pipeline is still a design target. A value-free Draft 7 validation
 adapter for application-owned schemas and bounded event-group, persona, and
-binding validation and cross-category catalog assembly are implemented; the
-remaining category schemas and semantic validators remain future changes. A
+binding and routing validation and cross-category catalog assembly are
+implemented; trigger validation and complete assembly remain future changes. A
 fixed top-level file
 includes files by category:
 
@@ -378,7 +378,9 @@ routing:
 ```
 
 The named environment variable contains the path to a mounted file, not the
-webhook URL. Group-specific routes are a post-MVP extension. Their future shape
+webhook URL. Its name is a portable ASCII environment-variable identifier of at
+most 128 bytes. Version 1 requires exactly one default routing document.
+Group-specific routes are a post-MVP extension. Their future shape
 is reserved as `routing.groups`, but version 1 validation must reject that field
 until multi-channel routing is implemented and reviewed.
 
