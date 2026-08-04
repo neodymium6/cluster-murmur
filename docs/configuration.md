@@ -3,8 +3,8 @@
 ## Status and scope
 
 This document defines the public configuration contract targeted by the MVP.
-The runtime is still at the bootstrap stage, so examples describe intended
-behavior rather than currently available functionality.
+The runtime is at the early foundation stage, so examples describe intended
+behavior unless a capability is explicitly identified as implemented.
 
 Configuration controls observations, event policy, personas, bindings,
 triggers, generation limits, and outbound routing. It must never contain
@@ -13,9 +13,10 @@ identifiers.
 
 ## Loading model
 
-Configuration uses YAML 1.2. Duration and common scalar validation are
-implemented, but document loading and the remaining validation pipeline are
-still design targets. A fixed top-level file includes files by category:
+Configuration uses YAML 1.2. Duration, common scalar validation, and bounded
+include resolution are implemented, but YAML document loading and the remaining
+validation pipeline are still design targets. A fixed top-level file includes
+files by category:
 
 ```text
 config/
@@ -56,8 +57,15 @@ includes:
 ```
 
 Relative paths are resolved from the directory containing the top-level file.
-Glob expansion order has no semantic meaning. Configuration is loaded once at
-startup; hot reload is outside the MVP.
+Version 1 include paths use portable ASCII characters and support only
+non-recursive `*` globs. Absolute paths, `..`, other glob operators, symlink
+loops, non-file targets, and canonical targets outside the configuration root
+are invalid. A top-level configuration may declare at most 64 include patterns;
+each pattern is at most 512 bytes and must match at least one file; the combined
+result is limited to 256 unique files. Safe symlinks inside the root are
+canonicalized. Results are deduplicated and sorted, so glob expansion order has
+no semantic meaning. Configuration is loaded once at startup; hot reload is
+outside the MVP.
 
 ## Validation
 
