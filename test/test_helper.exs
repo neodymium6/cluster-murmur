@@ -19,4 +19,11 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand(
+    "../priv/repo/migrations/20260804200000_create_trigger_executions.exs",
+    __DIR__
+  )
+)
+
 ExUnit.start()
