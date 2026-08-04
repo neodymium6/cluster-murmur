@@ -6,6 +6,7 @@ defmodule ClusterMurmur.Triggers.EventTriggerExecutionPlanner do
   policy is evaluated. Returned plans are fully redacted from inspection.
   """
 
+  alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.Events.{Event, MatcherEvaluator, Validator}
   alias ClusterMurmur.Triggers.{EventTrigger, EventTriggerCooldown, EventTriggerValidator}
 
@@ -33,6 +34,7 @@ defmodule ClusterMurmur.Triggers.EventTriggerExecutionPlanner do
   def plan(%EventTrigger{} = trigger, %Event{} = event, cooldown_until, executed_at) do
     with :ok <- EventTriggerValidator.validate(trigger),
          :ok <- Validator.validate(event),
+         :ok <- DateTimeValidator.validate_storage_utc(executed_at),
          {:ok, matches?} <- MatcherEvaluator.match(trigger.matcher, event) do
       plan_match(matches?, trigger, event, cooldown_until, executed_at)
     else

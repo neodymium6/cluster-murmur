@@ -39,8 +39,20 @@ defmodule ClusterMurmur.Triggers.EventTriggerExecutionPlannerTest do
     event = %{event() | type: "observation.recovered"}
     forged_cooldown = %{~U[2026-08-04 12:00:00Z] | hour: 24}
 
-    assert EventTriggerExecutionPlanner.plan(trigger(), event, forged_cooldown, nil) ==
+    assert EventTriggerExecutionPlanner.plan(
+             trigger(),
+             event,
+             forged_cooldown,
+             ~U[2026-08-04 12:00:00Z]
+           ) ==
              {:skip, :not_matched}
+  end
+
+  test "validates the required execution instant before skipping a nonmatch" do
+    event = %{event() | type: "observation.recovered"}
+
+    assert EventTriggerExecutionPlanner.plan(trigger(), event, nil, nil) ==
+             {:error, :invalid_datetime}
   end
 
   test "preserves stable validation errors without exposing supplied values" do
