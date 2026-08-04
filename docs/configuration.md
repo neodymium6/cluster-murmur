@@ -13,7 +13,9 @@ identifiers.
 
 ## Loading model
 
-Configuration uses YAML 1.2. A fixed top-level file includes files by category:
+Configuration uses YAML 1.2. Duration and common scalar validation are
+implemented, but document loading and the remaining validation pipeline are
+still design targets. A fixed top-level file includes files by category:
 
 ```text
 config/
