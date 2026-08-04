@@ -65,7 +65,8 @@ defmodule ClusterMurmur.Config.SchemaValidator do
   """
   @spec validate(Compiled.t(), term()) :: :ok | {:error, validation_error()}
   def validate(%Compiled{root: %Schema.Root{} = root}, document) do
-    with :ok <- validate_compiled_root(root) do
+    with :ok <- validate_compiled_root(root),
+         :ok <- validate_document_value(document) do
       validate_document(root, document)
     end
   end
@@ -120,6 +121,13 @@ defmodule ClusterMurmur.Config.SchemaValidator do
     _error -> {:error, :invalid_schema_validator}
   catch
     _kind, _reason -> {:error, :invalid_schema_validator}
+  end
+
+  defp validate_document_value(document) do
+    case validate_json_value(document) do
+      :ok -> :ok
+      {:error, :invalid_schema} -> {:error, :schema_violation}
+    end
   end
 
   defp validate_json_value(nil), do: :ok
