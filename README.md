@@ -20,7 +20,9 @@ in place. The bounded version 1 event-matcher grammar and deterministic
 evaluation share a bounded recursive event-value boundary. Event-trigger
 category validation and complete startup
 configuration assembly are also implemented. Matching event-trigger selection
-is deterministic and bounded. Standard five-field schedule-trigger and bounded
+is deterministic and bounded. A constrained redacted event record and packaged
+migration provide the event persistence shape without a runtime store. Standard
+five-field schedule-trigger and bounded
 shifted-exponential stochastic-trigger validation use a reviewed, embedded IANA
 timezone snapshot without runtime updates. Pure shifted-exponential next-run
 calculation is deterministic from a supplied UTC instant and injected

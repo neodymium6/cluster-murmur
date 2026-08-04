@@ -6,7 +6,7 @@ defmodule ClusterMurmur.ReleaseTest do
 
   alias ClusterMurmur.{Release, Repo}
 
-  @migration_versions [20_260_804_130_000, 20_260_804_160_000]
+  @migration_versions [20_260_804_130_000, 20_260_804_160_000, 20_260_804_180_500]
 
   setup do
     original_repo_config = Application.fetch_env!(:cluster_murmur, Repo)
