@@ -22,7 +22,8 @@ category validation and complete startup
 configuration assembly are also implemented. Matching event-trigger selection
 is deterministic and bounded behind one shared exact runtime trigger validator.
 A pure adapter evaluates an injected durable cooldown projection without
-executing actions. A constrained redacted event record, packaged
+executing actions, and a redacted pure plan rechecks both matching and cooldown
+eligibility before later orchestration. A constrained redacted event record, packaged
 migration, and narrow idempotent insert store persist immutable events without
 exposing generic queries or trigger deduplication policy. A primary-key-only
 restore path decodes records through the same bounded domain validator. Standard
