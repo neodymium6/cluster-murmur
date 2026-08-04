@@ -9,7 +9,7 @@ defmodule ClusterMurmur.Config.Triggers do
   """
 
   alias ClusterMurmur.Config.{Duration, EventMatcher, LoadedDocument, SchemaValidator, Value}
-  alias ClusterMurmur.Triggers.ActiveHours
+  alias ClusterMurmur.Triggers.{ActiveHours, CronValidator}
   alias ClusterMurmur.Triggers.{EmittedEvent, EventTrigger, ScheduleTrigger, StochasticTrigger}
 
   @draft "http://json-schema.org/draft-07/schema#"
@@ -480,9 +480,16 @@ defmodule ClusterMurmur.Config.Triggers do
 
   defp parse_cron(value) do
     case Crontab.CronExpression.Parser.parse(value, false) do
-      {:ok, expression} -> {:ok, expression}
-      {:error, _reason} -> {:error, :invalid_trigger_document}
-      _other -> {:error, :invalid_trigger_document}
+      {:ok, expression} ->
+        if CronValidator.valid?(expression),
+          do: {:ok, expression},
+          else: {:error, :invalid_trigger_document}
+
+      {:error, _reason} ->
+        {:error, :invalid_trigger_document}
+
+      _other ->
+        {:error, :invalid_trigger_document}
     end
   rescue
     _error -> {:error, :invalid_trigger_document}
