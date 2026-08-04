@@ -162,7 +162,10 @@ defmodule ClusterMurmur.Config.DocumentDecoder do
 
     if text |> :unicode.characters_to_binary() |> byte_size() <= @max_scalar_bytes do
       state
-      |> Map.put(:content?, state.content? or text != [] or substyle != :plain)
+      |> Map.put(
+        :content?,
+        state.content? or text != [] or substyle != :plain or explicitly_tagged?(tag)
+      )
       |> count_node()
     else
       reject(:scalar_too_large)
@@ -170,6 +173,9 @@ defmodule ClusterMurmur.Config.DocumentDecoder do
   end
 
   defp validate_token(_token, state), do: state
+
+  defp explicitly_tagged?({:yamerl_tag, _line, _column, {:non_specific, ~c"?"}}), do: false
+  defp explicitly_tagged?(_tag), do: true
 
   defp count_node(state) do
     nodes = state.nodes + 1
