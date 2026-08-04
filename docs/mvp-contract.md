@@ -430,6 +430,11 @@ Observation data and generated prompts are potentially sensitive. Logging uses
 field allowlists, redaction, response-size limits, and stable error classes
 rather than raw exception payloads from external providers.
 
+Generic inspection of observation, event, and conversation domain values is
+allowlisted and excludes facts, labels, state snapshots, participants, and
+messages. Structured logging must still choose only fields justified by the
+specific lifecycle event.
+
 ## Verification requirements
 
 Unit tests cover event matching, binding resolution, weighted choice,

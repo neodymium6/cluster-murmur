@@ -6,6 +6,7 @@ defmodule ClusterMurmur.Observations.Observation do
   state tracking and event extraction must happen first.
   """
 
+  @derive {Inspect, only: [:state, :observed_at]}
   @enforce_keys [:source, :subject, :state, :observed_at]
   defstruct [:source, :subject, :state, :observed_at, facts: %{}, labels: %{}]
 

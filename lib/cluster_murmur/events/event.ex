@@ -4,6 +4,7 @@ defmodule ClusterMurmur.Events.Event do
   bounded trigger.
   """
 
+  @derive {Inspect, only: [:type, :severity, :occurred_at]}
   @enforce_keys [:id, :type, :source, :occurred_at]
   defstruct [
     :id,
