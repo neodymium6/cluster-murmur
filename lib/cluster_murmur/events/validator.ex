@@ -73,6 +73,19 @@ defmodule ClusterMurmur.Events.Validator do
 
   def validate(_event), do: {:error, :invalid_event}
 
+  @doc "Validates one event ID against the same required-string boundary as a complete event."
+  @spec validate_id(term()) :: :ok | {:error, error()}
+  def validate_id(id) do
+    case validate_string(id, false, {0, 0}) do
+      {:ok, _budget} -> :ok
+      _failure -> {:error, :invalid_event}
+    end
+  rescue
+    _error -> {:error, :invalid_event}
+  catch
+    _kind, _reason -> {:error, :invalid_event}
+  end
+
   defp validate_required_strings([], budget), do: {:ok, budget}
 
   defp validate_required_strings([value | values], budget) do
