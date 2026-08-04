@@ -20,6 +20,7 @@
           ./.markdownlint.yaml
           ./.formatter.exs
           ./AGENTS.md
+          ./config
           ./DESIGN.md
           ./LICENSE
           ./README.md
@@ -72,7 +73,7 @@
             version = pkgs.lib.strings.removeSuffix "\n" (builtins.readFile ./VERSION);
             src = source;
             mixEnv = "test";
-            hash = "sha256-49XHsyVhIZrwsb4SsBJzJnQArB6XQmLwkzKjNmiIQgY=";
+            hash = "sha256-HoPVrWj/P/OEeEDQ2Gpbbwr8m/fTd7AUfbGW7g+yTo8=";
           };
         in
         {

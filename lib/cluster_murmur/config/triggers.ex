@@ -1,18 +1,92 @@
 defmodule ClusterMurmur.Config.Triggers do
   @moduledoc """
-  Validates and combines version 1 event-trigger documents.
+  Validates and combines version 1 trigger documents.
 
-  Version 1 event triggers contain a bounded declarative matcher and one fixed
-  start-conversation action. Binding IDs are normalized but remain unresolved
-  until complete configuration assembly.
+  Event triggers contain a bounded declarative matcher and one fixed
+  start-conversation action. Schedule triggers contain a standard five-field
+  cron expression, an embedded IANA timezone, and one fixed emit-event action.
+  References remain unresolved until complete configuration assembly.
   """
 
   alias ClusterMurmur.Config.{Duration, EventMatcher, LoadedDocument, SchemaValidator, Value}
-  alias ClusterMurmur.Triggers.EventTrigger
+  alias ClusterMurmur.Triggers.{EmittedEvent, EventTrigger, ScheduleTrigger}
 
   @draft "http://json-schema.org/draft-07/schema#"
   @id_pattern "^[A-Za-z0-9][A-Za-z0-9._-]*$"
   @max_triggers 256
+  @max_cron_bytes 256
+  @max_timezone_bytes 128
+  @month_names ~w(JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC)
+  @weekday_names ~w(MON TUE WED THU FRI SAT SUN)
+
+  @event_trigger_schema %{
+    "type" => "object",
+    "required" => ["id", "event", "action", "cooldown"],
+    "additionalProperties" => false,
+    "properties" => %{
+      "id" => %{"type" => "string", "pattern" => @id_pattern},
+      "event" => %{
+        "type" => "object",
+        "required" => ["match"],
+        "additionalProperties" => false,
+        "properties" => %{"match" => %{"type" => "object"}}
+      },
+      "action" => %{
+        "type" => "object",
+        "required" => ["type", "binding"],
+        "additionalProperties" => false,
+        "properties" => %{
+          "type" => %{"type" => "string", "enum" => ["start_conversation"]},
+          "binding" => %{"type" => "string", "pattern" => @id_pattern}
+        }
+      },
+      "cooldown" => %{"type" => "string", "minLength" => 1, "maxLength" => 32}
+    }
+  }
+
+  @schedule_trigger_schema %{
+    "type" => "object",
+    "required" => ["id", "schedule", "action"],
+    "additionalProperties" => false,
+    "properties" => %{
+      "id" => %{"type" => "string", "pattern" => @id_pattern},
+      "schedule" => %{
+        "type" => "object",
+        "required" => ["cron", "timezone"],
+        "additionalProperties" => false,
+        "properties" => %{
+          "cron" => %{
+            "type" => "string",
+            "minLength" => 1,
+            "maxLength" => @max_cron_bytes
+          },
+          "timezone" => %{
+            "type" => "string",
+            "minLength" => 1,
+            "maxLength" => @max_timezone_bytes
+          }
+        }
+      },
+      "action" => %{
+        "type" => "object",
+        "required" => ["type", "event"],
+        "additionalProperties" => false,
+        "properties" => %{
+          "type" => %{"type" => "string", "enum" => ["emit_event"]},
+          "event" => %{
+            "type" => "object",
+            "required" => ["type", "group", "subject"],
+            "additionalProperties" => false,
+            "properties" => %{
+              "type" => %{"type" => "string", "pattern" => @id_pattern},
+              "group" => %{"type" => "string", "pattern" => @id_pattern},
+              "subject" => %{"type" => "string", "pattern" => @id_pattern}
+            }
+          }
+        }
+      }
+    }
+  }
 
   @schema %{
     "$schema" => @draft,
@@ -22,30 +96,7 @@ defmodule ClusterMurmur.Config.Triggers do
     "properties" => %{
       "triggers" => %{
         "type" => "array",
-        "items" => %{
-          "type" => "object",
-          "required" => ["id", "event", "action", "cooldown"],
-          "additionalProperties" => false,
-          "properties" => %{
-            "id" => %{"type" => "string", "pattern" => @id_pattern},
-            "event" => %{
-              "type" => "object",
-              "required" => ["match"],
-              "additionalProperties" => false,
-              "properties" => %{"match" => %{"type" => "object"}}
-            },
-            "action" => %{
-              "type" => "object",
-              "required" => ["type", "binding"],
-              "additionalProperties" => false,
-              "properties" => %{
-                "type" => %{"type" => "string", "enum" => ["start_conversation"]},
-                "binding" => %{"type" => "string", "pattern" => @id_pattern}
-              }
-            },
-            "cooldown" => %{"type" => "string", "minLength" => 1, "maxLength" => 32}
-          }
-        }
+        "items" => %{"oneOf" => [@event_trigger_schema, @schedule_trigger_schema]}
       }
     }
   }
@@ -54,19 +105,21 @@ defmodule ClusterMurmur.Config.Triggers do
   @enforce_keys [:triggers]
   defstruct [:triggers]
 
-  @type t :: %__MODULE__{triggers: %{required(String.t()) => EventTrigger.t()}}
+  @type trigger :: EventTrigger.t() | ScheduleTrigger.t()
+  @type t :: %__MODULE__{triggers: %{required(String.t()) => trigger()}}
   @type error ::
           :duplicate_trigger
           | :invalid_trigger_document
           | :invalid_trigger_schema
           | :too_many_triggers
 
-  @doc "Validates and combines decoded event-trigger documents."
+  @doc "Validates and combines decoded trigger documents."
   @spec parse_documents(term()) :: {:ok, t()} | {:error, error()}
   def parse_documents(documents) when is_list(documents) do
     with {:ok, validator} <- compile_schema(),
-         {:ok, matcher_validator} <- compile_matcher_schema() do
-      parse_document_list(documents, validator, matcher_validator, %{}, 0)
+         {:ok, matcher_validator} <- compile_matcher_schema(),
+         {:ok, timezones} <- load_timezones() do
+      parse_document_list(documents, validator, matcher_validator, timezones, %{}, 0)
     end
   end
 
@@ -86,25 +139,58 @@ defmodule ClusterMurmur.Config.Triggers do
     end
   end
 
-  defp parse_document_list([], _validator, _matcher_validator, triggers, _count),
-    do: {:ok, %__MODULE__{triggers: triggers}}
+  defp load_timezones do
+    case TimeZoneInfo.time_zones() do
+      timezones when is_list(timezones) -> {:ok, MapSet.new(timezones)}
+      _other -> {:error, :invalid_trigger_schema}
+    end
+  rescue
+    _error -> {:error, :invalid_trigger_schema}
+  catch
+    _kind, _reason -> {:error, :invalid_trigger_schema}
+  end
+
+  defp parse_document_list(
+         [],
+         _validator,
+         _matcher_validator,
+         _timezones,
+         triggers,
+         _count
+       ),
+       do: {:ok, %__MODULE__{triggers: triggers}}
 
   defp parse_document_list(
          [%LoadedDocument{document: document} | documents],
          validator,
          matcher_validator,
+         timezones,
          triggers,
          count
        ) do
     with :ok <- validate_document(validator, document),
          {:ok, triggers, count} <-
-           collect_triggers(document["triggers"], matcher_validator, triggers, count) do
-      parse_document_list(documents, validator, matcher_validator, triggers, count)
+           collect_triggers(document["triggers"], matcher_validator, timezones, triggers, count) do
+      parse_document_list(
+        documents,
+        validator,
+        matcher_validator,
+        timezones,
+        triggers,
+        count
+      )
     end
   end
 
-  defp parse_document_list(_documents, _validator, _matcher_validator, _triggers, _count),
-    do: {:error, :invalid_trigger_document}
+  defp parse_document_list(
+         _documents,
+         _validator,
+         _matcher_validator,
+         _timezones,
+         _triggers,
+         _count
+       ),
+       do: {:error, :invalid_trigger_document}
 
   defp validate_document(validator, document) do
     case SchemaValidator.validate(validator, document) do
@@ -114,15 +200,15 @@ defmodule ClusterMurmur.Config.Triggers do
     end
   end
 
-  defp collect_triggers(document_triggers, matcher_validator, triggers, count) do
+  defp collect_triggers(document_triggers, matcher_validator, timezones, triggers, count) do
     document_triggers
     |> Enum.sort_by(&Map.get(&1, "id"))
     |> Enum.reduce_while({:ok, triggers, count}, fn attributes, {:ok, triggers, count} ->
-      collect_trigger(attributes, matcher_validator, triggers, count)
+      collect_trigger(attributes, matcher_validator, timezones, triggers, count)
     end)
   end
 
-  defp collect_trigger(attributes, matcher_validator, triggers, count) do
+  defp collect_trigger(attributes, matcher_validator, timezones, triggers, count) do
     id = attributes["id"]
 
     cond do
@@ -133,7 +219,7 @@ defmodule ClusterMurmur.Config.Triggers do
         {:halt, {:error, :too_many_triggers}}
 
       true ->
-        case build_trigger(attributes, matcher_validator) do
+        case build_trigger(attributes, matcher_validator, timezones) do
           {:ok, trigger} ->
             {:cont, {:ok, Map.put(triggers, trigger.id, trigger), count + 1}}
 
@@ -143,7 +229,7 @@ defmodule ClusterMurmur.Config.Triggers do
     end
   end
 
-  defp build_trigger(attributes, matcher_validator) do
+  defp build_trigger(%{"event" => _event} = attributes, matcher_validator, _timezones) do
     with {:ok, id} <- validate_id(attributes["id"]),
          {:ok, matcher} <- validate_matcher(attributes["event"]["match"], matcher_validator),
          {:ok, binding} <- validate_id(attributes["action"]["binding"]),
@@ -158,6 +244,25 @@ defmodule ClusterMurmur.Config.Triggers do
        }}
     end
   end
+
+  defp build_trigger(%{"schedule" => schedule} = attributes, _matcher_validator, timezones) do
+    with {:ok, id} <- validate_id(attributes["id"]),
+         {:ok, cron} <- validate_cron(schedule["cron"]),
+         {:ok, timezone} <- validate_timezone(schedule["timezone"], timezones),
+         {:ok, event} <- validate_emitted_event(attributes["action"]["event"]) do
+      {:ok,
+       %ScheduleTrigger{
+         id: id,
+         cron: cron,
+         timezone: timezone,
+         action: :emit_event,
+         event: event
+       }}
+    end
+  end
+
+  defp build_trigger(_attributes, _matcher_validator, _timezones),
+    do: {:error, :invalid_trigger_document}
 
   defp validate_id(value) do
     case Value.id(value) do
@@ -178,6 +283,91 @@ defmodule ClusterMurmur.Config.Triggers do
     case Duration.parse(value) do
       {:ok, milliseconds} -> {:ok, milliseconds}
       {:error, _reason} -> {:error, :invalid_trigger_document}
+    end
+  end
+
+  defp validate_cron(value)
+       when is_binary(value) and byte_size(value) <= @max_cron_bytes do
+    fields = String.split(value, " ", trim: false)
+
+    with true <- String.valid?(value),
+         5 <- length(fields),
+         false <- Enum.any?(fields, &(&1 == "")),
+         true <- standard_cron_fields?(fields),
+         {:ok, expression} <- parse_cron(value) do
+      {:ok, expression}
+    else
+      _failure -> {:error, :invalid_trigger_document}
+    end
+  end
+
+  defp validate_cron(_value), do: {:error, :invalid_trigger_document}
+
+  defp standard_cron_fields?([minute, hour, day, month, weekday]) do
+    Enum.all?([minute, hour, day], &numeric_cron_field?/1) and
+      named_cron_field?(month, @month_names) and
+      named_cron_field?(weekday, @weekday_names) and
+      unambiguous_day_fields?(day, weekday)
+  end
+
+  defp standard_cron_fields?(_fields), do: false
+
+  defp unambiguous_day_fields?(day, weekday), do: day == "*" or weekday == "*"
+
+  defp numeric_cron_field?(field) do
+    Regex.match?(~r/\A[0-9*,\/-]+\z/, field) and valid_step_divisors?(field)
+  end
+
+  defp named_cron_field?(field, allowed_names) do
+    Regex.match?(~r/\A[0-9A-Za-z*,\/-]+\z/, field) and
+      valid_step_divisors?(field) and
+      Regex.scan(~r/[A-Za-z]+/, field)
+      |> List.flatten()
+      |> Enum.all?(&(String.upcase(&1) in allowed_names))
+  end
+
+  defp valid_step_divisors?(field) do
+    field
+    |> String.split(",")
+    |> Enum.all?(fn component ->
+      case String.split(component, "/") do
+        [base] -> base != ""
+        [base, divisor] -> base != "" and positive_decimal?(divisor)
+        _parts -> false
+      end
+    end)
+  end
+
+  defp positive_decimal?(value) do
+    Regex.match?(~r/\A[0-9]+\z/, value) and String.to_integer(value) > 0
+  end
+
+  defp parse_cron(value) do
+    case Crontab.CronExpression.Parser.parse(value, false) do
+      {:ok, expression} -> {:ok, expression}
+      {:error, _reason} -> {:error, :invalid_trigger_document}
+      _other -> {:error, :invalid_trigger_document}
+    end
+  rescue
+    _error -> {:error, :invalid_trigger_document}
+  catch
+    _kind, _reason -> {:error, :invalid_trigger_document}
+  end
+
+  defp validate_timezone(value, timezones)
+       when is_binary(value) and byte_size(value) <= @max_timezone_bytes do
+    if String.valid?(value) and MapSet.member?(timezones, value),
+      do: {:ok, value},
+      else: {:error, :invalid_trigger_document}
+  end
+
+  defp validate_timezone(_value, _timezones), do: {:error, :invalid_trigger_document}
+
+  defp validate_emitted_event(attributes) do
+    with {:ok, type} <- validate_id(attributes["type"]),
+         {:ok, group} <- validate_id(attributes["group"]),
+         {:ok, subject} <- validate_id(attributes["subject"]) do
+      {:ok, %EmittedEvent{type: type, group: group, subject: subject}}
     end
   end
 end

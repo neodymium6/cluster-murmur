@@ -10,7 +10,7 @@ defmodule ClusterMurmur.MixProject do
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      escript: [main_module: ClusterMurmur.CLI, name: "cluster-murmur"]
+      escript: [main_module: ClusterMurmur.CLI, name: "cluster-murmur", app: nil]
     ]
   end
 
@@ -23,7 +23,9 @@ defmodule ClusterMurmur.MixProject do
 
   defp deps do
     [
+      {:crontab, "~> 1.2"},
       {:ex_json_schema, "~> 0.11.4"},
+      {:time_zone_info, "~> 0.7"},
       {:yamerl, "~> 0.10.0"}
     ]
   end
