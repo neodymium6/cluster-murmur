@@ -2,9 +2,8 @@ defmodule ClusterMurmur.Config.Value do
   @moduledoc """
   Validates scalar values shared by version 1 configuration documents.
 
-  The functions preserve valid values, except probabilities and weights are
-  normalized to floats. They return stable error classes without echoing the
-  rejected configuration value.
+  The functions preserve valid values and return stable error classes without
+  echoing the rejected configuration value.
   """
 
   @type validation_error ::
@@ -21,14 +20,14 @@ defmodule ClusterMurmur.Config.Value do
   def positive_integer(value) when is_integer(value) and value > 0, do: {:ok, value}
   def positive_integer(_value), do: {:error, :invalid_positive_integer}
 
-  @spec probability(term()) :: {:ok, float()} | {:error, :invalid_probability}
+  @spec probability(term()) :: {:ok, number()} | {:error, :invalid_probability}
   def probability(value) when is_number(value) and value >= 0 and value <= 1,
-    do: {:ok, value / 1}
+    do: {:ok, value}
 
   def probability(_value), do: {:error, :invalid_probability}
 
-  @spec weight(term()) :: {:ok, float()} | {:error, :invalid_weight}
-  def weight(value) when is_number(value) and value >= 0, do: {:ok, value / 1}
+  @spec weight(term()) :: {:ok, number()} | {:error, :invalid_weight}
+  def weight(value) when is_number(value) and value >= 0, do: {:ok, value}
   def weight(_value), do: {:error, :invalid_weight}
 
   defp valid_id?(value) do

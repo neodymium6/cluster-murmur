@@ -26,19 +26,22 @@ defmodule ClusterMurmur.Config.ValueTest do
     end
   end
 
-  test "normalizes probabilities within the inclusive range" do
-    assert Value.probability(0) == {:ok, 0.0}
+  test "accepts probabilities within the inclusive range" do
+    assert Value.probability(0) == {:ok, 0}
     assert Value.probability(0.25) == {:ok, 0.25}
-    assert Value.probability(1) == {:ok, 1.0}
+    assert Value.probability(1) == {:ok, 1}
 
     for value <- [-0.01, 1.01, "0.5", nil] do
       assert Value.probability(value) == {:error, :invalid_probability}
     end
   end
 
-  test "normalizes non-negative weights" do
-    assert Value.weight(0) == {:ok, 0.0}
+  test "accepts non-negative weights without lossy numeric conversion" do
+    large_integer = Integer.pow(10, 400)
+
+    assert Value.weight(0) == {:ok, 0}
     assert Value.weight(2.5) == {:ok, 2.5}
+    assert Value.weight(large_integer) == {:ok, large_integer}
 
     for value <- [-0.01, "1", nil] do
       assert Value.weight(value) == {:error, :invalid_weight}
