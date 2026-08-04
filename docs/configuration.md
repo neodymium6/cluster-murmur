@@ -141,9 +141,9 @@ following is found:
 - an unreadable, oversized, empty, or insecurely referenced secret file; or
 - a configuration that would remove a required conversation bound.
 
-IDs are portable ASCII strings suitable for persistence keys. They start with
-an ASCII letter or digit and continue with ASCII letters, digits, `.`, `_`, or
-`-`. Human-facing fields such as `display_name` may use Unicode. Durations use
+IDs are portable ASCII strings of at most 16 KiB suitable for persistence keys.
+They start with an ASCII letter or digit and continue with ASCII letters,
+digits, `.`, `_`, or `-`. Human-facing fields such as `display_name` may use Unicode. Durations use
 an integer followed by one of `ms`, `s`, `m`, `h`, or `d`. Times use 24-hour
 `HH:MM` notation. Timezones use IANA names such as `Asia/Tokyo` or `Etc/UTC`.
 
@@ -394,8 +394,8 @@ compare equally.
 
 Implemented event-trigger documents accept at most 256 triggers across all
 included files. Trigger IDs must be unique, `action.type` is currently limited
-to `start_conversation`, cooldowns use the duration grammar, and binding
-references remain unresolved until complete configuration assembly.
+to `start_conversation`, cooldowns use the duration grammar up to 365 days, and
+binding references remain unresolved until complete configuration assembly.
 
 The complete configuration loader resolves each event trigger's binding against
 the assembled binding namespace and rejects unknown references. It validates

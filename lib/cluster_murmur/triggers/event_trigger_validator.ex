@@ -7,11 +7,14 @@ defmodule ClusterMurmur.Triggers.EventTriggerValidator do
   """
 
   alias ClusterMurmur.Events.{Matcher, MatcherEvaluator}
+  alias ClusterMurmur.DomainLimits
   alias ClusterMurmur.Triggers.EventTrigger
 
   @event_trigger_keys EventTrigger.__struct__() |> Map.keys()
   @event_trigger_key_count length(@event_trigger_keys)
   @id_pattern ~r/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/
+  @max_id_bytes DomainLimits.max_id_bytes()
+  @max_cooldown_ms DomainLimits.max_interval_ms()
 
   @type error :: :invalid_trigger | :invalid_trigger_matcher
 
@@ -26,7 +29,8 @@ defmodule ClusterMurmur.Triggers.EventTriggerValidator do
           cooldown_ms: cooldown_ms
         } = trigger
       )
-      when is_binary(id) and is_binary(binding) and is_integer(cooldown_ms) and cooldown_ms >= 0 do
+      when is_binary(id) and is_binary(binding) and is_integer(cooldown_ms) and cooldown_ms >= 0 and
+             cooldown_ms <= @max_cooldown_ms do
     with true <- exact_keys?(trigger),
          true <- valid_id?(id),
          true <- valid_id?(binding),
@@ -49,5 +53,8 @@ defmodule ClusterMurmur.Triggers.EventTriggerValidator do
       Enum.all?(@event_trigger_keys, &Map.has_key?(trigger, &1))
   end
 
-  defp valid_id?(value), do: String.valid?(value) and Regex.match?(@id_pattern, value)
+  defp valid_id?(value) do
+    byte_size(value) <= @max_id_bytes and String.valid?(value) and
+      Regex.match?(@id_pattern, value)
+  end
 end

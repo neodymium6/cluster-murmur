@@ -6,6 +6,8 @@ defmodule ClusterMurmur.Config.Value do
   echoing the rejected configuration value.
   """
 
+  alias ClusterMurmur.DomainLimits
+
   @type validation_error ::
           :invalid_environment_variable_name
           | :invalid_id
@@ -14,6 +16,7 @@ defmodule ClusterMurmur.Config.Value do
           | :invalid_weight
 
   @max_environment_variable_name_bytes 128
+  @max_id_bytes DomainLimits.max_id_bytes()
 
   @spec environment_variable_name(term()) ::
           {:ok, String.t()} | {:error, :invalid_environment_variable_name}
@@ -30,7 +33,8 @@ defmodule ClusterMurmur.Config.Value do
 
   @spec id(term()) :: {:ok, String.t()} | {:error, :invalid_id}
   def id(value) when is_binary(value) do
-    if String.valid?(value) and Regex.match?(~r/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/, value) do
+    if byte_size(value) <= @max_id_bytes and String.valid?(value) and
+         Regex.match?(~r/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/, value) do
       {:ok, value}
     else
       {:error, :invalid_id}

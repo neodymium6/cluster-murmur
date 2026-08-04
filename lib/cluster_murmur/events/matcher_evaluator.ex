@@ -10,6 +10,7 @@ defmodule ClusterMurmur.Events.MatcherEvaluator do
   alias ClusterMurmur.Events.Matcher
   alias ClusterMurmur.Events.Matcher.Predicate
   alias ClusterMurmur.Events.Validator
+  alias ClusterMurmur.DomainLimits
 
   @top_level_fields ["type", "source", "subject", "group", "severity"]
   @dynamic_key_pattern ~r/\A[A-Za-z0-9][A-Za-z0-9_-]*\z/
@@ -17,6 +18,8 @@ defmodule ClusterMurmur.Events.MatcherEvaluator do
   @max_values 32
   @max_field_bytes 512
   @max_string_value_bytes 1_024
+  @max_safe_integer DomainLimits.max_safe_integer()
+  @max_float DomainLimits.max_float()
   @matcher_keys Matcher.__struct__() |> Map.keys()
   @matcher_key_count length(@matcher_keys)
   @predicate_keys Predicate.__struct__() |> Map.keys()
@@ -106,7 +109,13 @@ defmodule ClusterMurmur.Events.MatcherEvaluator do
          %Predicate{field: field, operator: operator, value: value, values: []} = predicate
        )
        when operator in [:greater_than, :less_than] and is_number(value),
-       do: with(true <- exact_predicate?(predicate), :ok <- validate_field(field), do: :ok)
+       do:
+         with(
+           true <- exact_predicate?(predicate),
+           :ok <- validate_field(field),
+           :ok <- validate_scalar(value),
+           do: :ok
+         )
 
   defp validate_predicate(_predicate), do: {:error, :invalid_matcher}
 
@@ -134,7 +143,17 @@ defmodule ClusterMurmur.Events.MatcherEvaluator do
       else: {:error, :invalid_matcher}
   end
 
-  defp validate_scalar(value) when is_nil(value) or is_boolean(value) or is_number(value), do: :ok
+  defp validate_scalar(value) when is_nil(value) or is_boolean(value), do: :ok
+
+  defp validate_scalar(value)
+       when is_integer(value) and value >= -@max_safe_integer and value <= @max_safe_integer,
+       do: :ok
+
+  defp validate_scalar(value) when is_float(value) do
+    if value == value and value >= -@max_float and value <= @max_float,
+      do: :ok,
+      else: {:error, :invalid_matcher}
+  end
 
   defp validate_scalar(value)
        when is_binary(value) and byte_size(value) <= @max_string_value_bytes do

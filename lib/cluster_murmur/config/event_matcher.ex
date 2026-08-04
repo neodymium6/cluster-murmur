@@ -8,6 +8,7 @@ defmodule ClusterMurmur.Config.EventMatcher do
   """
 
   alias ClusterMurmur.Config.SchemaValidator
+  alias ClusterMurmur.DomainLimits
   alias ClusterMurmur.Events.Matcher
   alias ClusterMurmur.Events.Matcher.Predicate
 
@@ -19,6 +20,8 @@ defmodule ClusterMurmur.Config.EventMatcher do
   @max_values 32
   @max_field_bytes 512
   @max_string_value_bytes 1_024
+  @max_safe_integer DomainLimits.max_safe_integer()
+  @max_float DomainLimits.max_float()
 
   @schema %{
     "$schema" => @draft,
@@ -167,9 +170,12 @@ defmodule ClusterMurmur.Config.EventMatcher do
 
   defp build_predicate(field, %{"operator" => operator, "value" => value} = document)
        when operator in ["greater_than", "less_than"] and is_number(value) do
-    if exact_keys?(document, ["field", "operator", "value"]),
-      do: {:ok, %Predicate{field: field, operator: operator_atom(operator), value: value}},
-      else: {:error, :invalid_event_matcher}
+    with true <- exact_keys?(document, ["field", "operator", "value"]),
+         {:ok, value} <- validate_scalar(value) do
+      {:ok, %Predicate{field: field, operator: operator_atom(operator), value: value}}
+    else
+      _failure -> {:error, :invalid_event_matcher}
+    end
   end
 
   defp build_predicate(_field, _document), do: {:error, :invalid_event_matcher}
@@ -198,8 +204,18 @@ defmodule ClusterMurmur.Config.EventMatcher do
 
   defp validate_values(_values), do: {:error, :invalid_event_matcher}
 
-  defp validate_scalar(value) when is_nil(value) or is_boolean(value) or is_number(value),
+  defp validate_scalar(value) when is_nil(value) or is_boolean(value),
     do: {:ok, value}
+
+  defp validate_scalar(value)
+       when is_integer(value) and value >= -@max_safe_integer and value <= @max_safe_integer,
+       do: {:ok, value}
+
+  defp validate_scalar(value) when is_float(value) do
+    if value == value and value >= -@max_float and value <= @max_float,
+      do: {:ok, value},
+      else: {:error, :invalid_event_matcher}
+  end
 
   defp validate_scalar(value)
        when is_binary(value) and byte_size(value) <= @max_string_value_bytes do

@@ -209,8 +209,10 @@ defmodule ClusterMurmur.Config.TriggersTest do
   test "validates IDs, cooldowns, and event matchers semantically" do
     invalid = [
       trigger("invalid id", "characters", "30m", [predicate("type", "exists")]),
+      trigger(String.duplicate("a", 16 * 1_024 + 1), "characters", "30m"),
       trigger("monitoring", "invalid binding", "30m", [predicate("type", "exists")]),
       trigger("monitoring", "characters", "later", [predicate("type", "exists")]),
+      trigger("monitoring", "characters", "366d", [predicate("type", "exists")]),
       trigger("monitoring", "characters", "30m", [predicate("payload.value", "exists")]),
       trigger("monitoring", "characters", "30m", [
         %{"field" => "type", "operator" => "matches", "value" => ".*"}

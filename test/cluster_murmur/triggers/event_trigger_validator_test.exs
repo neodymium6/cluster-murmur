@@ -18,9 +18,12 @@ defmodule ClusterMurmur.Triggers.EventTriggerValidatorTest do
           %{},
           %{__struct__: EventTrigger},
           %{valid | id: "invalid id"},
+          %{valid | id: String.duplicate("a", 16 * 1_024 + 1)},
           %{valid | binding: "invalid binding"},
+          %{valid | binding: String.duplicate("a", 16 * 1_024 + 1)},
           %{valid | action: :emit_event},
           %{valid | cooldown_ms: -1},
+          %{valid | cooldown_ms: 365 * 86_400_000 + 1},
           %{valid | matcher: %{}},
           forged
         ] do
@@ -38,12 +41,26 @@ defmodule ClusterMurmur.Triggers.EventTriggerValidatorTest do
       Enum.map(1..33, &%Predicate{field: "type", operator: :equals, value: &1})
 
     too_many_values = %Predicate{field: "type", operator: :in, values: Enum.to_list(1..33)}
+    unsafe_integer = 9_007_199_254_740_992
 
     invalid_matchers = [
       %Matcher{predicates: []},
       %Matcher{predicates: [valid_predicate | :improper_tail]},
       %Matcher{predicates: too_many_predicates},
       %Matcher{predicates: [too_many_values]},
+      %Matcher{
+        predicates: [%Predicate{field: "facts.count", operator: :equals, value: unsafe_integer}]
+      },
+      %Matcher{
+        predicates: [
+          %Predicate{field: "facts.count", operator: :greater_than, value: unsafe_integer}
+        ]
+      },
+      %Matcher{
+        predicates: [
+          %Predicate{field: "facts.count", operator: :in, values: [unsafe_integer]}
+        ]
+      },
       Map.put(valid_matcher, :unexpected_private_value, "private"),
       %Matcher{predicates: [Map.put(valid_predicate, :unexpected_private_value, "private")]}
     ]

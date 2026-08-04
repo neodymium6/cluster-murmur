@@ -9,6 +9,7 @@ defmodule ClusterMurmur.Config.Triggers do
   """
 
   alias ClusterMurmur.Config.{Duration, EventMatcher, LoadedDocument, SchemaValidator, Value}
+  alias ClusterMurmur.DomainLimits
   alias ClusterMurmur.Triggers.{ActiveHours, CronValidator}
   alias ClusterMurmur.Triggers.{EmittedEvent, EventTrigger, ScheduleTrigger, StochasticTrigger}
 
@@ -17,7 +18,7 @@ defmodule ClusterMurmur.Config.Triggers do
   @max_triggers 256
   @max_cron_bytes 256
   @max_timezone_bytes 128
-  @max_interval_ms 365 * 86_400_000
+  @max_interval_ms DomainLimits.max_interval_ms()
   @max_daily_limit 10_000
   @month_names ~w(JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC)
   @weekday_names ~w(MON TUE WED THU FRI SAT SUN)
@@ -372,8 +373,9 @@ defmodule ClusterMurmur.Config.Triggers do
 
   defp validate_cooldown(value) do
     case Duration.parse(value) do
-      {:ok, milliseconds} -> {:ok, milliseconds}
+      {:ok, milliseconds} when milliseconds <= @max_interval_ms -> {:ok, milliseconds}
       {:error, _reason} -> {:error, :invalid_trigger_document}
+      _too_large -> {:error, :invalid_trigger_document}
     end
   end
 

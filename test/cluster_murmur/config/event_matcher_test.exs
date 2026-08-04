@@ -121,6 +121,7 @@ defmodule ClusterMurmur.Config.EventMatcherTest do
       %{},
       [],
       URI.parse("https://example.invalid"),
+      9_007_199_254_740_992,
       String.duplicate("a", 1_025),
       <<255>>,
       self()
@@ -130,6 +131,16 @@ defmodule ClusterMurmur.Config.EventMatcherTest do
       assert EventMatcher.parse(%{"all" => [predicate("type", "equals", value)]}) ==
                {:error, :invalid_event_matcher}
     end
+
+    assert EventMatcher.parse(%{
+             "all" => [
+               %{
+                 "field" => "facts.count",
+                 "operator" => "greater_than",
+                 "value" => 9_007_199_254_740_992
+               }
+             ]
+           }) == {:error, :invalid_event_matcher}
   end
 
   test "rejects duplicate predicates and duplicate membership values" do

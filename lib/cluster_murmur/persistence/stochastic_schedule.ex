@@ -11,10 +11,11 @@ defmodule ClusterMurmur.Persistence.StochasticSchedule do
   import Ecto.Changeset
 
   alias ClusterMurmur.Config.Value
+  alias ClusterMurmur.DomainLimits
 
   @derive {Inspect, only: []}
   @primary_key {:trigger_id, :string, autogenerate: false, redact: true}
-  @max_trigger_id_bytes 16 * 1_024
+  @max_trigger_id_bytes DomainLimits.max_id_bytes()
   @max_daily_count 10_000
   @attribute_keys [
     :trigger_id,
