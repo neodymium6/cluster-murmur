@@ -152,7 +152,10 @@ causes a Discord post. Comparison with persisted entity state produces events.
 
 An event is immutable and contains an ID, type, source, subject, group,
 severity, previous/current values, occurrence and observation times, dedupe and
-correlation keys, facts, and labels.
+correlation keys, facts, and labels. Before matching, persistence, or prompt
+construction, event timestamps are canonical UTC values and event payloads are
+validated as bounded JSON-compatible data with explicit depth, collection,
+node, string, and aggregate-size limits.
 
 Standard event types are:
 

@@ -17,7 +17,8 @@ also available. A local-only, value-free JSON Schema validation boundary,
 bounded version 1 event-group, persona, binding, and routing validation, a bounded
 persona-prompt file reader, and cross-category character catalog assembly are
 in place. The bounded version 1 event-matcher grammar and deterministic
-evaluation, event-trigger category validation, and complete startup
+evaluation share a bounded recursive event-value boundary. Event-trigger
+category validation and complete startup
 configuration assembly are also implemented. Matching event-trigger selection
 is deterministic and bounded. Standard five-field schedule-trigger and bounded
 shifted-exponential stochastic-trigger validation use a reviewed, embedded IANA
