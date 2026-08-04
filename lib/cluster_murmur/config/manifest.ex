@@ -22,7 +22,15 @@ defmodule ClusterMurmur.Config.Manifest do
   defstruct [:version, :includes]
 
   @type category :: :event_groups | :personas | :bindings | :triggers | :routing
-  @type includes :: %{required(category()) => [String.t()]}
+
+  @type includes :: %{
+          required(:event_groups) => [String.t()],
+          required(:personas) => [String.t()],
+          required(:bindings) => [String.t()],
+          required(:triggers) => [String.t()],
+          required(:routing) => [String.t()]
+        }
+
   @type t :: %__MODULE__{version: 1, includes: includes()}
 
   @type error ::
