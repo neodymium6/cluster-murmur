@@ -24,8 +24,9 @@ shifted-exponential stochastic-trigger validation use a reviewed, embedded IANA
 timezone snapshot without runtime updates. Pure shifted-exponential wait
 sampling is deterministic through injected randomness, and pure cron next-run
 calculation and stochastic active-hours evaluation have explicit DST behavior.
-Observation ingestion, persistence, trigger execution, LLM generation, and
-Discord publication are not implemented yet. Do not deploy this revision or
+Pure stochastic eligibility also combines local-date daily limits with active
+hours. Observation ingestion, persistence, trigger execution, LLM generation,
+and Discord publication are not implemented yet. Do not deploy this revision or
 connect it to infrastructure, model providers, or Discord.
 
 ## Boundary

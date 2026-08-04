@@ -403,6 +403,13 @@ crossing-midnight window is active from its start through local midnight and
 from midnight up to its end. Both instants in a repeated DST wall-clock minute
 have the same active-hours status.
 
+Daily limits use the trigger timezone's local calendar date. For a window that
+crosses midnight, executions after midnight count toward the new calendar date,
+not the date on which the window began. Active-hours exclusion takes precedence
+over a reached daily limit in the eligibility reason.
+Runtime eligibility requires the loaded execution count to be tagged with this
+calculated local date and rejects mismatched buckets.
+
 ## LLM provider
 
 The first provider uses an OpenAI-compatible API:
