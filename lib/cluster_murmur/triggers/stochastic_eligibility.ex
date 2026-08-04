@@ -46,6 +46,19 @@ defmodule ClusterMurmur.Triggers.StochasticEligibility do
 
   def evaluate(_trigger, _datetime, _execution_count), do: {:error, :invalid_trigger}
 
+  @doc "Returns the local daily-limit bucket required at one supplied instant."
+  @spec local_bucket(term(), term()) :: {:ok, Date.t() | nil} | {:error, error()}
+  def local_bucket(%StochasticTrigger{} = trigger, %DateTime{} = datetime) do
+    with :ok <- validate_trigger(trigger),
+         {:ok, _active?} <- active?(trigger.active_hours, datetime),
+         {:ok, local_date} <- local_date(trigger.daily_limit, trigger.active_hours, datetime) do
+      {:ok, local_date}
+    end
+  end
+
+  def local_bucket(%StochasticTrigger{}, _datetime), do: {:error, :invalid_datetime}
+  def local_bucket(_trigger, _datetime), do: {:error, :invalid_trigger}
+
   defp validate_trigger(%StochasticTrigger{
          distribution: :shifted_exponential,
          mean_interval_ms: mean,
