@@ -100,8 +100,13 @@ document. Keys must be strings. Decoding accepts only strings, nulls, booleans,
 integers, finite floats, sequences, and mappings. It rejects duplicate keys,
 anchors, aliases, tag directives, YAML versions other than 1.2, scalars larger
 than 16 KiB, more than 4,096 nodes, or collection nesting deeper than 16 levels.
-Prompt files are loaded through a separate bounded text-file interface in a
-future change.
+Prompt files are loaded separately from YAML. A prompt reference is a portable
+relative path of at most 512 bytes, resolved from the canonical persona source
+file. Parent components may address a sibling directory, but the canonical
+regular-file target must remain inside the configuration root and use portable
+ASCII path components. Prompt files must be non-empty, valid UTF-8, and no
+larger than 64 KiB. Canonical resolution follows at most 40 symlinks. Prompt
+errors do not include paths or contents.
 
 ## Validation
 
