@@ -77,8 +77,11 @@ defmodule ClusterMurmur.Events.ValidatorTest do
     too_many_items = Enum.to_list(1..257)
     oversized_key = String.duplicate("k", 513)
 
-    too_deep =
-      Enum.reduce(1..9, "leaf", fn depth, nested -> %{"level-#{depth}" => nested} end)
+    eight_levels =
+      Enum.reduce(1..7, %{}, fn depth, nested -> %{"level-#{depth}" => nested} end)
+
+    nine_levels =
+      Enum.reduce(1..8, %{}, fn depth, nested -> %{"level-#{depth}" => nested} end)
 
     aggregate_overflow =
       Map.new(1..5, &{"key-#{&1}", String.duplicate("a", 16 * 1_024)})
@@ -89,12 +92,14 @@ defmodule ClusterMurmur.Events.ValidatorTest do
           too_many_entries,
           %{"items" => too_many_items},
           %{oversized_key => true},
-          %{"nested" => too_deep},
+          nine_levels,
           aggregate_overflow,
           node_overflow
         ] do
       assert Validator.validate(event(facts: facts)) == {:error, :invalid_event}
     end
+
+    assert Validator.validate(event(facts: eight_levels)) == :ok
   end
 
   test "matcher evaluation applies the shared bounded event boundary" do

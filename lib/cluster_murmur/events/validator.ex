@@ -106,9 +106,6 @@ defmodule ClusterMurmur.Events.Validator do
   defp validate_optional_datetime(nil), do: :ok
   defp validate_optional_datetime(datetime), do: validate_datetime(datetime)
 
-  defp validate_json(_value, depth, _budget) when depth > @max_depth,
-    do: {:error, :invalid_event}
-
   defp validate_json(nil, _depth, budget), do: consume(budget, 1, 0)
   defp validate_json(value, _depth, budget) when is_boolean(value), do: consume(budget, 1, 0)
 
@@ -129,7 +126,7 @@ defmodule ClusterMurmur.Events.Validator do
     do: {:error, :invalid_event}
 
   defp validate_json(%{} = value, depth, budget)
-       when map_size(value) <= @max_collection_entries do
+       when depth < @max_depth and map_size(value) <= @max_collection_entries do
     with {:ok, budget} <- consume(budget, 1, 0) do
       Enum.reduce_while(value, {:ok, budget}, fn {key, nested}, {:ok, current} ->
         with {:ok, current} <- validate_key(key, current),
@@ -142,13 +139,15 @@ defmodule ClusterMurmur.Events.Validator do
     end
   end
 
-  defp validate_json([head | tail], depth, budget) do
+  defp validate_json([head | tail], depth, budget) when depth < @max_depth do
     with {:ok, budget} <- consume(budget, 1, 0) do
       validate_list([head | tail], depth, budget, 0)
     end
   end
 
-  defp validate_json([], _depth, budget), do: consume(budget, 1, 0)
+  defp validate_json([], depth, budget) when depth < @max_depth,
+    do: consume(budget, 1, 0)
+
   defp validate_json(_value, _depth, _budget), do: {:error, :invalid_event}
 
   defp validate_list([], _depth, budget, _count), do: {:ok, budget}
