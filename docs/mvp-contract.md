@@ -346,6 +346,7 @@ correlation_key
 facts
 labels
 occurred_at
+observed_at
 inserted_at
 ```
 
