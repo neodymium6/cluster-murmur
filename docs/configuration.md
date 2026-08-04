@@ -76,8 +76,10 @@ filename rules also apply to canonical targets. Safe symlinks inside the root
 are canonicalized with a limit of 40 symlink expansions per resolved path. The
 configuration tree must be trusted and read-only until loading finishes.
 Results are deduplicated and sorted, so glob expansion order has no semantic
-meaning. Configuration is loaded once at startup; hot reload is outside the
-MVP.
+meaning. Identical patterns are evaluated once when shared by categories. The
+1,024 inspected-entry and 256 unique-file budgets apply across the complete
+manifest, not independently to each category. Configuration is loaded once at
+startup; hot reload is outside the MVP.
 
 Each YAML file is limited to 256 KiB and must contain exactly one mapping-rooted
 document. Keys must be strings. Decoding accepts only strings, nulls, booleans,

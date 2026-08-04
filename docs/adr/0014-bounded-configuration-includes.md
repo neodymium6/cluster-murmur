@@ -31,6 +31,12 @@ file. Apply the portable filename grammar to canonical targets as well as
 patterns. Return unique canonical paths in lexical order so filesystem
 enumeration order has no semantic effect.
 
+When resolving a versioned manifest, share the inspected-entry and unique-file
+budgets across all include categories. Cache identical patterns across
+categories so the same wildcard directory is not listed repeatedly. Return
+separate sorted file lists per category while counting canonical files once for
+the global limit.
+
 The configuration tree must remain trusted and read-only from resolution until
 the loader finishes reading the returned canonical paths. Path-only resolution
 cannot prevent a writable ancestor from being replaced between filesystem

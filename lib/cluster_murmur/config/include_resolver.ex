@@ -6,6 +6,8 @@ defmodule ClusterMurmur.Config.IncludeResolver do
   `*` within a path component, but do not support recursive globs or other glob
   operators. Every pattern must resolve to at least one regular file. Returned
   paths are canonical, unique, and sorted so filesystem order has no effect.
+  Category-aware resolution shares traversal and file budgets across the
+  entire manifest and returns a deterministic file list for each category.
   """
 
   @max_patterns 64
@@ -28,21 +30,57 @@ defmodule ClusterMurmur.Config.IncludeResolver do
           | :too_many_included_files
 
   @spec resolve(Path.t(), term()) :: {:ok, [Path.t()]} | {:error, error()}
-  def resolve(config_path, patterns) when is_binary(config_path) and is_list(patterns) do
-    with :ok <- validate_pattern_count(patterns),
-         {:ok, root} <- config_root(config_path),
-         {:ok, files} <- resolve_patterns(root, Enum.uniq(patterns)) do
-      {:ok, files |> MapSet.to_list() |> Enum.sort()}
+  def resolve(config_path, patterns) when is_binary(config_path) do
+    with {:ok, categories} <- resolve_categories(config_path, %{all: patterns}) do
+      {:ok, Map.fetch!(categories, :all)}
     end
   end
 
   def resolve(_config_path, _patterns), do: {:error, :invalid_includes}
 
-  defp validate_pattern_count(patterns) do
-    if length(patterns) <= @max_patterns,
-      do: :ok,
-      else: {:error, :too_many_include_patterns}
+  @doc "Resolves manifest includes with limits shared across every category."
+  @spec resolve_categories(Path.t(), term()) ::
+          {:ok, %{optional(atom()) => [Path.t()]}} | {:error, error()}
+  def resolve_categories(config_path, categories)
+      when is_binary(config_path) and is_map(categories) do
+    with {:ok, entries} <- validate_categories(categories),
+         {:ok, root} <- config_root(config_path),
+         {:ok, state} <- resolve_category_entries(root, entries) do
+      {:ok, finalize_categories(state.categories)}
+    end
   end
+
+  def resolve_categories(_config_path, _categories), do: {:error, :invalid_includes}
+
+  defp validate_categories(categories) do
+    categories
+    |> Map.to_list()
+    |> Enum.sort_by(fn {category, _patterns} -> category end)
+    |> Enum.reduce_while({:ok, [], 0}, fn
+      {category, patterns}, {:ok, entries, count} when is_atom(category) ->
+        case count_patterns(patterns, count) do
+          {:ok, count} -> {:cont, {:ok, [{category, patterns} | entries], count}}
+          {:error, reason} -> {:halt, {:error, reason}}
+        end
+
+      _entry, _state ->
+        {:halt, {:error, :invalid_includes}}
+    end)
+    |> case do
+      {:ok, entries, _count} -> {:ok, Enum.reverse(entries)}
+      error -> error
+    end
+  end
+
+  defp count_patterns([], count), do: {:ok, count}
+
+  defp count_patterns([_pattern | remaining], count) when count < @max_patterns,
+    do: count_patterns(remaining, count + 1)
+
+  defp count_patterns([_pattern | _remaining], _count),
+    do: {:error, :too_many_include_patterns}
+
+  defp count_patterns(_patterns, _count), do: {:error, :invalid_includes}
 
   defp config_root(config_path) do
     with {:ok, root} <- canonical_path(Path.dirname(config_path)),
@@ -55,28 +93,70 @@ defmodule ClusterMurmur.Config.IncludeResolver do
     end
   end
 
-  defp resolve_patterns(root, patterns) do
-    initial = %{files: MapSet.new(), inspected_entries: 0}
+  defp resolve_category_entries(root, entries) do
+    initial = %{
+      categories: %{},
+      files: MapSet.new(),
+      inspected_entries: 0,
+      resolved_patterns: %{}
+    }
 
-    Enum.reduce_while(patterns, {:ok, initial}, fn pattern, {:ok, state} ->
-      with :ok <- validate_pattern(pattern),
-           {:ok, resolved, inspected_entries} <-
-             walk_components(
-               [root],
-               Path.split(pattern),
-               root,
-               state.inspected_entries
-             ),
-           {:ok, files} <- combine_files(state.files, resolved) do
-        {:cont, {:ok, %{files: files, inspected_entries: inspected_entries}}}
-      else
+    Enum.reduce_while(entries, {:ok, initial}, fn {category, patterns}, {:ok, state} ->
+      state = put_in(state.categories[category], MapSet.new())
+
+      case resolve_category_patterns(root, category, patterns, state) do
+        {:ok, state} -> {:cont, {:ok, state}}
         {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
-    |> case do
-      {:ok, %{files: files}} -> {:ok, files}
-      error -> error
+  end
+
+  defp resolve_category_patterns(root, category, patterns, state) do
+    Enum.reduce_while(patterns, {:ok, state}, fn pattern, {:ok, state} ->
+      case resolve_pattern(root, pattern, state) do
+        {:ok, resolved, state} ->
+          category_files = Enum.reduce(resolved, state.categories[category], &MapSet.put(&2, &1))
+          {:cont, {:ok, put_in(state.categories[category], category_files)}}
+
+        {:error, reason} ->
+          {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp resolve_pattern(root, pattern, state) do
+    with :ok <- validate_pattern(pattern) do
+      case Map.fetch(state.resolved_patterns, pattern) do
+        {:ok, resolved} -> {:ok, resolved, state}
+        :error -> resolve_new_pattern(root, pattern, state)
+      end
     end
+  end
+
+  defp resolve_new_pattern(root, pattern, state) do
+    with {:ok, resolved, inspected_entries} <-
+           walk_components(
+             [root],
+             Path.split(pattern),
+             root,
+             state.inspected_entries
+           ),
+         {:ok, files} <- combine_files(state.files, resolved) do
+      state = %{
+        state
+        | files: files,
+          inspected_entries: inspected_entries,
+          resolved_patterns: Map.put(state.resolved_patterns, pattern, resolved)
+      }
+
+      {:ok, resolved, state}
+    end
+  end
+
+  defp finalize_categories(categories) do
+    Map.new(categories, fn {category, files} ->
+      {category, files |> MapSet.to_list() |> Enum.sort()}
+    end)
   end
 
   defp validate_pattern(pattern) when is_binary(pattern) do
