@@ -314,6 +314,12 @@ strings are limited to 1,024 UTF-8 bytes. Configuration cannot contain
 disjunctions, regular expressions, deeper paths, Elixir, Lua, JavaScript,
 shell, SQL, PromQL, or arbitrary HTTP expressions.
 
+Matcher evaluation is deterministic application code. All predicates are
+conjunctive; a missing dynamic key never matches, `exists` requires a non-null
+value, scalar comparisons require a scalar event value, and ordered comparisons
+require a numeric event value. Integer and equivalent floating-point values
+compare equally.
+
 Implemented event-trigger documents accept at most 256 triggers across all
 included files. Trigger IDs must be unique, `action.type` is currently limited
 to `start_conversation`, cooldowns use the duration grammar, and binding
