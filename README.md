@@ -21,9 +21,10 @@ evaluation, event-trigger category validation, and complete startup
 configuration assembly are also implemented. Matching event-trigger selection
 is deterministic and bounded. Standard five-field schedule-trigger and bounded
 shifted-exponential stochastic-trigger validation use a reviewed, embedded IANA
-timezone snapshot without runtime updates. Pure shifted-exponential wait
-sampling is deterministic through injected randomness, and pure cron next-run
-calculation and stochastic active-hours evaluation have explicit DST behavior.
+timezone snapshot without runtime updates. Pure shifted-exponential next-run
+calculation is deterministic from a supplied UTC instant and injected
+randomness, and pure cron next-run calculation and stochastic active-hours
+evaluation have explicit DST behavior.
 Pure stochastic eligibility also combines local-date daily limits with active
 hours. A supervised, single-writer Ecto/SQLite repository now provides the
 runtime persistence foundation. The first constrained migration and redacted
