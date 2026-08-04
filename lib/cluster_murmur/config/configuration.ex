@@ -9,7 +9,7 @@ defmodule ClusterMurmur.Config.Configuration do
 
   alias ClusterMurmur.Config.{Bindings, Catalog, DocumentSet, EventGroups}
   alias ClusterMurmur.Config.{Personas, Routing, Triggers}
-  alias ClusterMurmur.Triggers.{EventTrigger, ScheduleTrigger}
+  alias ClusterMurmur.Triggers.{EventTrigger, ScheduleTrigger, StochasticTrigger}
 
   @derive {Inspect, only: [:version]}
   @enforce_keys [:version, :event_groups, :personas, :bindings, :triggers, :routing]
@@ -62,7 +62,8 @@ defmodule ClusterMurmur.Config.Configuration do
       {_id, %EventTrigger{binding: binding}}, :ok ->
         continue_if_known(bindings.bindings, binding, :unknown_trigger_binding)
 
-      {_id, %ScheduleTrigger{event: %{group: group}}}, :ok ->
+      {_id, %trigger{event: %{group: group}}}, :ok
+      when trigger in [ScheduleTrigger, StochasticTrigger] ->
         continue_if_known(event_groups.groups, group, :unknown_trigger_group)
 
       {_id, _trigger}, :ok ->
