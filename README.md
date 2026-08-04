@@ -6,10 +6,11 @@ persona-driven Discord messages and bounded conversations.
 
 ## Status
 
-Bootstrap only. The repository contains a minimal Elixir/OTP application,
-pinned development environment, CI entry point, architecture baseline, and
-initial decision records. Observation ingestion, persistence, triggers, LLM
-generation, and Discord publication are not implemented yet. Do not deploy
+Early foundation. The repository contains a minimal Elixir/OTP application,
+pinned development environment, CI entry point, architecture baseline, core
+domain values, external dependency behaviours, and deterministic observation
+state-transition classification. Observation ingestion, persistence, triggers,
+LLM generation, and Discord publication are not implemented yet. Do not deploy
 this revision or connect it to infrastructure, model providers, or Discord.
 
 ## Boundary

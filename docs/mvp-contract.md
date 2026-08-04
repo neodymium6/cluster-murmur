@@ -8,8 +8,9 @@ decisions; this document defines testable runtime invariants and completion
 criteria.
 
 The keywords **must**, **must not**, **should**, and **may** are normative. The
-repository is currently at the bootstrap stage, so none of this document should
-be read as a claim that the behavior is already implemented.
+repository is currently at the early foundation stage, so this document
+describes the completed target unless a capability is explicitly identified as
+implemented elsewhere.
 
 ## System boundary
 
@@ -126,7 +127,7 @@ clients:
 ```elixir
 defmodule ClusterMurmur.Clock do
   @callback now() :: DateTime.t()
-  @callback monotonic_time() :: integer()
+  @callback monotonic_time_ms() :: integer()
 end
 
 defmodule ClusterMurmur.Random do
@@ -136,17 +137,22 @@ defmodule ClusterMurmur.Random do
 end
 
 defmodule ClusterMurmur.Observers.Client do
-  @callback list_targets() :: {:ok, map()} | {:error, term()}
-  @callback call_tool(String.t(), map()) ::
-              {:ok, map()} | {:error, term()}
+  @callback list_targets() ::
+              {:ok, [%{required(:id) => String.t()}]}
+              | {:error, ClusterMurmur.ExternalError.t()}
+  @callback observe_target(String.t()) ::
+              {:ok, ClusterMurmur.Observations.Observation.t()}
+              | {:error, ClusterMurmur.ExternalError.t()}
 end
 
 defmodule ClusterMurmur.Generation.Provider do
-  @callback generate(map()) :: {:ok, map()} | {:error, term()}
+  @callback generate(map()) ::
+              {:ok, String.t()} | {:error, ClusterMurmur.ExternalError.t()}
 end
 
 defmodule ClusterMurmur.Discord.Publisher do
-  @callback publish(map()) :: {:ok, map()} | {:error, term()}
+  @callback publish(map()) ::
+              {:ok, String.t()} | {:error, ClusterMurmur.ExternalError.t()}
 end
 ```
 
@@ -154,9 +160,15 @@ Tests must be able to replace every behaviour with a deterministic fake.
 Persistence must similarly remain behind repository or store boundaries so
 selection and conversation policy do not depend directly on Ecto queries.
 
-The observer adapter must expose only named, bounded, read-only operations. The
-`call_tool/2` callback is not permission for generic MCP passthrough: tool names
-and arguments must be selected and validated by application code.
+The observer adapter exposes only named, bounded, read-only operations. A
+concrete adapter maps those operations to MCP tools internally, validates
+arguments, and normalizes responses without exposing tool names, arbitrary
+argument maps, or raw responses to application code.
+
+`Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
+finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`
+when its input is empty or all weights are zero. Callers must reject non-finite
+or negative weights before invoking the random adapter.
 
 ## Observation and event rules
 
