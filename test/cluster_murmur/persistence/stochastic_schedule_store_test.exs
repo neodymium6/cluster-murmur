@@ -159,4 +159,154 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
     assert StochasticScheduleStore.list_due(~U[2026-08-04 14:00:00.000000Z]) ==
              {:error, :storage_unavailable}
   end
+
+  test "records a completed due execution and advances its next run" do
+    assert {:ok, _initial} =
+             StochasticScheduleStore.restore_or_initialize(
+               "ambient",
+               ~U[2026-08-04 14:00:00.000000Z]
+             )
+
+    assert {:ok, advanced} =
+             StochasticScheduleStore.record_execution(
+               "ambient",
+               ~U[2026-08-04 14:00:00.000000Z],
+               ~U[2026-08-04 14:00:01.000000Z],
+               ~U[2026-08-04 18:00:00.000000Z],
+               nil
+             )
+
+    assert %StochasticSchedule{
+             last_run_at: ~U[2026-08-04 14:00:01.000000Z],
+             next_run_at: ~U[2026-08-04 18:00:00.000000Z],
+             daily_count: 0,
+             daily_count_date: nil
+           } = advanced
+  end
+
+  test "increments and rolls over local-date execution buckets" do
+    assert {:ok, _initial} =
+             StochasticScheduleStore.restore_or_initialize(
+               "ambient",
+               ~U[2026-08-04 14:00:00.000000Z]
+             )
+
+    assert {:ok, first} =
+             StochasticScheduleStore.record_execution(
+               "ambient",
+               ~U[2026-08-04 14:00:00.000000Z],
+               ~U[2026-08-04 14:00:01.000000Z],
+               ~U[2026-08-04 16:00:00.000000Z],
+               ~D[2026-08-04]
+             )
+
+    assert first.daily_count == 1
+    assert first.daily_count_date == ~D[2026-08-04]
+
+    assert {:ok, second} =
+             StochasticScheduleStore.record_execution(
+               "ambient",
+               ~U[2026-08-04 16:00:00.000000Z],
+               ~U[2026-08-04 16:00:01.000000Z],
+               ~U[2026-08-05 01:00:00.000000Z],
+               ~D[2026-08-04]
+             )
+
+    assert second.daily_count == 2
+    assert second.daily_count_date == ~D[2026-08-04]
+
+    assert {:ok, third} =
+             StochasticScheduleStore.record_execution(
+               "ambient",
+               ~U[2026-08-05 01:00:00.000000Z],
+               ~U[2026-08-05 01:00:01.000000Z],
+               ~U[2026-08-05 08:00:00.000000Z],
+               ~D[2026-08-05]
+             )
+
+    assert third.daily_count == 1
+    assert third.daily_count_date == ~D[2026-08-05]
+  end
+
+  test "does not mutate stale or not-yet-due schedule versions" do
+    assert {:ok, initial} =
+             StochasticScheduleStore.restore_or_initialize(
+               "ambient",
+               ~U[2026-08-04 14:00:00.000000Z]
+             )
+
+    for {expected_next_run_at, executed_at} <- [
+          {~U[2026-08-04 13:00:00.000000Z], ~U[2026-08-04 14:00:01.000000Z]},
+          {~U[2026-08-04 14:00:00.000000Z], ~U[2026-08-04 13:59:59.000000Z]}
+        ] do
+      assert StochasticScheduleStore.record_execution(
+               "ambient",
+               expected_next_run_at,
+               executed_at,
+               ~U[2026-08-04 18:00:00.000000Z],
+               nil
+             ) == {:error, :schedule_conflict}
+    end
+
+    assert Repo.get!(StochasticSchedule, "ambient") == initial
+  end
+
+  test "refuses to overflow a persisted daily bucket" do
+    assert {:ok, initial} =
+             StochasticScheduleStore.restore_or_initialize(
+               "ambient",
+               ~U[2026-08-04 14:00:00.000000Z]
+             )
+
+    assert {:ok, full_bucket} =
+             initial
+             |> StochasticSchedule.changeset(%{
+               daily_count: 10_000,
+               daily_count_date: ~D[2026-08-04]
+             })
+             |> Repo.update()
+
+    assert StochasticScheduleStore.record_execution(
+             "ambient",
+             ~U[2026-08-04 14:00:00.000000Z],
+             ~U[2026-08-04 14:00:01.000000Z],
+             ~U[2026-08-04 18:00:00.000000Z],
+             ~D[2026-08-04]
+           ) == {:error, :daily_limit_reached}
+
+    assert Repo.get!(StochasticSchedule, "ambient") == full_bucket
+  end
+
+  test "rejects invalid execution records before accessing storage" do
+    Repo.put_dynamic_repo(:missing_stochastic_schedule_repo)
+
+    invalid = [
+      {"invalid id", ~U[2026-08-04 14:00:00.000000Z], ~U[2026-08-04 14:00:01.000000Z],
+       ~U[2026-08-04 18:00:00.000000Z], nil},
+      {"ambient", nil, ~U[2026-08-04 14:00:01.000000Z], ~U[2026-08-04 18:00:00.000000Z], nil},
+      {"ambient", ~U[2026-08-04 14:00:00.000000Z], ~U[2026-08-04 14:00:01.000000Z],
+       ~U[2026-08-04 14:00:01.000000Z], nil},
+      {"ambient", ~U[2026-08-04 14:00:00.000000Z], ~U[2026-08-04 14:00:01.000000Z],
+       ~U[2026-08-04 18:00:00.000000Z], %{~D[2026-08-04] | month: 13}},
+      {"ambient", ~U[2026-08-04 14:00:00.000000Z], ~U[2026-08-04 14:00:01.000000Z],
+       ~U[2026-08-04 18:00:00.000000Z], %{~D[2026-08-04] | month: :invalid}}
+    ]
+
+    for arguments <- invalid do
+      assert apply(StochasticScheduleStore, :record_execution, Tuple.to_list(arguments)) ==
+               {:error, :invalid_schedule}
+    end
+  end
+
+  test "classifies unavailable execution writes" do
+    Repo.put_dynamic_repo(:missing_stochastic_schedule_repo)
+
+    assert StochasticScheduleStore.record_execution(
+             "private-trigger",
+             ~U[2026-08-04 14:00:00.000000Z],
+             ~U[2026-08-04 14:00:01.000000Z],
+             ~U[2026-08-04 18:00:00.000000Z],
+             nil
+           ) == {:error, :storage_unavailable}
+  end
 end

@@ -30,9 +30,11 @@ runtime persistence foundation. The first constrained migration and redacted
 record cover restart-safe stochastic schedule state. A bounded store can restore
 or initialize each configured schedule without overwriting durable state and
 list due schedules deterministically without claiming them. Due claiming and
-advancement are not implemented. Observation ingestion, trigger execution, LLM
-generation, and Discord publication are not implemented yet. Do not deploy this
-revision or connect it to infrastructure, model providers, or Discord.
+external execution are not implemented, while successful executions can be
+recorded optimistically by an explicit caller to advance the next run and daily
+bucket atomically. Observation ingestion, trigger execution, LLM generation,
+and Discord publication are not implemented yet. Do not deploy this revision or
+connect it to infrastructure, model providers, or Discord.
 
 ## Boundary
 
