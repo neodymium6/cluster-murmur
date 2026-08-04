@@ -13,10 +13,10 @@ identifiers.
 
 ## Loading model
 
-Configuration uses YAML 1.2. Duration, common scalar validation, and bounded
-include resolution are implemented, but YAML document loading and the remaining
-validation pipeline are still design targets. A fixed top-level file includes
-files by category:
+Configuration uses YAML 1.2. Bounded document decoding, duration and common
+scalar validation, and bounded include resolution are implemented, but the
+remaining validation pipeline is still a design target. A fixed top-level file
+includes files by category:
 
 ```text
 config/
@@ -72,6 +72,14 @@ configuration tree must be trusted and read-only until loading finishes.
 Results are deduplicated and sorted, so glob expansion order has no semantic
 meaning. Configuration is loaded once at startup; hot reload is outside the
 MVP.
+
+Each YAML file is limited to 256 KiB and must contain exactly one mapping-rooted
+document. Keys must be strings. Decoding accepts only strings, nulls, booleans,
+integers, finite floats, sequences, and mappings. It rejects duplicate keys,
+anchors, aliases, tag directives, YAML versions other than 1.2, scalars larger
+than 16 KiB, more than 4,096 nodes, or collection nesting deeper than 16 levels.
+Prompt files are loaded through a separate bounded text-file interface in a
+future change.
 
 ## Validation
 

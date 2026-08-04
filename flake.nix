@@ -28,6 +28,7 @@
           ./docs
           ./lib
           ./mix.exs
+          ./mix.lock
           ./test
         ];
       };
@@ -41,11 +42,13 @@
         {
           default = pkgs.mkShell {
             ELIXIR_ERL_OPTIONS = "+fnu";
+            MIX_REBAR3 = "${pkgs.rebar3}/bin/rebar3";
 
             packages = with pkgs; [
               actionlint
               beamPackages.elixir
               beamPackages.erlang
+              beamPackages.hex
               gh
               git
               gitleaks
@@ -64,6 +67,13 @@
         system:
         let
           pkgs = pkgsFor.${system};
+          mixDeps = pkgs.beamPackages.fetchMixDeps {
+            pname = "cluster-murmur-test-deps";
+            version = pkgs.lib.strings.removeSuffix "\n" (builtins.readFile ./VERSION);
+            src = source;
+            mixEnv = "test";
+            hash = "sha256-BJ3dgoW5brHsK2ZHzVHuFgdqfVNTWxZK0QQtklBWCGc=";
+          };
         in
         {
           application =
@@ -72,6 +82,8 @@
                 nativeBuildInputs = [
                   pkgs.beamPackages.elixir
                   pkgs.beamPackages.erlang
+                  pkgs.beamPackages.hex
+                  pkgs.rebar3
                 ];
               }
               ''
@@ -83,6 +95,9 @@
                 export MIX_HOME="$TMPDIR/mix"
                 export MIX_BUILD_PATH="$TMPDIR/build"
                 export MIX_DEPS_PATH="$TMPDIR/deps"
+                export MIX_REBAR3="${pkgs.rebar3}/bin/rebar3"
+                cp --no-preserve=mode -R ${mixDeps} "$MIX_DEPS_PATH"
+                chmod -R u+w "$MIX_DEPS_PATH"
                 mix format --check-formatted
                 mix compile --warnings-as-errors
                 mix test
