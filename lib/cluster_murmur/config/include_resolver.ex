@@ -96,6 +96,9 @@ defmodule ClusterMurmur.Config.IncludeResolver do
       String.contains?(pattern, "**") ->
         {:error, :invalid_include_pattern}
 
+      String.ends_with?(pattern, "/") or String.contains?(pattern, "//") ->
+        {:error, :invalid_include_pattern}
+
       true ->
         :ok
     end
@@ -166,7 +169,7 @@ defmodule ClusterMurmur.Config.IncludeResolver do
 
   defp glob_matcher(component) do
     source = component |> String.split("*") |> Enum.map_join(".*", &Regex.escape/1)
-    Regex.compile!("\\A" <> source <> "\\z")
+    Regex.compile!("\\A" <> source <> "\\z", "s")
   end
 
   defp glob_match?(name, component, matcher) do
@@ -213,7 +216,7 @@ defmodule ClusterMurmur.Config.IncludeResolver do
             stat_and_classify_target(canonical, final?)
         end
 
-      {:error, reason} when reason in [:eloop, :emlink, :enoent] ->
+      {:error, reason} when reason in [:eloop, :emlink, :enoent, :enotdir] ->
         {:error, :include_target_invalid}
 
       _failure ->
@@ -265,8 +268,8 @@ defmodule ClusterMurmur.Config.IncludeResolver do
   defp canonical_path(path) do
     components =
       if Path.type(path) == :absolute,
-        do: Path.split(path),
-        else: Path.split(File.cwd!()) ++ Path.split(path)
+        do: path_components(path),
+        else: Path.split(File.cwd!()) ++ path_components(path)
 
     resolve_components(components, nil, 0)
   end
@@ -292,8 +295,14 @@ defmodule ClusterMurmur.Config.IncludeResolver do
       {:ok, %File.Stat{type: :symlink}} ->
         {:error, :eloop}
 
-      {:ok, %File.Stat{}} ->
+      {:ok, %File.Stat{type: :directory}} when remaining != [] ->
         resolve_components(remaining, candidate, symlink_count)
+
+      {:ok, %File.Stat{}} when remaining == [] ->
+        resolve_components(remaining, candidate, symlink_count)
+
+      {:ok, %File.Stat{}} ->
+        {:error, :enotdir}
 
       {:error, reason} ->
         {:error, reason}
@@ -302,7 +311,7 @@ defmodule ClusterMurmur.Config.IncludeResolver do
 
   defp resolve_symlink(candidate, remaining, current, symlink_count) do
     with {:ok, target} <- File.read_link(candidate) do
-      target_components = Path.split(target)
+      target_components = path_components(target)
 
       if Path.type(target) == :absolute do
         resolve_components(target_components ++ remaining, nil, symlink_count + 1)
@@ -310,6 +319,14 @@ defmodule ClusterMurmur.Config.IncludeResolver do
         resolve_components(target_components ++ remaining, current, symlink_count + 1)
       end
     end
+  end
+
+  defp path_components(path) do
+    components = Path.split(path)
+
+    if String.ends_with?(path, "/"),
+      do: components ++ ["."],
+      else: components
   end
 
   defp join_component(nil, component), do: component

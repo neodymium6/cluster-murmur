@@ -54,6 +54,8 @@ defmodule ClusterMurmur.Config.IncludeResolverTest do
       "personas/example?.yaml",
       "personas/[ab].yaml",
       "personas/{a,b}.yaml",
+      "personas/example.yaml/",
+      "personas//example.yaml",
       "personas/観測者.yaml",
       "",
       nil
@@ -89,6 +91,17 @@ defmodule ClusterMurmur.Config.IncludeResolverTest do
 
     assert IncludeResolver.resolve(context.config_file, ["entries/*.yaml"]) ==
              {:error, :too_many_include_entries}
+  end
+
+  test "accepts exactly the inspected directory-entry limit", context do
+    write_fixture(context.config_root, "entries/matched.yaml")
+
+    for number <- 1..1_023 do
+      write_fixture(context.config_root, "entries/#{number}.txt")
+    end
+
+    assert {:ok, [_matched]} =
+             IncludeResolver.resolve(context.config_file, ["entries/*.yaml"])
   end
 
   test "applies the inspected-entry budget cumulatively across patterns", context do
@@ -142,6 +155,13 @@ defmodule ClusterMurmur.Config.IncludeResolverTest do
     File.ln_s!(".", Path.join(context.config_root, "alias"))
 
     assert IncludeResolver.resolve(context.config_file, ["alias/file.yaml"]) == {:ok, [target]}
+  end
+
+  test "allows an absolute symlink whose target stays inside the root", context do
+    target = write_fixture(context.config_root, ".data/observer.yaml")
+    File.ln_s!(target, Path.join(context.config_root, "absolute.yaml"))
+
+    assert IncludeResolver.resolve(context.config_file, ["absolute.yaml"]) == {:ok, [target]}
   end
 
   test "rejects symlinks whose canonical targets escape the configuration root", context do
@@ -206,6 +226,30 @@ defmodule ClusterMurmur.Config.IncludeResolverTest do
              {:error, :include_target_invalid}
   end
 
+  test "rejects symlink targets that require a regular file to be a directory", context do
+    write_fixture(context.config_root, "target.yaml")
+    File.ln_s!("target.yaml/", Path.join(context.config_root, "trailing.yaml"))
+
+    File.ln_s!(
+      "target.yaml/../target.yaml",
+      Path.join(context.config_root, "parent.yaml")
+    )
+
+    assert IncludeResolver.resolve(context.config_file, ["trailing.yaml"]) ==
+             {:error, :include_target_invalid}
+
+    assert IncludeResolver.resolve(context.config_file, ["parent.yaml"]) ==
+             {:error, :include_target_invalid}
+  end
+
+  test "matches newline filenames before rejecting their canonical target", context do
+    write_fixture(context.config_root, "files/valid.yaml")
+    write_fixture(context.config_root, "files/bad\nname.yaml")
+
+    assert IncludeResolver.resolve(context.config_file, ["files/*.yaml"]) ==
+             {:error, :include_target_invalid}
+  end
+
   test "bounds symlink expansion even without a cycle", context do
     write_fixture(context.config_root, "target.yaml")
 
@@ -216,6 +260,17 @@ defmodule ClusterMurmur.Config.IncludeResolverTest do
 
     assert IncludeResolver.resolve(context.config_file, ["link1.yaml"]) ==
              {:error, :include_target_invalid}
+  end
+
+  test "accepts exactly the symlink expansion limit", context do
+    target = write_fixture(context.config_root, "target.yaml")
+
+    for number <- 1..40 do
+      target_name = if number == 40, do: "target.yaml", else: "safe#{number + 1}.yaml"
+      File.ln_s!(target_name, Path.join(context.config_root, "safe#{number}.yaml"))
+    end
+
+    assert IncludeResolver.resolve(context.config_file, ["safe1.yaml"]) == {:ok, [target]}
   end
 
   test "rejects an invalid top-level configuration path", context do
