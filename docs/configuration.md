@@ -18,8 +18,9 @@ manifest validation, duration and common scalar validation, bounded include
 resolution, composition of those manifest stages into a load plan, and bounded
 decoding of the included YAML documents are implemented, but the remaining
 validation pipeline is still a design target. A value-free Draft 7 validation
-adapter for application-owned schemas is implemented; category schemas and
-their semantic validators remain future changes. A fixed top-level file
+adapter for application-owned schemas and bounded event-group validation are
+implemented; the remaining category schemas and semantic validators remain
+future changes. A fixed top-level file
 includes files by category:
 
 ```text
@@ -86,7 +87,9 @@ manifest, not independently to each category. The manifest loader first returns
 the validated manifest and these canonical paths as a categorized load plan.
 Its next stage decodes each unique included YAML file once, retains its source
 path for later relative-reference handling, and preserves the category lists.
-It does not apply category-specific schemas or semantic validation. Failures
+The generic document-loading stage does not apply category-specific schemas or
+semantic validation. Event-group documents can then be structurally validated
+and combined into a redacted configuration set. Failures
 identify the top-level document, manifest, includes, or included-document stage
 without including rejected values or paths. Configuration structs omit include
 patterns, paths, and decoded values from their inspection output. Configuration
@@ -189,8 +192,8 @@ stored, and deployments must treat retained payloads as sensitive.
 
 ## Event groups
 
-Event groups separate conversation policy from event severity. The default
-groups and reply probabilities are:
+Event groups separate conversation policy from event severity. A complete
+example with common groups and reply probabilities is:
 
 ```yaml
 event_groups:
@@ -207,7 +210,10 @@ event_groups:
 ```
 
 Operators may add groups. Every event-producing trigger and every group-based
-route must resolve to a declared group.
+route must resolve to a declared group. Event-group IDs must be unique across
+all included files, and version 1 accepts at most 256 groups in total. Empty
+event-group categories are valid; the validator does not synthesize the groups
+shown above.
 
 ## Personas
 
