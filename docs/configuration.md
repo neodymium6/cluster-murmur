@@ -16,12 +16,11 @@ identifiers.
 Configuration uses YAML 1.2. Bounded document decoding, strict top-level
 manifest validation, duration and common scalar validation, bounded include
 resolution, composition of those manifest stages into a load plan, and bounded
-decoding of the included YAML documents are implemented, but the remaining
-validation pipeline is still a design target. A value-free Draft 7 validation
-adapter for application-owned schemas and bounded event-group, persona,
-binding, routing, and event-trigger validation and cross-category character
-catalog assembly are implemented; complete assembly remains a future change. A
-fixed top-level file includes files by category:
+decoding of the included YAML documents are implemented. A value-free Draft 7
+validation adapter for application-owned schemas and bounded event-group, persona,
+binding, routing, and event-trigger validation, cross-category character catalog
+assembly, and complete startup configuration assembly are implemented. A fixed
+top-level file includes files by category:
 
 ```text
 config/
@@ -319,6 +318,11 @@ Implemented event-trigger documents accept at most 256 triggers across all
 included files. Trigger IDs must be unique, `action.type` is currently limited
 to `start_conversation`, cooldowns use the duration grammar, and binding
 references remain unresolved until complete configuration assembly.
+
+The complete configuration loader resolves each event trigger's binding against
+the assembled binding namespace and rejects unknown references. It validates
+the single default route in the same startup value, but does not read its secret
+file or connect to Discord.
 
 ### Schedule triggers
 

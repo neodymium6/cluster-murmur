@@ -1,7 +1,8 @@
 defmodule ClusterMurmur.Config.LoaderTest do
   use ExUnit.Case, async: true
 
-  alias ClusterMurmur.Config.{Catalog, DocumentSet, LoadedDocument, LoadPlan, Loader, Manifest}
+  alias ClusterMurmur.Config.{Catalog, Configuration, DocumentSet, LoadedDocument}
+  alias ClusterMurmur.Config.{LoadPlan, Loader, Manifest}
 
   setup do
     test_root =
@@ -187,6 +188,68 @@ defmodule ClusterMurmur.Config.LoaderTest do
              {:error, {:catalog, :unknown_binding_group}}
   end
 
+  test "loads the complete configuration and labels assembly failures", context do
+    write_fixture(context.config_root, "event-groups.yaml", """
+    event_groups:
+      operations:
+        reply_probability: 0.25
+    """)
+
+    write_fixture(context.config_root, "prompts/observer.md", "Use supplied facts only.\n")
+
+    write_fixture(context.config_root, "personas/observer.yaml", """
+    personas:
+      - id: observer
+        display_name: Observer
+        prompt_file: ../prompts/observer.md
+    """)
+
+    write_fixture(context.config_root, "bindings/monitoring.yaml", """
+    bindings:
+      - id: monitoring
+        match:
+          group: operations
+        candidates:
+          - persona: observer
+            weight: 1
+    """)
+
+    trigger_path =
+      write_fixture(context.config_root, "triggers/monitoring.yaml", """
+      triggers:
+        - id: monitoring-failure
+          event:
+            match:
+              all:
+                - field: type
+                  operator: equals
+                  value: observation.failed
+          action:
+            type: start_conversation
+            binding: monitoring
+          cooldown: 30m
+      """)
+
+    write_fixture(context.config_root, "routing.yaml", """
+    routing:
+      default:
+        webhook_secret_file_env: DISCORD_WEBHOOK_SECRET_FILE
+    """)
+
+    write_manifest(context.config_file, configuration_manifest())
+
+    assert {:ok, %Configuration{version: 1}} =
+             Loader.load_configuration(context.config_file)
+
+    File.write!(
+      trigger_path,
+      String.replace(File.read!(trigger_path), "monitoring\n", "missing\n")
+    )
+
+    assert Loader.load_configuration(context.config_file) ==
+             {:error, {:configuration, :unknown_trigger_binding}}
+  end
+
   test "configuration loading structs redact paths, patterns, and decoded values from inspection",
        context do
     private_path = Path.join(context.config_root, "private-node.yaml")
@@ -249,6 +312,23 @@ defmodule ClusterMurmur.Config.LoaderTest do
         - bindings/*.yaml
       triggers: []
       routing: []
+    """
+  end
+
+  defp configuration_manifest do
+    """
+    version: 1
+    includes:
+      event_groups:
+        - event-groups.yaml
+      personas:
+        - personas/*.yaml
+      bindings:
+        - bindings/*.yaml
+      triggers:
+        - triggers/*.yaml
+      routing:
+        - routing.yaml
     """
   end
 end

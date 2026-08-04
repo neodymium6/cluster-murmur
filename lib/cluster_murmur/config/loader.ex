@@ -1,6 +1,6 @@
 defmodule ClusterMurmur.Config.Loader do
   @moduledoc """
-  Builds a bounded load plan from a top-level configuration manifest.
+  Builds bounded configuration stages from a top-level manifest.
 
   Loading stops at the first failed stage. Errors identify that stage while
   preserving the stable, value-free reason returned by the responsible
@@ -9,6 +9,7 @@ defmodule ClusterMurmur.Config.Loader do
 
   alias ClusterMurmur.Config.{
     Catalog,
+    Configuration,
     DocumentDecoder,
     DocumentSet,
     IncludeResolver,
@@ -23,6 +24,7 @@ defmodule ClusterMurmur.Config.Loader do
           | {:includes, IncludeResolver.error()}
           | {:included_document, DocumentDecoder.error()}
           | {:catalog, Catalog.error()}
+          | {:configuration, Configuration.error()}
 
   @doc """
   Decodes and validates a manifest, then resolves all of its include categories.
@@ -61,6 +63,16 @@ defmodule ClusterMurmur.Config.Loader do
     with {:ok, documents} <- load_documents(config_path),
          {:ok, catalog} <- annotate(Catalog.parse(config_path, documents), :catalog) do
       {:ok, catalog}
+    end
+  end
+
+  @doc "Loads and validates the complete version 1 startup configuration."
+  @spec load_configuration(Path.t()) :: {:ok, Configuration.t()} | {:error, error()}
+  def load_configuration(config_path) do
+    with {:ok, documents} <- load_documents(config_path),
+         {:ok, configuration} <-
+           annotate(Configuration.parse(config_path, documents), :configuration) do
+      {:ok, configuration}
     end
   end
 
