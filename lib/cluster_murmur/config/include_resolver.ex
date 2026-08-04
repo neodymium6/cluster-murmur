@@ -10,6 +10,7 @@ defmodule ClusterMurmur.Config.IncludeResolver do
 
   @max_patterns 64
   @max_files 256
+  @max_inspected_entries 1_024
   @max_pattern_bytes 512
   @max_symlinks 40
 
@@ -22,6 +23,7 @@ defmodule ClusterMurmur.Config.IncludeResolver do
           | :invalid_config_path
           | :invalid_include_pattern
           | :invalid_includes
+          | :too_many_include_entries
           | :too_many_include_patterns
           | :too_many_included_files
 
@@ -29,8 +31,8 @@ defmodule ClusterMurmur.Config.IncludeResolver do
   def resolve(config_path, patterns) when is_binary(config_path) and is_list(patterns) do
     with :ok <- validate_pattern_count(patterns),
          {:ok, root} <- config_root(config_path),
-         {:ok, paths} <- resolve_patterns(root, patterns) do
-      {:ok, paths |> Enum.uniq() |> Enum.sort()}
+         {:ok, files} <- resolve_patterns(root, Enum.uniq(patterns)) do
+      {:ok, files |> MapSet.to_list() |> Enum.sort()}
     end
   end
 
@@ -56,17 +58,27 @@ defmodule ClusterMurmur.Config.IncludeResolver do
   end
 
   defp resolve_patterns(root, patterns) do
-    Enum.reduce_while(patterns, {:ok, []}, fn pattern, {:ok, accumulated} ->
+    initial = %{files: MapSet.new(), inspected_entries: 0}
+
+    Enum.reduce_while(patterns, {:ok, initial}, fn pattern, {:ok, state} ->
       with :ok <- validate_pattern(pattern),
-           {:ok, matches} <- expand_pattern(root, pattern),
-           :ok <- validate_match_count(matches),
-           {:ok, resolved} <- resolve_matches(matches, root),
-           {:ok, combined} <- combine_matches(accumulated, resolved) do
-        {:cont, {:ok, combined}}
+           {:ok, resolved, inspected_entries} <-
+             walk_components(
+               [root],
+               Path.split(pattern),
+               root,
+               state.inspected_entries
+             ),
+           {:ok, files} <- combine_files(state.files, resolved) do
+        {:cont, {:ok, %{files: files, inspected_entries: inspected_entries}}}
       else
         {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
+    |> case do
+      {:ok, %{files: files}} -> {:ok, files}
+      error -> error
+    end
   end
 
   defp validate_pattern(pattern) when is_binary(pattern) do
@@ -80,7 +92,7 @@ defmodule ClusterMurmur.Config.IncludeResolver do
       Path.type(pattern) != :relative ->
         {:error, :invalid_include_pattern}
 
-      ".." in Path.split(pattern) ->
+      Enum.any?(Path.split(pattern), &(&1 in [".", ".."])) ->
         {:error, :invalid_include_pattern}
 
       String.contains?(pattern, "**") ->
@@ -98,48 +110,139 @@ defmodule ClusterMurmur.Config.IncludeResolver do
       Regex.match?(~r/\A[A-Za-z0-9._*\/-]+\z/, pattern)
   end
 
-  defp expand_pattern(root, pattern) do
-    matches = root |> Path.join(pattern) |> Path.wildcard()
+  defp walk_components(directories, [component | remaining], root, inspected_entries) do
+    final? = remaining == []
 
-    if matches == [],
-      do: {:error, :include_not_found},
-      else: {:ok, matches}
-  end
-
-  defp validate_match_count(matches) do
-    if length(matches) <= @max_files,
-      do: :ok,
-      else: {:error, :too_many_included_files}
-  end
-
-  defp combine_matches(accumulated, resolved) do
-    combined = Enum.uniq(resolved ++ accumulated)
-
-    if length(combined) <= @max_files,
-      do: {:ok, combined},
-      else: {:error, :too_many_included_files}
-  end
-
-  defp resolve_matches(matches, root) do
-    Enum.reduce_while(matches, {:ok, []}, fn path, {:ok, accumulated} ->
-      with {:ok, canonical} <- canonical_path(path),
-           true <- inside_root?(canonical, root),
-           {:ok, %File.Stat{type: :regular}} <- File.stat(canonical) do
-        {:cont, {:ok, [canonical | accumulated]}}
+    directories
+    |> Enum.reduce_while({:ok, [], inspected_entries}, fn directory,
+                                                          {:ok, accumulated, inspected} ->
+      with {:ok, names, inspected} <- candidate_names(directory, component, inspected),
+           {:ok, resolved} <- resolve_candidates(directory, names, root, final?) do
+        {:cont, {:ok, resolved ++ accumulated, inspected}}
       else
-        false ->
-          {:halt, {:error, :include_target_outside_root}}
-
-        {:ok, %File.Stat{}} ->
-          {:halt, {:error, :include_target_invalid}}
-
-        {:error, reason} when reason in [:eloop, :emlink] ->
-          {:halt, {:error, :include_target_invalid}}
-
-        _failure ->
-          {:halt, {:error, :filesystem_error}}
+        {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
+    |> continue_walk(remaining, root)
+  end
+
+  defp continue_walk({:ok, [], _inspected_entries}, _remaining, _root),
+    do: {:error, :include_not_found}
+
+  defp continue_walk({:ok, resolved, inspected_entries}, [], _root),
+    do: {:ok, resolved, inspected_entries}
+
+  defp continue_walk({:ok, directories, inspected_entries}, remaining, root),
+    do: walk_components(Enum.uniq(directories), remaining, root, inspected_entries)
+
+  defp continue_walk({:error, reason}, _remaining, _root), do: {:error, reason}
+
+  defp candidate_names(directory, component, inspected_entries) do
+    if String.contains?(component, "*") do
+      with {:ok, names} <- File.ls(directory),
+           true <- Enum.all?(names, &String.valid?/1),
+           {:ok, inspected_entries} <- add_inspected_entries(inspected_entries, length(names)) do
+        matcher = glob_matcher(component)
+
+        matching_names =
+          names
+          |> Enum.filter(&glob_match?(&1, component, matcher))
+          |> Enum.sort()
+
+        {:ok, matching_names, inspected_entries}
+      else
+        {:error, :too_many_include_entries} = error -> error
+        false -> {:error, :include_target_invalid}
+        {:error, _reason} -> {:error, :filesystem_error}
+      end
+    else
+      with {:ok, inspected_entries} <- add_inspected_entries(inspected_entries, 1) do
+        {:ok, [component], inspected_entries}
+      end
+    end
+  end
+
+  defp add_inspected_entries(current, additional) do
+    if current + additional <= @max_inspected_entries,
+      do: {:ok, current + additional},
+      else: {:error, :too_many_include_entries}
+  end
+
+  defp glob_matcher(component) do
+    source = component |> String.split("*") |> Enum.map_join(".*", &Regex.escape/1)
+    Regex.compile!("\\A" <> source <> "\\z")
+  end
+
+  defp glob_match?(name, component, matcher) do
+    visible? = not String.starts_with?(name, ".") or String.starts_with?(component, ".")
+    visible? and Regex.match?(matcher, name)
+  end
+
+  defp resolve_candidates(directory, names, root, final?) do
+    Enum.reduce_while(names, {:ok, []}, fn name, {:ok, accumulated} ->
+      candidate = Path.join(directory, name)
+
+      case resolve_candidate(candidate, root, final?) do
+        {:ok, canonical} -> {:cont, {:ok, [canonical | accumulated]}}
+        :skip -> {:cont, {:ok, accumulated}}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp resolve_candidate(candidate, root, final?) do
+    case canonical_path(candidate) do
+      {:ok, canonical} ->
+        cond do
+          not inside_root?(canonical, root) ->
+            {:error, :include_target_outside_root}
+
+          not portable_target?(canonical, root) ->
+            {:error, :include_target_invalid}
+
+          true ->
+            stat_and_classify_target(canonical, final?)
+        end
+
+      {:error, :enoent} ->
+        :skip
+
+      {:error, reason} when reason in [:eloop, :emlink] ->
+        {:error, :include_target_invalid}
+
+      _failure ->
+        {:error, :filesystem_error}
+    end
+  end
+
+  defp stat_and_classify_target(canonical, final?) do
+    case File.stat(canonical) do
+      {:ok, %File.Stat{type: type}} -> classify_target(canonical, type, final?)
+      {:error, :enoent} -> :skip
+      {:error, _reason} -> {:error, :filesystem_error}
+    end
+  end
+
+  defp classify_target(canonical, :regular, true), do: {:ok, canonical}
+  defp classify_target(canonical, :directory, false), do: {:ok, canonical}
+  defp classify_target(_canonical, _type, true), do: {:error, :include_target_invalid}
+  defp classify_target(_canonical, _type, false), do: :skip
+
+  defp portable_target?(path, root) do
+    path
+    |> Path.relative_to(root)
+    |> Path.split()
+    |> Enum.all?(fn component ->
+      component not in [".", ".."] and Regex.match?(~r/\A[A-Za-z0-9._-]+\z/, component)
+    end)
+  end
+
+  defp combine_files(files, resolved) do
+    combined = Enum.reduce(resolved, files, &MapSet.put(&2, &1))
+
+    if MapSet.size(combined) <= @max_files,
+      do: {:ok, combined},
+      else: {:error, :too_many_included_files}
   end
 
   defp inside_root?(path, root) do

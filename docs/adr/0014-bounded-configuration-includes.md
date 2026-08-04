@@ -19,10 +19,18 @@ support only non-recursive `*` globs. Reject absolute paths, `..`, recursive
 globs, extended glob operators, non-file targets, symlink loops, and canonical
 targets outside the configuration root.
 
-Allow no more than 64 include patterns, 256 resolved files, or 512 bytes per
-pattern. Require every declared pattern to match at least one regular file.
-Return unique canonical paths in lexical order so filesystem enumeration order
-has no semantic effect.
+Allow no more than 64 include patterns, 1,024 inspected directory entries, 256
+unique resolved files, or 512 bytes per pattern. Traverse patterns one component
+at a time and validate each canonical directory before descending. Require
+every declared pattern to match at least one regular file. Apply the portable
+filename grammar to canonical targets as well as patterns. Return unique
+canonical paths in lexical order so filesystem enumeration order has no
+semantic effect.
+
+The configuration tree must remain trusted and read-only from resolution until
+the loader finishes reading the returned canonical paths. Path-only resolution
+cannot prevent a writable ancestor from being replaced between filesystem
+operations.
 
 ## Consequences
 

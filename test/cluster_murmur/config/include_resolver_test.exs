@@ -49,6 +49,7 @@ defmodule ClusterMurmur.Config.IncludeResolverTest do
     invalid_patterns = [
       "/tmp/example.yaml",
       "../example.yaml",
+      "personas/./example.yaml",
       "personas/**/example.yaml",
       "personas/example?.yaml",
       "personas/[ab].yaml",
@@ -81,18 +82,25 @@ defmodule ClusterMurmur.Config.IncludeResolverTest do
              {:error, :too_many_included_files}
   end
 
-  test "applies the file limit after deduplicating canonical paths", context do
-    for number <- 1..256 do
-      write_fixture(context.config_root, "personas/#{number}.yaml")
+  test "bounds inspected directory entries before traversing further", context do
+    for number <- 1..1_025 do
+      write_fixture(context.config_root, "entries/#{number}.yaml")
     end
 
-    assert {:ok, paths} =
-             IncludeResolver.resolve(context.config_file, [
-               "personas/*.yaml",
-               "personas/*.yaml"
-             ])
+    assert IncludeResolver.resolve(context.config_file, ["entries/*.yaml"]) ==
+             {:error, :too_many_include_entries}
+  end
 
-    assert length(paths) == 256
+  test "applies the file limit after deduplicating same-pattern aliases", context do
+    target = write_fixture(context.config_root, ".data/shared.yaml")
+    aliases = Path.join(context.config_root, "aliases")
+    File.mkdir_p!(aliases)
+
+    for number <- 1..257 do
+      File.ln_s!("../.data/shared.yaml", Path.join(aliases, "#{number}.yaml"))
+    end
+
+    assert IncludeResolver.resolve(context.config_file, ["aliases/*.yaml"]) == {:ok, [target]}
   end
 
   test "allows symlinks whose canonical targets stay inside the configuration root", context do
@@ -110,6 +118,23 @@ defmodule ClusterMurmur.Config.IncludeResolverTest do
 
     assert IncludeResolver.resolve(context.config_file, ["outside.yaml"]) ==
              {:error, :include_target_outside_root}
+  end
+
+  test "rejects an outside symlink before descending into it", context do
+    outside_directory = Path.join(context.test_root, "outside")
+    write_fixture(outside_directory, "private.yaml")
+    File.ln_s!(outside_directory, Path.join(context.config_root, "linked"))
+
+    assert IncludeResolver.resolve(context.config_file, ["linked/*.yaml"]) ==
+             {:error, :include_target_outside_root}
+  end
+
+  test "rejects a portable symlink alias for a non-portable canonical filename", context do
+    write_fixture(context.config_root, ".data/観測者.yaml")
+    File.ln_s!(".data/観測者.yaml", Path.join(context.config_root, "observer.yaml"))
+
+    assert IncludeResolver.resolve(context.config_file, ["observer.yaml"]) ==
+             {:error, :include_target_invalid}
   end
 
   test "rejects directories and symlink loops as include targets", context do
