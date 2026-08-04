@@ -29,7 +29,8 @@ Inspect child schemas according to their Draft 7 positions rather than treating
 keyword-shaped property names as annotations; ordinary properties such as
 `default` remain supported and cannot hide a nested unsafe schema.
 
-Validate only values already accepted by the bounded YAML decoder. Collapse
+Require document values to remain JSON-compatible even when a caller forges a
+value outside the bounded YAML decoder. Collapse malformed document terms and
 all instance validation details to `:schema_violation`, and redact compiled
 schemas from normal inspection. Keep semantic ID, reference, and cross-file
 validation in Elixir after this structural stage.

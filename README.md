@@ -14,9 +14,9 @@ configuration validation, category-aware bounded include resolution, bounded
 YAML document decoding, strict top-level manifest validation, deterministic
 manifest load-plan construction, and categorized included-document decoding are
 also available. A local-only, value-free JSON Schema validation boundary,
-bounded version 1 event-group validation, and a bounded persona-prompt file
-reader are in place. Validation and assembly for the remaining configuration
-categories, observation
+bounded version 1 event-group and persona validation, and a bounded
+persona-prompt file reader are in place. Validation and assembly for the
+remaining configuration categories, observation
 ingestion, persistence, triggers, LLM generation, and Discord publication are
 not implemented yet. Do not deploy this revision or connect it to
 infrastructure, model providers, or Discord.

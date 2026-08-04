@@ -209,6 +209,19 @@ defmodule ClusterMurmur.Config.SchemaValidatorTest do
     assert SchemaValidator.validate(nil, %{}) == {:error, :invalid_schema_validator}
   end
 
+  test "rejects non-JSON document terms as schema violations" do
+    assert {:ok, compiled} = SchemaValidator.compile(object_schema())
+
+    for document <- [
+          URI.parse("https://example.invalid"),
+          %{"name" => <<255>>},
+          %{"name" => :observer},
+          %{"name" => ["observer" | :tail]}
+        ] do
+      assert SchemaValidator.validate(compiled, document) == {:error, :schema_violation}
+    end
+  end
+
   test "never delegates unknown formats or document values to a global callback" do
     original = Application.fetch_env(:ex_json_schema, :custom_format_validator)
 

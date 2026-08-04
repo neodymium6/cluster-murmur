@@ -5,6 +5,7 @@ defmodule ClusterMurmur.Personas.Persona do
   A persona is data, not an independently supervised process.
   """
 
+  @derive {Inspect, only: []}
   @enforce_keys [:id, :display_name]
   defstruct [
     :id,

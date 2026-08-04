@@ -18,9 +18,9 @@ manifest validation, duration and common scalar validation, bounded include
 resolution, composition of those manifest stages into a load plan, and bounded
 decoding of the included YAML documents are implemented, but the remaining
 validation pipeline is still a design target. A value-free Draft 7 validation
-adapter for application-owned schemas and bounded event-group validation are
-implemented; the remaining category schemas and semantic validators remain
-future changes. A fixed top-level file
+adapter for application-owned schemas and bounded event-group and persona
+validation are implemented; the remaining category schemas and semantic
+validators remain future changes. A fixed top-level file
 includes files by category:
 
 ```text
@@ -247,6 +247,14 @@ personas:
 Prompt files may describe personality, voice, world view, short examples,
 forbidden expressions, desired message length, and attitudes toward other
 personas. They do not grant tools or alter factual event decisions.
+
+Persona IDs must be unique across all included files, and version 1 accepts at
+most 256 personas. `id`, `display_name`, and `prompt_file` are required;
+`enabled` defaults to true and optional maps default to empty. Display names are
+limited to 128 UTF-8 bytes, avatar values must be HTTPS URLs no longer than
+2,048 bytes, and interests contain at most 256 portable event-group IDs with
+non-negative weights. Non-empty `relationships` and `metadata` are reserved
+until their semantics are fixed and are rejected by version 1 validation.
 
 ## Bindings
 
