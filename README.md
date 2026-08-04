@@ -34,8 +34,10 @@ list available due schedules deterministically. A fixed 60-second opaque lease
 can claim an exact due version, and only its redacted capability can record a
 successful execution while atomically advancing the next run and daily bucket.
 A pure adapter evaluates each available due projection against active hours and
-the correctly rolled-over local-date count before claiming. External execution
-and exactly-once delivery are not implemented. Observation ingestion, trigger
+the correctly rolled-over local-date count before claiming. A redacted pure
+plan rechecks claimed execution eligibility and assembles only the supplied
+event facts and completion values. External execution and exactly-once delivery
+are not implemented. Observation ingestion, trigger
 execution, LLM generation, and Discord publication are not implemented yet. Do
 not deploy this revision or connect it to infrastructure, model providers, or
 Discord.
