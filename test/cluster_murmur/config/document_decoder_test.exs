@@ -44,7 +44,7 @@ defmodule ClusterMurmur.Config.DocumentDecoderTest do
     assert DocumentDecoder.decode("---\na: 1\n---\nb: 2\n") ==
              {:error, :multiple_documents}
 
-    for yaml <- ["value\n", "- value\n", "null\n"] do
+    for yaml <- ["value\n", "- value\n", "null\n", "---\n\"\"\n", "---\n''\n"] do
       assert DocumentDecoder.decode(yaml) == {:error, :invalid_document_root}
     end
   end

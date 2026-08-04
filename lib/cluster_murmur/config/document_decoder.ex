@@ -157,12 +157,12 @@ defmodule ClusterMurmur.Config.DocumentDecoder do
   defp validate_token({:yamerl_collection_end, _line, _column, _style, _kind}, state),
     do: %{state | depth: max(state.depth - 1, 0)}
 
-  defp validate_token({:yamerl_scalar, _line, _column, tag, _style, _substyle, text}, state) do
+  defp validate_token({:yamerl_scalar, _line, _column, tag, _style, substyle, text}, state) do
     validate_tag(tag)
 
     if text |> :unicode.characters_to_binary() |> byte_size() <= @max_scalar_bytes do
       state
-      |> Map.put(:content?, state.content? or text != [])
+      |> Map.put(:content?, state.content? or text != [] or substyle != :plain)
       |> count_node()
     else
       reject(:scalar_too_large)
