@@ -10,7 +10,19 @@ defmodule ClusterMurmur.Config.ValueTest do
   end
 
   test "rejects empty, padded, invalid UTF-8, control-containing, and non-string IDs" do
-    invalid_values = ["", " observer", "observer ", "line\nbreak", <<255>>, :observer, nil]
+    invalid_values = [
+      "",
+      " observer",
+      "observer ",
+      "line\nbreak",
+      "line" <> <<0x2028::utf8>> <> "separator",
+      "paragraph" <> <<0x2029::utf8>> <> "separator",
+      "right-to-left" <> <<0x202E::utf8>> <> "override",
+      "zero" <> <<0x200B::utf8>> <> "width",
+      <<255>>,
+      :observer,
+      nil
+    ]
 
     assert Enum.all?(invalid_values, fn value ->
              Value.id(value) == {:error, :invalid_id}

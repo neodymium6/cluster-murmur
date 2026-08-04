@@ -32,6 +32,6 @@ defmodule ClusterMurmur.Config.Value do
 
   defp valid_id?(value) do
     value != "" and String.valid?(value) and value == String.trim(value) and
-      not Regex.match?(~r/[[:cntrl:]]/u, value)
+      not Regex.match?(~r/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u, value)
   end
 end
