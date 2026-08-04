@@ -4,7 +4,7 @@ defmodule ClusterMurmur.Persistence.EventRecord do
 
   JSON-compatible domain values are encoded only after the complete event has
   passed the shared event validator. Repository access remains in a dedicated
-  future store boundary.
+  store boundary.
   """
 
   use Ecto.Schema

@@ -33,6 +33,14 @@ defmodule ClusterMurmur.Events.ValidatorTest do
     end
   end
 
+  test "validates event IDs through the complete event string boundary" do
+    assert Validator.validate_id("example-event") == :ok
+
+    for rejected <- [nil, "", <<255>>, "example\0private", String.duplicate("a", 16 * 1_024 + 1)] do
+      assert Validator.validate_id(rejected) == {:error, :invalid_event}
+    end
+  end
+
   test "requires canonical storage-range UTC instants" do
     {:ok, local} =
       DateTime.shift_zone(

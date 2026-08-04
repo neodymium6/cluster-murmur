@@ -202,8 +202,9 @@ release, external execution, exactly-once delivery, other schemas and stores,
 automatic migration execution, and retention behavior remain later stages. A
 separate bounded event store validates complete events before storage, inserts
 immutable event IDs idempotently, and rejects conflicting reuse without
-replacing committed facts. Decoded event reads, event retention, dedupe-window
-suppression, and trigger bookkeeping remain later stages.
+replacing committed facts. Its primary-key-only read restores at most one event
+through the shared bounded validator. Event listing, event retention,
+dedupe-window suppression, and trigger bookkeeping remain later stages.
 
 `ClusterMurmur.Release.migrate!/0`, invoked after every application instance
 using the database has stopped, is the only application migration operation. It

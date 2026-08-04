@@ -22,7 +22,8 @@ category validation and complete startup
 configuration assembly are also implemented. Matching event-trigger selection
 is deterministic and bounded. A constrained redacted event record, packaged
 migration, and narrow idempotent insert store persist immutable events without
-exposing generic queries or trigger deduplication policy. Standard
+exposing generic queries or trigger deduplication policy. A primary-key-only
+restore path decodes records through the same bounded domain validator. Standard
 five-field schedule-trigger and bounded
 shifted-exponential stochastic-trigger validation use a reviewed, embedded IANA
 timezone snapshot without runtime updates. Pure shifted-exponential next-run
