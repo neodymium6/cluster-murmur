@@ -30,6 +30,7 @@
           ./lib
           ./mix.exs
           ./mix.lock
+          ./priv
           ./test
         ];
       };
