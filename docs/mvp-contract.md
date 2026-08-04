@@ -8,8 +8,9 @@ decisions; this document defines testable runtime invariants and completion
 criteria.
 
 The keywords **must**, **must not**, **should**, and **may** are normative. The
-repository is currently at the bootstrap stage, so none of this document should
-be read as a claim that the behavior is already implemented.
+repository is currently at the early foundation stage, so this document
+describes the completed target unless a capability is explicitly identified as
+implemented elsewhere.
 
 ## System boundary
 
