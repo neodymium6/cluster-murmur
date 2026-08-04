@@ -329,11 +329,8 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStore do
     %{schedule | claim_token: nil, claim_started_at: nil, claim_expires_at: nil}
   end
 
-  defp valid_storage_datetime?(%DateTime{time_zone: "Etc/UTC", year: year} = datetime)
-       when year in 0..9999,
-       do: DateTimeValidator.validate(datetime) == :ok
-
-  defp valid_storage_datetime?(_datetime), do: false
+  defp valid_storage_datetime?(datetime),
+    do: DateTimeValidator.validate_storage_utc(datetime) == :ok
 
   defp valid_storage_date?(nil), do: true
 

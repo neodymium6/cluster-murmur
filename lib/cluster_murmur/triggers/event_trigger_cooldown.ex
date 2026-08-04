@@ -9,9 +9,6 @@ defmodule ClusterMurmur.Triggers.EventTriggerCooldown do
   alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.Triggers.{EventTrigger, EventTriggerValidator}
 
-  @datetime_keys DateTime.__struct__() |> Map.keys()
-  @datetime_key_count length(@datetime_keys)
-
   @type decision :: {:eligible, DateTime.t()} | {:skip, :cooldown}
   @type error :: :invalid_datetime | :invalid_trigger | :invalid_trigger_matcher
 
@@ -57,17 +54,5 @@ defmodule ClusterMurmur.Triggers.EventTriggerCooldown do
   defp validate_optional_datetime(nil), do: :ok
   defp validate_optional_datetime(datetime), do: validate_datetime(datetime)
 
-  defp validate_datetime(%DateTime{time_zone: "Etc/UTC", year: year} = datetime)
-       when year in 0..9999 do
-    if exact_datetime?(datetime),
-      do: DateTimeValidator.validate(datetime),
-      else: {:error, :invalid_datetime}
-  end
-
-  defp validate_datetime(_datetime), do: {:error, :invalid_datetime}
-
-  defp exact_datetime?(datetime) do
-    map_size(datetime) == @datetime_key_count and
-      Enum.all?(@datetime_keys, &Map.has_key?(datetime, &1))
-  end
+  defp validate_datetime(datetime), do: DateTimeValidator.validate_storage_utc(datetime)
 end

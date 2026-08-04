@@ -9,8 +9,6 @@ defmodule ClusterMurmur.Triggers.StochasticScheduleCalculator do
   alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.Triggers.{StochasticSampler, StochasticTrigger}
 
-  @storage_years 0..9999
-
   @type error ::
           :invalid_datetime
           | :invalid_random_source
@@ -34,15 +32,15 @@ defmodule ClusterMurmur.Triggers.StochasticScheduleCalculator do
   def next_run(%StochasticTrigger{}, _datetime, _random), do: {:error, :invalid_datetime}
   def next_run(_trigger, _datetime, _random), do: {:error, :invalid_trigger}
 
-  defp validate_datetime(%DateTime{year: year} = datetime) when year in @storage_years,
-    do: DateTimeValidator.validate(datetime)
-
-  defp validate_datetime(_datetime), do: {:error, :invalid_datetime}
+  defp validate_datetime(datetime), do: DateTimeValidator.validate_storage_utc(datetime)
 
   defp add_wait(datetime, wait_ms) do
     case DateTime.add(datetime, wait_ms, :millisecond) do
-      %DateTime{year: year} = next_run when year in @storage_years -> {:ok, next_run}
-      %DateTime{} -> {:error, :no_next_run}
+      %DateTime{} = next_run ->
+        case DateTimeValidator.validate_storage_utc(next_run) do
+          :ok -> {:ok, next_run}
+          {:error, :invalid_datetime} -> {:error, :no_next_run}
+        end
     end
   rescue
     _error -> {:error, :no_next_run}

@@ -16,7 +16,6 @@ defmodule ClusterMurmur.Triggers.StochasticExecutionPlanner do
   @claim_lease_seconds 60
   @claim_token_bytes 32
   @max_id_bytes 16 * 1_024
-  @storage_years 0..9999
 
   defmodule Plan do
     @moduledoc false
@@ -157,9 +156,6 @@ defmodule ClusterMurmur.Triggers.StochasticExecutionPlanner do
 
   defp valid_claim_token?(_token), do: false
 
-  defp valid_storage_datetime?(%DateTime{time_zone: "Etc/UTC", year: year} = datetime)
-       when year in @storage_years,
-       do: DateTimeValidator.validate(datetime) == :ok
-
-  defp valid_storage_datetime?(_datetime), do: false
+  defp valid_storage_datetime?(datetime),
+    do: DateTimeValidator.validate_storage_utc(datetime) == :ok
 end
