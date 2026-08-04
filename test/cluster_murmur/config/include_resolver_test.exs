@@ -34,6 +34,84 @@ defmodule ClusterMurmur.Config.IncludeResolverTest do
 
   test "accepts an empty optional include list", context do
     assert IncludeResolver.resolve(context.config_file, []) == {:ok, []}
+    assert IncludeResolver.resolve_categories(context.config_file, %{}) == {:ok, %{}}
+  end
+
+  test "resolves categories with shared canonical files and deterministic lists", context do
+    observer = write_fixture(context.config_root, "shared/observer.yaml")
+    binding = write_fixture(context.config_root, "bindings/monitoring.yaml")
+
+    assert IncludeResolver.resolve_categories(context.config_file, %{
+             personas: ["shared/*.yaml"],
+             bindings: ["bindings/*.yaml", "shared/observer.yaml"],
+             routing: []
+           }) ==
+             {:ok,
+              %{
+                personas: [observer],
+                bindings: Enum.sort([binding, observer]),
+                routing: []
+              }}
+  end
+
+  test "shares the inspected-entry budget across categories", context do
+    for directory <- ["personas", "bindings"] do
+      write_fixture(context.config_root, "#{directory}/matched.yaml")
+
+      for number <- 1..512 do
+        write_fixture(context.config_root, "#{directory}/#{number}.txt")
+      end
+    end
+
+    assert IncludeResolver.resolve_categories(context.config_file, %{
+             personas: ["personas/*.yaml"],
+             bindings: ["bindings/*.yaml"]
+           }) == {:error, :too_many_include_entries}
+  end
+
+  test "caches an identical pattern shared by categories", context do
+    matched = write_fixture(context.config_root, "shared/matched.yaml")
+
+    for number <- 1..1_023 do
+      write_fixture(context.config_root, "shared/#{number}.txt")
+    end
+
+    assert IncludeResolver.resolve_categories(context.config_file, %{
+             personas: ["shared/*.yaml"],
+             bindings: ["shared/*.yaml"]
+           }) == {:ok, %{personas: [matched], bindings: [matched]}}
+  end
+
+  test "shares the matched-file budget across categories", context do
+    for number <- 1..128 do
+      write_fixture(context.config_root, "personas/#{number}.yaml")
+    end
+
+    for number <- 1..129 do
+      write_fixture(context.config_root, "bindings/#{number}.yaml")
+    end
+
+    assert IncludeResolver.resolve_categories(context.config_file, %{
+             personas: ["personas/*.yaml"],
+             bindings: ["bindings/*.yaml"]
+           }) == {:error, :too_many_included_files}
+  end
+
+  test "validates categorized include shape and total pattern count", context do
+    assert IncludeResolver.resolve_categories(context.config_file, nil) ==
+             {:error, :invalid_includes}
+
+    assert IncludeResolver.resolve_categories(context.config_file, %{"personas" => []}) ==
+             {:error, :invalid_includes}
+
+    assert IncludeResolver.resolve_categories(context.config_file, %{
+             personas: ["one.yaml" | "two.yaml"]
+           }) == {:error, :invalid_includes}
+
+    assert IncludeResolver.resolve_categories(context.config_file, %{
+             personas: List.duplicate("one.yaml", 32),
+             bindings: List.duplicate("two.yaml", 33)
+           }) == {:error, :too_many_include_patterns}
   end
 
   test "requires every declared pattern to match", context do
@@ -279,6 +357,7 @@ defmodule ClusterMurmur.Config.IncludeResolverTest do
 
     assert IncludeResolver.resolve(nil, []) == {:error, :invalid_includes}
     assert IncludeResolver.resolve(context.config_file, nil) == {:error, :invalid_includes}
+    assert IncludeResolver.resolve_categories(nil, %{}) == {:error, :invalid_includes}
   end
 
   defp write_fixture(root, relative_path) do
