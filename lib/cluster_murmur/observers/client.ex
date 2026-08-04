@@ -2,10 +2,17 @@ defmodule ClusterMurmur.Observers.Client do
   @moduledoc """
   Boundary for a normalized, read-only observation source.
 
-  Callers must choose tool names and validate their arguments in application
-  code. This callback is not a generic MCP passthrough capability.
+  Concrete adapters map these named operations to their transport internally.
+  No transport tool name, arbitrary argument map, or raw response crosses this
+  boundary.
   """
 
-  @callback list_targets() :: {:ok, map()} | {:error, term()}
-  @callback call_tool(String.t(), map()) :: {:ok, map()} | {:error, term()}
+  alias ClusterMurmur.ExternalError
+  alias ClusterMurmur.Observations.Observation
+
+  @type target :: %{required(:id) => String.t()}
+
+  @callback list_targets() :: {:ok, [target()]} | {:error, ExternalError.t()}
+  @callback observe_target(String.t()) ::
+              {:ok, Observation.t()} | {:error, ExternalError.t()}
 end

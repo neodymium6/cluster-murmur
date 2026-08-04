@@ -7,5 +7,5 @@ defmodule ClusterMurmur.Clock do
   """
 
   @callback now() :: DateTime.t()
-  @callback monotonic_time() :: integer()
+  @callback monotonic_time_ms() :: integer()
 end
