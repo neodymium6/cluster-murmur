@@ -62,12 +62,16 @@ non-recursive `*` globs. Absolute paths, `..`, other glob operators, symlink
 loops, non-file targets, and canonical targets outside the configuration root
 are invalid. A top-level configuration may declare at most 64 include patterns;
 each pattern is at most 512 bytes and must match at least one file; resolution
-may inspect at most 1,024 directory entries and the combined result is limited
-to 256 unique files. Portable filename rules also apply to canonical targets.
-Safe symlinks inside the root are canonicalized. The configuration tree must be
-trusted and read-only until loading finishes. Results are deduplicated and
-sorted, so glob expansion order has no semantic meaning. Configuration is
-loaded once at startup; hot reload is outside the MVP.
+rejects after wildcard directory listings cumulatively return more than 1,024
+entries, and the combined result is limited to 256 unique files. Erlang/OTP
+materializes each individual directory listing before this check, so the
+trusted configuration tree must not contain unbounded directories. Portable
+filename rules also apply to canonical targets. Safe symlinks inside the root
+are canonicalized with a limit of 40 symlink expansions per resolved path. The
+configuration tree must be trusted and read-only until loading finishes.
+Results are deduplicated and sorted, so glob expansion order has no semantic
+meaning. Configuration is loaded once at startup; hot reload is outside the
+MVP.
 
 ## Validation
 
