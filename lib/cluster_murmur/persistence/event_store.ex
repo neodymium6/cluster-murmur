@@ -7,7 +7,7 @@ defmodule ClusterMurmur.Persistence.EventStore do
   first committed fact.
   """
 
-  alias ClusterMurmur.Events.{Event, Validator}
+  alias ClusterMurmur.Events.{BoundedJsonDecoder, Event, Validator}
   alias ClusterMurmur.Persistence.EventRecord
   alias ClusterMurmur.Repo
 
@@ -110,10 +110,11 @@ defmodule ClusterMurmur.Persistence.EventStore do
 
   defp decode_record(record) do
     with :ok <- validate_encoded_payload(record),
-         {:ok, previous} <- decode_optional(record.previous),
-         {:ok, current} <- decode_optional(record.current),
-         {:ok, facts} <- decode_json(record.facts),
-         {:ok, labels} <- decode_json(record.labels) do
+         {:ok, budget} <- initial_decode_budget(record),
+         {:ok, previous, budget} <- decode_optional(record.previous, budget),
+         {:ok, current, budget} <- decode_optional(record.current, budget),
+         {:ok, facts, budget} <- BoundedJsonDecoder.decode(record.facts, budget),
+         {:ok, labels, _budget} <- BoundedJsonDecoder.decode(record.labels, budget) do
       event = %Event{
         id: record.id,
         type: record.type,
@@ -154,26 +155,25 @@ defmodule ClusterMurmur.Persistence.EventStore do
     end
   end
 
-  defp decode_optional(nil), do: {:ok, nil}
-  defp decode_optional(encoded), do: decode_json(encoded)
-
-  defp decode_json(encoded) when is_binary(encoded) do
-    {:ok, encoded |> :json.decode() |> denormalize_nulls()}
-  rescue
-    _error -> {:error, :invalid_event_record}
-  catch
-    _kind, _reason -> {:error, :invalid_event_record}
+  defp initial_decode_budget(record) do
+    BoundedJsonDecoder.initial_budget([
+      record.id,
+      record.type,
+      record.source,
+      record.subject,
+      record.group,
+      record.severity,
+      record.dedupe_key,
+      record.correlation_key
+    ])
   end
 
-  defp decode_json(_encoded), do: {:error, :invalid_event_record}
+  defp decode_optional(nil, budget), do: BoundedJsonDecoder.consume_null(budget)
 
-  defp denormalize_nulls(:null), do: nil
-
-  defp denormalize_nulls(value) when is_map(value),
-    do: Map.new(value, fn {key, nested} -> {key, denormalize_nulls(nested)} end)
-
-  defp denormalize_nulls(value) when is_list(value),
-    do: Enum.map(value, &denormalize_nulls/1)
-
-  defp denormalize_nulls(value), do: value
+  defp decode_optional(encoded, budget) do
+    case BoundedJsonDecoder.decode(encoded, budget) do
+      {:ok, nil, _budget} -> {:error, :invalid_event_record}
+      result -> result
+    end
+  end
 end

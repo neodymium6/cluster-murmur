@@ -63,7 +63,7 @@ defmodule ClusterMurmur.Persistence.EventStoreTest do
       event(
         previous: %{"state" => "healthy"},
         current: ["unhealthy", nil],
-        facts: %{"attempts" => 3, "ready" => true},
+        facts: %{"attempts" => 3, "latency" => 1.5, "ready" => true},
         labels: %{"category" => "monitoring"}
       )
 
@@ -85,17 +85,34 @@ defmodule ClusterMurmur.Persistence.EventStoreTest do
     end
   end
 
-  test "rejects a database-valid row outside the bounded event domain" do
+  test "rejects database-valid rows outside every recursive event budget" do
     assert {:ok, record} = EventStore.insert(event([]))
-    oversized_domain_text = String.duplicate("x", 64 * 1_024 + 1)
 
-    encoded_facts =
-      %{"payload" => oversized_domain_text} |> :json.encode() |> IO.iodata_to_binary()
+    too_deep = Enum.reduce(1..9, true, fn _level, nested -> %{"nested" => nested} end)
+    too_many_entries = Map.new(1..257, &{"key-#{&1}", true})
+    too_many_nodes = Map.new(1..256, &{"key-#{&1}", [1, 2, 3, 4]})
+    too_much_text = %{"payload" => String.duplicate("x", 64 * 1_024 + 1)}
+
+    for invalid_facts <- [too_deep, too_many_entries, too_many_nodes, too_much_text] do
+      encoded_facts = invalid_facts |> :json.encode() |> IO.iodata_to_binary()
+
+      assert {1, nil} =
+               Repo.update_all(
+                 from(stored in EventRecord, where: stored.id == ^record.id),
+                 set: [facts: encoded_facts]
+               )
+
+      assert EventStore.fetch(record.id) == {:error, :invalid_event_record}
+    end
+  end
+
+  test "rejects noncanonical top-level JSON null for optional values" do
+    assert {:ok, record} = EventStore.insert(event(previous: nil))
 
     assert {1, nil} =
              Repo.update_all(
                from(stored in EventRecord, where: stored.id == ^record.id),
-               set: [facts: encoded_facts]
+               set: [previous: "null"]
              )
 
     assert EventStore.fetch(record.id) == {:error, :invalid_event_record}
