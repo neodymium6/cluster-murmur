@@ -162,6 +162,7 @@ defmodule ClusterMurmur.Config.TriggersTest do
       put_in(valid, ["schedule", "cron"], "*/1/2 * * * *"),
       put_in(valid, ["schedule", "cron"], "*/-1 * * * *"),
       put_in(valid, ["schedule", "cron"], "1-2/-3 * * * *"),
+      put_in(valid, ["schedule", "cron"], "5-1 * * * *"),
       put_in(valid, ["schedule", "cron"], "0 0 21 * * *"),
       put_in(valid, ["schedule", "cron"], "@daily"),
       put_in(valid, ["schedule", "cron"], "0  21 * * *"),
