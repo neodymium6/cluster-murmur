@@ -44,6 +44,7 @@ defmodule ClusterMurmur.Config.ValueTest do
       <<0x3164::utf8>>,
       <<0xFE0F::utf8>>,
       <<0xE0100::utf8>>,
+      String.duplicate("a", 16 * 1_024 + 1),
       <<255>>,
       :observer,
       nil

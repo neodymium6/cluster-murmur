@@ -56,7 +56,8 @@ defmodule ClusterMurmur.Triggers.EventSelectorTest do
       %{valid | binding: "invalid binding"},
       %{valid | action: :emit_event},
       %{valid | cooldown_ms: -1},
-      %{valid | matcher: %{}}
+      %{valid | matcher: %{}},
+      Map.put(valid, :unexpected_private_value, "private")
     ]
 
     for trigger <- invalid do
@@ -70,6 +71,11 @@ defmodule ClusterMurmur.Triggers.EventSelectorTest do
     invalid_matcher = %Matcher{predicates: []}
 
     assert EventSelector.select([trigger("invalid", invalid_matcher)], event()) ==
+             {:error, :invalid_trigger_matcher}
+
+    forged_matcher = Map.put(trigger("valid", predicate("type", :exists)).matcher, :extra, true)
+
+    assert EventSelector.select([trigger("invalid", forged_matcher)], event()) ==
              {:error, :invalid_trigger_matcher}
 
     assert EventSelector.select([trigger("valid", predicate("type", :exists))], nil) ==

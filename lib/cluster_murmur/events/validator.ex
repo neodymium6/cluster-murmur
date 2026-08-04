@@ -8,6 +8,7 @@ defmodule ClusterMurmur.Events.Validator do
   """
 
   alias ClusterMurmur.DateTimeValidator
+  alias ClusterMurmur.DomainLimits
   alias ClusterMurmur.Events.Event
 
   @datetime_keys DateTime.__struct__() |> Map.keys()
@@ -20,8 +21,8 @@ defmodule ClusterMurmur.Events.Validator do
   @max_nodes 1_024
   @max_string_bytes 16 * 1_024
   @max_total_text_bytes 64 * 1_024
-  @max_safe_integer 9_007_199_254_740_991
-  @max_float 1.7976931348623157e308
+  @max_safe_integer DomainLimits.max_safe_integer()
+  @max_float DomainLimits.max_float()
   @storage_years 0..9999
 
   @type error :: :invalid_event

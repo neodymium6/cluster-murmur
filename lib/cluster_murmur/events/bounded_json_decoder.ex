@@ -1,6 +1,8 @@
 defmodule ClusterMurmur.Events.BoundedJsonDecoder do
   @moduledoc false
 
+  alias ClusterMurmur.DomainLimits
+
   @max_collection_entries 256
   @max_depth 8
   @max_encoded_bytes 512 * 1_024
@@ -8,8 +10,8 @@ defmodule ClusterMurmur.Events.BoundedJsonDecoder do
   @max_nodes 1_024
   @max_string_bytes 16 * 1_024
   @max_total_text_bytes 64 * 1_024
-  @max_safe_integer 9_007_199_254_740_991
-  @max_float 1.7976931348623157e308
+  @max_safe_integer DomainLimits.max_safe_integer()
+  @max_float DomainLimits.max_float()
 
   @type budget :: {non_neg_integer(), non_neg_integer()}
   @type error :: :invalid_json

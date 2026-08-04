@@ -10,6 +10,7 @@ defmodule ClusterMurmur.Events.MatcherEvaluator do
   alias ClusterMurmur.Events.Matcher
   alias ClusterMurmur.Events.Matcher.Predicate
   alias ClusterMurmur.Events.Validator
+  alias ClusterMurmur.DomainLimits
 
   @top_level_fields ["type", "source", "subject", "group", "severity"]
   @dynamic_key_pattern ~r/\A[A-Za-z0-9][A-Za-z0-9_-]*\z/
@@ -17,6 +18,12 @@ defmodule ClusterMurmur.Events.MatcherEvaluator do
   @max_values 32
   @max_field_bytes 512
   @max_string_value_bytes 1_024
+  @max_safe_integer DomainLimits.max_safe_integer()
+  @max_float DomainLimits.max_float()
+  @matcher_keys Matcher.__struct__() |> Map.keys()
+  @matcher_key_count length(@matcher_keys)
+  @predicate_keys Predicate.__struct__() |> Map.keys()
+  @predicate_key_count length(@predicate_keys)
 
   @type error :: :invalid_event | :invalid_matcher
 
@@ -24,7 +31,7 @@ defmodule ClusterMurmur.Events.MatcherEvaluator do
   @spec match(term(), term()) :: {:ok, boolean()} | {:error, error()}
   def match(%Matcher{} = matcher, %Event{} = event) do
     with :ok <- Validator.validate(event),
-         :ok <- validate_matcher(matcher) do
+         :ok <- validate(matcher) do
       {:ok, Enum.all?(matcher.predicates, &predicate_matches?(&1, event))}
     end
   end
@@ -32,57 +39,83 @@ defmodule ClusterMurmur.Events.MatcherEvaluator do
   def match(%Matcher{}, _event), do: {:error, :invalid_event}
   def match(_matcher, _event), do: {:error, :invalid_matcher}
 
-  defp validate_matcher(%Matcher{predicates: predicates})
-       when is_list(predicates) and predicates != [] and length(predicates) <= @max_predicates do
-    predicates
-    |> Enum.reduce_while({:ok, []}, fn predicate, {:ok, validated} ->
-      with :ok <- validate_predicate(predicate),
-           false <- Enum.any?(validated, &(&1 == predicate)) do
-        {:cont, {:ok, [predicate | validated]}}
-      else
-        _failure -> {:halt, {:error, :invalid_matcher}}
-      end
-    end)
-    |> case do
-      {:ok, _predicates} -> :ok
-      {:error, _reason} = error -> error
+  @doc "Validates one exact bounded runtime matcher shape."
+  @spec validate(term()) :: :ok | {:error, :invalid_matcher}
+  def validate(%Matcher{predicates: [_predicate | _predicates] = predicates} = matcher) do
+    if exact_keys?(matcher, @matcher_keys, @matcher_key_count) do
+      validate_predicates(predicates, [], 0)
+    else
+      {:error, :invalid_matcher}
     end
   end
 
-  defp validate_matcher(_matcher), do: {:error, :invalid_matcher}
+  def validate(_matcher), do: {:error, :invalid_matcher}
 
-  defp validate_predicate(%Predicate{field: field, operator: operator, value: value, values: []})
-       when operator in [:equals, :not_equals] do
-    with :ok <- validate_field(field), :ok <- validate_scalar(value), do: :ok
+  defp validate_predicates([], _validated, _count), do: :ok
+
+  defp validate_predicates([_predicate | _predicates], _validated, @max_predicates),
+    do: {:error, :invalid_matcher}
+
+  defp validate_predicates([predicate | predicates], validated, count) do
+    with :ok <- validate_predicate(predicate),
+         false <- Enum.any?(validated, &(&1 == predicate)) do
+      validate_predicates(predicates, [predicate | validated], count + 1)
+    else
+      _failure -> {:error, :invalid_matcher}
+    end
   end
 
-  defp validate_predicate(%Predicate{
-         field: field,
-         operator: :in,
-         value: nil,
-         values: values
-       })
-       when is_list(values) and values != [] and length(values) <= @max_values do
-    with :ok <- validate_field(field),
-         true <- Enum.all?(values, &(validate_scalar(&1) == :ok)),
-         true <- pairwise_distinct?(values) do
+  defp validate_predicates(_improper_tail, _validated, _count),
+    do: {:error, :invalid_matcher}
+
+  defp validate_predicate(
+         %Predicate{field: field, operator: operator, value: value, values: []} = predicate
+       )
+       when operator in [:equals, :not_equals] do
+    with true <- exact_predicate?(predicate),
+         :ok <- validate_field(field),
+         :ok <- validate_scalar(value),
+         do: :ok
+  end
+
+  defp validate_predicate(
+         %Predicate{
+           field: field,
+           operator: :in,
+           value: nil,
+           values: [_value | _values] = values
+         } = predicate
+       ) do
+    with true <- exact_predicate?(predicate),
+         :ok <- validate_field(field),
+         :ok <- validate_values(values, [], 0) do
       :ok
     else
       _failure -> {:error, :invalid_matcher}
     end
   end
 
-  defp validate_predicate(%Predicate{
-         field: field,
-         operator: :exists,
-         value: nil,
-         values: []
-       }),
-       do: validate_field(field)
+  defp validate_predicate(
+         %Predicate{
+           field: field,
+           operator: :exists,
+           value: nil,
+           values: []
+         } = predicate
+       ),
+       do: with(true <- exact_predicate?(predicate), :ok <- validate_field(field), do: :ok)
 
-  defp validate_predicate(%Predicate{field: field, operator: operator, value: value, values: []})
+  defp validate_predicate(
+         %Predicate{field: field, operator: operator, value: value, values: []} = predicate
+       )
        when operator in [:greater_than, :less_than] and is_number(value),
-       do: validate_field(field)
+       do:
+         with(
+           true <- exact_predicate?(predicate),
+           :ok <- validate_field(field),
+           :ok <- validate_scalar(value),
+           do: :ok
+         )
 
   defp validate_predicate(_predicate), do: {:error, :invalid_matcher}
 
@@ -110,7 +143,17 @@ defmodule ClusterMurmur.Events.MatcherEvaluator do
       else: {:error, :invalid_matcher}
   end
 
-  defp validate_scalar(value) when is_nil(value) or is_boolean(value) or is_number(value), do: :ok
+  defp validate_scalar(value) when is_nil(value) or is_boolean(value), do: :ok
+
+  defp validate_scalar(value)
+       when is_integer(value) and value >= -@max_safe_integer and value <= @max_safe_integer,
+       do: :ok
+
+  defp validate_scalar(value) when is_float(value) do
+    if value == value and value >= -@max_float and value <= @max_float,
+      do: :ok,
+      else: {:error, :invalid_matcher}
+  end
 
   defp validate_scalar(value)
        when is_binary(value) and byte_size(value) <= @max_string_value_bytes do
@@ -163,9 +206,27 @@ defmodule ClusterMurmur.Events.MatcherEvaluator do
   defp event_scalar?(value) when is_binary(value), do: String.valid?(value)
   defp event_scalar?(_value), do: false
 
-  defp pairwise_distinct?([]), do: true
+  defp validate_values([], _validated, _count), do: :ok
 
-  defp pairwise_distinct?([value | rest]) do
-    not Enum.any?(rest, &(&1 == value)) and pairwise_distinct?(rest)
+  defp validate_values([_value | _values], _validated, @max_values),
+    do: {:error, :invalid_matcher}
+
+  defp validate_values([value | values], validated, count) do
+    with :ok <- validate_scalar(value),
+         false <- Enum.any?(validated, &(&1 == value)) do
+      validate_values(values, [value | validated], count + 1)
+    else
+      _failure -> {:error, :invalid_matcher}
+    end
+  end
+
+  defp validate_values(_improper_tail, _validated, _count),
+    do: {:error, :invalid_matcher}
+
+  defp exact_predicate?(predicate),
+    do: exact_keys?(predicate, @predicate_keys, @predicate_key_count)
+
+  defp exact_keys?(value, keys, key_count) do
+    map_size(value) == key_count and Enum.all?(keys, &Map.has_key?(value, &1))
   end
 end
