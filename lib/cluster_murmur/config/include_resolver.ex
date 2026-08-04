@@ -10,11 +10,12 @@ defmodule ClusterMurmur.Config.IncludeResolver do
   entire manifest and returns a deterministic file list for each category.
   """
 
+  alias ClusterMurmur.Config.PathResolver
+
   @max_patterns 64
   @max_files 256
   @max_inspected_entries 1_024
   @max_pattern_bytes 512
-  @max_symlinks 40
 
   @type error ::
           :filesystem_error
@@ -44,7 +45,7 @@ defmodule ClusterMurmur.Config.IncludeResolver do
   def resolve_categories(config_path, categories)
       when is_binary(config_path) and is_map(categories) do
     with {:ok, entries} <- validate_categories(categories),
-         {:ok, root} <- config_root(config_path),
+         {:ok, root} <- PathResolver.config_root(config_path),
          {:ok, state} <- resolve_category_entries(root, entries) do
       {:ok, finalize_categories(state.categories)}
     end
@@ -81,17 +82,6 @@ defmodule ClusterMurmur.Config.IncludeResolver do
     do: {:error, :too_many_include_patterns}
 
   defp count_patterns(_patterns, _count), do: {:error, :invalid_includes}
-
-  defp config_root(config_path) do
-    with {:ok, root} <- canonical_path(Path.dirname(config_path)),
-         {:ok, canonical_config} <- canonical_path(config_path),
-         true <- inside_root?(canonical_config, root),
-         {:ok, %File.Stat{type: :regular}} <- File.stat(canonical_config) do
-      {:ok, root}
-    else
-      _failure -> {:error, :invalid_config_path}
-    end
-  end
 
   defp resolve_category_entries(root, entries) do
     initial = %{
@@ -283,13 +273,13 @@ defmodule ClusterMurmur.Config.IncludeResolver do
   end
 
   defp canonicalize_and_classify_candidate(candidate, root, final?) do
-    case canonical_path(candidate) do
+    case PathResolver.canonical_path(candidate) do
       {:ok, canonical} ->
         cond do
-          not inside_root?(canonical, root) ->
+          not PathResolver.inside_root?(canonical, root) ->
             {:error, :include_target_outside_root}
 
-          not portable_target?(canonical, root) ->
+          not PathResolver.portable_target?(canonical, root) ->
             {:error, :include_target_invalid}
 
           true ->
@@ -317,19 +307,6 @@ defmodule ClusterMurmur.Config.IncludeResolver do
   defp classify_target(_canonical, _type, true), do: {:error, :include_target_invalid}
   defp classify_target(_canonical, _type, false), do: :skip
 
-  defp portable_target?(path, root) do
-    if path == root do
-      true
-    else
-      path
-      |> Path.relative_to(root)
-      |> Path.split()
-      |> Enum.all?(fn component ->
-        component not in [".", ".."] and Regex.match?(~r/\A[A-Za-z0-9._-]+\z/, component)
-      end)
-    end
-  end
-
   defp combine_files(files, resolved) do
     combined = Enum.reduce(resolved, files, &MapSet.put(&2, &1))
 
@@ -337,86 +314,4 @@ defmodule ClusterMurmur.Config.IncludeResolver do
       do: {:ok, combined},
       else: {:error, :too_many_included_files}
   end
-
-  defp inside_root?(path, root) do
-    path == root or String.starts_with?(path, root_prefix(root))
-  end
-
-  defp root_prefix("/"), do: "/"
-  defp root_prefix(root), do: root <> "/"
-
-  defp canonical_path(path) do
-    with {:ok, components} <- absolute_components(path) do
-      resolve_components(components, nil, 0)
-    end
-  end
-
-  defp absolute_components(path) do
-    if Path.type(path) == :absolute do
-      {:ok, path_components(path)}
-    else
-      case File.cwd() do
-        {:ok, cwd} -> {:ok, Path.split(cwd) ++ path_components(path)}
-        {:error, _reason} -> {:error, :filesystem_error}
-      end
-    end
-  end
-
-  defp resolve_components([], current, _symlink_count), do: {:ok, current}
-
-  defp resolve_components(["/" | remaining], _current, symlink_count),
-    do: resolve_components(remaining, "/", symlink_count)
-
-  defp resolve_components(["." | remaining], current, symlink_count),
-    do: resolve_components(remaining, current, symlink_count)
-
-  defp resolve_components([".." | remaining], current, symlink_count),
-    do: resolve_components(remaining, Path.dirname(current), symlink_count)
-
-  defp resolve_components([component | remaining], current, symlink_count) do
-    candidate = join_component(current, component)
-
-    case File.lstat(candidate) do
-      {:ok, %File.Stat{type: :symlink}} when symlink_count < @max_symlinks ->
-        resolve_symlink(candidate, remaining, current, symlink_count)
-
-      {:ok, %File.Stat{type: :symlink}} ->
-        {:error, :eloop}
-
-      {:ok, %File.Stat{type: :directory}} when remaining != [] ->
-        resolve_components(remaining, candidate, symlink_count)
-
-      {:ok, %File.Stat{}} when remaining == [] ->
-        resolve_components(remaining, candidate, symlink_count)
-
-      {:ok, %File.Stat{}} ->
-        {:error, :enotdir}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp resolve_symlink(candidate, remaining, current, symlink_count) do
-    with {:ok, target} <- File.read_link(candidate) do
-      target_components = path_components(target)
-
-      if Path.type(target) == :absolute do
-        resolve_components(target_components ++ remaining, nil, symlink_count + 1)
-      else
-        resolve_components(target_components ++ remaining, current, symlink_count + 1)
-      end
-    end
-  end
-
-  defp path_components(path) do
-    components = Path.split(path)
-
-    if String.ends_with?(path, "/"),
-      do: components ++ ["."],
-      else: components
-  end
-
-  defp join_component(nil, component), do: component
-  defp join_component(current, component), do: Path.join(current, component)
 end
