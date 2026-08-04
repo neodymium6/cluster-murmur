@@ -17,8 +17,10 @@ Configuration uses YAML 1.2. Bounded document decoding, strict top-level
 manifest validation, duration and common scalar validation, bounded include
 resolution, composition of those manifest stages into a load plan, and bounded
 decoding of the included YAML documents are implemented, but the remaining
-validation pipeline is still a design target. A fixed top-level file includes
-files by category:
+validation pipeline is still a design target. A value-free Draft 7 validation
+adapter for application-owned schemas is implemented; category schemas and
+their semantic validators remain future changes. A fixed top-level file
+includes files by category:
 
 ```text
 config/
@@ -106,6 +108,17 @@ validation has two fail-closed stages:
 1. JSON Schema validates document structure and rejects unknown fields.
 2. Elixir semantic validation resolves references and validates values that
    JSON Schema cannot safely establish.
+
+Version 1 schemas use JSON Schema Draft 7, are compiled from application source,
+and cannot use `$ref`, `id`, or `$id`. Operator configuration cannot supply a
+schema, filesystem path, or schema resolver. Unknown formats are ignored
+locally instead of invoking a globally configured callback. The
+`contentEncoding` and `contentMediaType` keywords are unsupported because their
+implementation delegates document data to a global decoder. Validation errors
+never include the library's detailed paths or rejected values.
+Schema source must be a proper JSON-compatible tree with string object keys,
+and compiled validators are rechecked before use rather than trusting a public
+struct value.
 
 Startup must fail before external connections or publication when any of the
 following is found:
