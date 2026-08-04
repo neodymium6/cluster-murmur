@@ -465,6 +465,10 @@ timezone. The action and event-group reference follow the schedule trigger
 contract. Validation does not sample randomness, calculate a next run, persist
 counters, or emit events.
 
+The separate pure scheduling boundary calculates a next run by sampling one
+wait and adding it to a caller-supplied canonical UTC instant. It does not read
+a clock, inspect scheduler state, persist the result, or execute an action.
+
 Active windows include their start minute and exclude their end minute. A
 crossing-midnight window is active from its start through local midnight and
 from midnight up to its end. Both instants in a repeated DST wall-clock minute
