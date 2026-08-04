@@ -293,18 +293,28 @@ triggers:
   - id: monitoring-failure
     event:
       match:
-        type: observation.failed
-        labels:
-          category: monitoring
+        all:
+          - field: type
+            operator: equals
+            value: observation.failed
+          - field: labels.category
+            operator: equals
+            value: monitoring
     action:
       type: start_conversation
       binding: monitoring-characters
     cooldown: 30m
 ```
 
-The matcher vocabulary is limited to `equals`, `not_equals`, `in`, `exists`,
-`greater_than`, and `less_than`. Configuration cannot contain Elixir, Lua,
-JavaScript, shell, SQL, PromQL, or arbitrary HTTP expressions.
+`match.all` contains 1 to 32 conjunctive predicates. Fields are limited to
+`type`, `source`, `subject`, `group`, `severity`, `labels.<id>`, and
+`facts.<id>`. The dynamic `<id>` starts with an ASCII letter or digit and then
+contains only ASCII letters, digits, `_`, or `-`. `equals` and `not_equals` take
+a scalar `value`; `in` takes 1 to 32 distinct scalar `values`; `exists` takes no
+operand; and `greater_than` and `less_than` take a numeric `value`. Scalar
+strings are limited to 1,024 UTF-8 bytes. Configuration cannot contain
+disjunctions, regular expressions, deeper paths, Elixir, Lua, JavaScript,
+shell, SQL, PromQL, or arbitrary HTTP expressions.
 
 ### Schedule triggers
 
