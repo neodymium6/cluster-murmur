@@ -266,12 +266,20 @@ defmodule ClusterMurmur.Config.IncludeResolver do
   defp root_prefix(root), do: root <> "/"
 
   defp canonical_path(path) do
-    components =
-      if Path.type(path) == :absolute,
-        do: path_components(path),
-        else: Path.split(File.cwd!()) ++ path_components(path)
+    with {:ok, components} <- absolute_components(path) do
+      resolve_components(components, nil, 0)
+    end
+  end
 
-    resolve_components(components, nil, 0)
+  defp absolute_components(path) do
+    if Path.type(path) == :absolute do
+      {:ok, path_components(path)}
+    else
+      case File.cwd() do
+        {:ok, cwd} -> {:ok, Path.split(cwd) ++ path_components(path)}
+        {:error, _reason} -> {:error, :filesystem_error}
+      end
+    end
   end
 
   defp resolve_components([], current, _symlink_count), do: {:ok, current}
