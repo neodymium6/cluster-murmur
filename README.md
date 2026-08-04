@@ -11,11 +11,11 @@ pinned development environment, CI entry point, architecture baseline, core
 domain values, external dependency behaviours, and deterministic observation
 state-transition classification. Version 1 duration and common scalar
 configuration validation, category-aware bounded include resolution, bounded
-YAML document decoding, and strict top-level manifest validation are also
-available. Full configuration assembly, observation ingestion, persistence,
-triggers, LLM generation, and Discord publication are not implemented yet. Do
-not deploy this revision or connect it to infrastructure, model providers, or
-Discord.
+YAML document decoding, strict top-level manifest validation, and deterministic
+manifest load-plan construction are also available. Full configuration
+assembly, observation ingestion, persistence, triggers, LLM generation, and
+Discord publication are not implemented yet. Do not deploy this revision or
+connect it to infrastructure, model providers, or Discord.
 
 ## Boundary
 
