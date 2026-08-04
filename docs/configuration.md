@@ -184,8 +184,9 @@ chmod 0700 .local
 The repository has one connection, uses immediate transactions, enables foreign
 keys and WAL mode, and waits at most five seconds for a busy database. SQL query
 logging and sensitive connection-error details are disabled. These connection
-settings establish the persistence boundary only; schemas, migrations, and
-retention behavior remain later implementation stages.
+settings and the first stochastic-schedule schema and migration are implemented.
+Other schemas, domain stores, automatic migration execution, and retention
+behavior remain later implementation stages.
 
 Generic Ecto URL configuration is rejected because URL parsing occurs after the
 repository callback and could otherwise replace the validated database path or

@@ -26,10 +26,11 @@ sampling is deterministic through injected randomness, and pure cron next-run
 calculation and stochastic active-hours evaluation have explicit DST behavior.
 Pure stochastic eligibility also combines local-date daily limits with active
 hours. A supervised, single-writer Ecto/SQLite repository now provides the
-runtime persistence foundation, but schemas and domain stores are not yet
-implemented. Observation ingestion, trigger execution, LLM generation, and
-Discord publication are not implemented yet. Do not deploy this revision or
-connect it to infrastructure, model providers, or Discord.
+runtime persistence foundation. The first constrained migration and redacted
+record cover restart-safe stochastic schedule state, but domain stores are not
+yet implemented. Observation ingestion, trigger execution, LLM generation,
+and Discord publication are not implemented yet. Do not deploy this revision
+or connect it to infrastructure, model providers, or Discord.
 
 ## Boundary
 
