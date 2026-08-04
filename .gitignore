@@ -1,0 +1,11 @@
+/.direnv/
+/.elixir_ls/
+/.local/
+/.pre-commit-cache/
+/_build/
+/cover/
+/deps/
+/doc/
+/erl_crash.dump
+/result
+/result-*
