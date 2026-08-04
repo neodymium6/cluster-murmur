@@ -469,6 +469,11 @@ The separate pure scheduling boundary calculates a next run by sampling one
 wait and adding it to a caller-supplied canonical UTC instant. It does not read
 a clock, inspect scheduler state, persist the result, or execute an action.
 
+Claimed execution planning rechecks active-hours and daily-limit eligibility at
+the supplied execution instant. Ineligible work is skipped without sampling a
+new wait; an eligible plan contains only the configured event template and the
+redacted values needed for a later completion record.
+
 Active windows include their start minute and exclude their end minute. A
 crossing-midnight window is active from its start through local midnight and
 from midnight up to its end. Both instants in a repeated DST wall-clock minute
