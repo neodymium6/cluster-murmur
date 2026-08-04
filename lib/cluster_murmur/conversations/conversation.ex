@@ -3,6 +3,7 @@ defmodule ClusterMurmur.Conversations.Conversation do
   Bounded state for one short conversation.
   """
 
+  @derive {Inspect, only: [:status, :turn_count, :llm_call_count]}
   defstruct [
     :id,
     :root_event_id,
