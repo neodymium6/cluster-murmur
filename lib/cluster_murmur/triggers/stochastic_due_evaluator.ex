@@ -104,10 +104,8 @@ defmodule ClusterMurmur.Triggers.StochasticDueEvaluator do
        when is_integer(daily_limit),
        do: {local_date, 0}
 
-  defp valid_storage_datetime?(%DateTime{time_zone: "Etc/UTC"} = datetime),
-    do: DateTimeValidator.validate(datetime) == :ok
-
-  defp valid_storage_datetime?(_datetime), do: false
+  defp valid_storage_datetime?(datetime),
+    do: DateTimeValidator.validate_storage_utc(datetime) == :ok
 
   defp valid_optional_datetime?(nil), do: true
   defp valid_optional_datetime?(datetime), do: valid_storage_datetime?(datetime)

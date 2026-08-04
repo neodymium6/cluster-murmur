@@ -11,8 +11,6 @@ defmodule ClusterMurmur.Events.Validator do
   alias ClusterMurmur.DomainLimits
   alias ClusterMurmur.Events.Event
 
-  @datetime_keys DateTime.__struct__() |> Map.keys()
-  @datetime_key_count length(@datetime_keys)
   @event_keys Event.__struct__() |> Map.keys()
   @event_key_count length(@event_keys)
   @max_collection_entries 256
@@ -23,7 +21,6 @@ defmodule ClusterMurmur.Events.Validator do
   @max_total_text_bytes 64 * 1_024
   @max_safe_integer DomainLimits.max_safe_integer()
   @max_float DomainLimits.max_float()
-  @storage_years 0..9999
 
   @type error :: :invalid_event
   @type budget :: {non_neg_integer(), non_neg_integer()}
@@ -118,14 +115,12 @@ defmodule ClusterMurmur.Events.Validator do
 
   defp validate_string(_value, _allow_empty?, _budget), do: {:error, :invalid_event}
 
-  defp validate_datetime(%DateTime{time_zone: "Etc/UTC", year: year} = datetime)
-       when year in @storage_years do
-    if exact_keys?(datetime, @datetime_keys, @datetime_key_count),
-      do: DateTimeValidator.validate(datetime),
-      else: {:error, :invalid_event}
+  defp validate_datetime(datetime) do
+    case DateTimeValidator.validate_storage_utc(datetime) do
+      :ok -> :ok
+      {:error, :invalid_datetime} -> {:error, :invalid_event}
+    end
   end
-
-  defp validate_datetime(_datetime), do: {:error, :invalid_event}
 
   defp validate_optional_datetime(nil), do: :ok
   defp validate_optional_datetime(datetime), do: validate_datetime(datetime)

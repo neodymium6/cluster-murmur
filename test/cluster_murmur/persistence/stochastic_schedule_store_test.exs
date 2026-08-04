@@ -101,6 +101,13 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
     for {trigger_id, next_run_at} <- [
           {"invalid id", ~U[2026-08-04 14:00:00.000000Z]},
           {"ambient", nil},
+          {"ambient", %{~U[2026-08-04 14:00:00.000000Z] | hour: 24}},
+          {"ambient",
+           Map.put(
+             ~U[2026-08-04 14:00:00.000000Z],
+             :unexpected_private_value,
+             "private"
+           )},
           {"ambient", DateTime.new!(Date.new!(10_000, 8, 4), ~T[14:00:00.000000], "Etc/UTC")}
         ] do
       assert StochasticScheduleStore.restore_or_initialize(trigger_id, next_run_at) ==
