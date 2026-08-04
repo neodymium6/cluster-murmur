@@ -24,6 +24,7 @@ defmodule ClusterMurmur.MixProject do
   defp deps do
     [
       {:crontab, "~> 1.2"},
+      {:ecto_sqlite3, "~> 0.24.1"},
       {:ex_json_schema, "~> 0.11.4"},
       {:time_zone_info, "~> 0.7"},
       {:yamerl, "~> 0.10.0"}

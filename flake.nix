@@ -43,6 +43,7 @@
         {
           default = pkgs.mkShell {
             ELIXIR_ERL_OPTIONS = "+fnu";
+            EXQLITE_USE_SYSTEM = "1";
             MIX_REBAR3 = "${pkgs.rebar3}/bin/rebar3";
 
             packages = with pkgs; [
@@ -73,7 +74,7 @@
             version = pkgs.lib.strings.removeSuffix "\n" (builtins.readFile ./VERSION);
             src = source;
             mixEnv = "test";
-            hash = "sha256-HoPVrWj/P/OEeEDQ2Gpbbwr8m/fTd7AUfbGW7g+yTo8=";
+            hash = "sha256-EKELmjAs8BwUzMq+ToC3SRpo7DI0cPUvHVIxfRtXMAE=";
           };
         in
         {
@@ -84,7 +85,10 @@
                   pkgs.beamPackages.elixir
                   pkgs.beamPackages.erlang
                   pkgs.beamPackages.hex
+                  pkgs.gnumake
                   pkgs.rebar3
+                  pkgs.sqlite
+                  pkgs.stdenv.cc
                 ];
               }
               ''
@@ -97,6 +101,8 @@
                 export MIX_BUILD_PATH="$TMPDIR/build"
                 export MIX_DEPS_PATH="$TMPDIR/deps"
                 export MIX_REBAR3="${pkgs.rebar3}/bin/rebar3"
+                export ELIXIR_MAKE_CACHE_DIR="$TMPDIR/elixir-make"
+                export EXQLITE_USE_SYSTEM=1
                 cp --no-preserve=mode -R ${mixDeps} "$MIX_DEPS_PATH"
                 chmod -R u+w "$MIX_DEPS_PATH"
                 mix format --check-formatted
