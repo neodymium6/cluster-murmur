@@ -398,6 +398,11 @@ timezone. The action and event-group reference follow the schedule trigger
 contract. Validation does not sample randomness, calculate a next run, persist
 counters, or emit events.
 
+Active windows include their start minute and exclude their end minute. A
+crossing-midnight window is active from its start through local midnight and
+from midnight up to its end. Both instants in a repeated DST wall-clock minute
+have the same active-hours status.
+
 ## LLM provider
 
 The first provider uses an OpenAI-compatible API:

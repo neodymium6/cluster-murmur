@@ -6,6 +6,7 @@ defmodule ClusterMurmur.Triggers.ScheduleCalculator do
   occurrence, so a wall-clock schedule never runs twice during a DST fold.
   """
 
+  alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.Triggers.{CronValidator, ScheduleTrigger}
 
   @max_search_steps 100_000
@@ -18,7 +19,7 @@ defmodule ClusterMurmur.Triggers.ScheduleCalculator do
   @spec next_run(term(), term()) :: {:ok, DateTime.t()} | {:error, error()}
   def next_run(%ScheduleTrigger{} = trigger, %DateTime{} = datetime) do
     with :ok <- validate_trigger(trigger),
-         :ok <- validate_datetime(datetime),
+         :ok <- DateTimeValidator.validate(datetime),
          {:ok, local_datetime} <- shift_zone(datetime, trigger.timezone),
          {:ok, next_local} <-
            schedule(
@@ -57,35 +58,6 @@ defmodule ClusterMurmur.Triggers.ScheduleCalculator do
     _error -> false
   catch
     _kind, _reason -> false
-  end
-
-  defp validate_datetime(datetime) do
-    naive = DateTime.to_naive(datetime)
-
-    case DateTime.from_naive(naive, datetime.time_zone, @time_zone_database) do
-      {:ok, canonical} -> compare_datetime(canonical, datetime)
-      {:ambiguous, earlier, later} -> compare_ambiguous_datetime(earlier, later, datetime)
-      _failure -> {:error, :invalid_datetime}
-    end
-  rescue
-    _error -> {:error, :invalid_datetime}
-  catch
-    _kind, _reason -> {:error, :invalid_datetime}
-  end
-
-  defp compare_ambiguous_datetime(earlier, later, datetime) do
-    if same_datetime?(earlier, datetime) or same_datetime?(later, datetime),
-      do: :ok,
-      else: {:error, :invalid_datetime}
-  end
-
-  defp compare_datetime(canonical, datetime) do
-    if same_datetime?(canonical, datetime), do: :ok, else: {:error, :invalid_datetime}
-  end
-
-  defp same_datetime?(canonical, datetime) do
-    DateTime.compare(canonical, datetime) == :eq and canonical.zone_abbr == datetime.zone_abbr and
-      canonical.utc_offset == datetime.utc_offset and canonical.std_offset == datetime.std_offset
   end
 
   defp shift_zone(datetime, timezone) do
