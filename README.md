@@ -18,7 +18,8 @@ bounded version 1 event-group, persona, binding, and routing validation, a bound
 persona-prompt file reader, and cross-category character catalog assembly are
 in place. The bounded version 1 event-matcher grammar and deterministic
 evaluation, event-trigger category validation, and complete startup
-configuration assembly are also implemented.
+configuration assembly are also implemented. Matching event-trigger selection
+is deterministic and bounded.
 Schedule and stochastic trigger validation, observation ingestion, persistence,
 trigger execution, LLM generation, and Discord publication are not implemented
 yet. Do not deploy this revision or connect it to infrastructure, model
