@@ -42,7 +42,18 @@ defmodule ClusterMurmur.Persistence.TriggerExecution do
 
   @doc "Builds a redacted started record from one complete event-trigger execution plan."
   @spec start_changeset(t(), term()) :: Ecto.Changeset.t()
-  def start_changeset(%__MODULE__{} = execution, %Plan{} = plan) do
+  def start_changeset(
+        %__MODULE__{
+          __meta__: %Ecto.Schema.Metadata{state: :built},
+          trigger_id: nil,
+          event_id: nil,
+          status: nil,
+          executed_at: nil,
+          cooldown_until: nil,
+          error_class: nil
+        } = execution,
+        %Plan{} = plan
+      ) do
     if valid_plan?(plan) do
       execution
       |> cast(
@@ -96,12 +107,13 @@ defmodule ClusterMurmur.Persistence.TriggerExecution do
     changeset
     |> check_constraint(:trigger_id, name: "trigger_executions_trigger_id")
     |> check_constraint(:event_id, name: "trigger_executions_event_id")
-    |> foreign_key_constraint(:event_id)
     |> check_constraint(:status, name: "trigger_executions_status")
     |> check_constraint(:executed_at, name: "trigger_executions_executed_at")
     |> check_constraint(:cooldown_until, name: "trigger_executions_cooldown_until")
     |> check_constraint(:error_class, name: "trigger_executions_error_class")
-    |> unique_constraint([:trigger_id, :event_id], name: :trigger_executions_pkey)
+    |> unique_constraint([:trigger_id, :event_id],
+      name: :trigger_executions_trigger_id_event_id_index
+    )
   end
 
   defp invalid_changeset(execution) do

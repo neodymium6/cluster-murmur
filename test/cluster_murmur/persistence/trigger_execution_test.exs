@@ -1,10 +1,51 @@
 defmodule ClusterMurmur.Persistence.TriggerExecutionTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias ClusterMurmur.Events.{Event, Matcher}
   alias ClusterMurmur.Events.Matcher.Predicate
-  alias ClusterMurmur.Persistence.TriggerExecution
+  alias ClusterMurmur.Persistence.{EventStore, TriggerExecution}
+  alias ClusterMurmur.Repo
+  alias ClusterMurmur.Repo.Migrations.{CreateEvents, CreateTriggerExecutions}
   alias ClusterMurmur.Triggers.{EventTrigger, EventTriggerExecutionPlanner}
+
+  @events_version 20_260_804_180_500
+  @executions_version 20_260_804_200_000
+
+  setup_all do
+    assert Ecto.Migrator.up(Repo, @events_version, CreateEvents,
+             log: false,
+             log_migrations_sql: false,
+             log_migrator_sql: false
+           ) == :ok
+
+    assert Ecto.Migrator.up(Repo, @executions_version, CreateTriggerExecutions,
+             log: false,
+             log_migrations_sql: false,
+             log_migrator_sql: false
+           ) == :ok
+
+    on_exit(fn ->
+      Ecto.Migrator.down(Repo, @executions_version, CreateTriggerExecutions,
+        log: false,
+        log_migrations_sql: false,
+        log_migrator_sql: false
+      )
+
+      Ecto.Migrator.down(Repo, @events_version, CreateEvents,
+        log: false,
+        log_migrations_sql: false,
+        log_migrator_sql: false
+      )
+    end)
+
+    :ok
+  end
+
+  setup do
+    Ecto.Adapters.SQL.query!(Repo, "DELETE FROM trigger_executions", [], log: false)
+    Ecto.Adapters.SQL.query!(Repo, "DELETE FROM events", [], log: false)
+    :ok
+  end
 
   test "builds a redacted started record from a complete eligible plan" do
     plan = plan!()
@@ -53,6 +94,42 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionTest do
       refute inspected =~ "2026"
       refute inspected =~ "private"
     end
+  end
+
+  test "rejects loaded and prefilled records instead of restarting their lifecycle" do
+    plan = plan!()
+
+    loaded = %TriggerExecution{
+      __meta__: %Ecto.Schema.Metadata{state: :loaded, source: "trigger_executions"},
+      trigger_id: plan.trigger.id,
+      event_id: plan.event.id,
+      status: :completed,
+      executed_at: plan.executed_at,
+      cooldown_until: plan.cooldown_until
+    }
+
+    for execution <- [loaded, %TriggerExecution{status: :failed}] do
+      changeset = TriggerExecution.start_changeset(execution, plan)
+      refute changeset.valid?
+      assert changeset.changes == %{}
+    end
+  end
+
+  test "maps the adapter's composite primary-key name on an actual duplicate insert" do
+    plan = plan!()
+    assert {:ok, _event_record} = EventStore.insert(plan.event)
+
+    assert {:ok, %TriggerExecution{}} =
+             %TriggerExecution{}
+             |> TriggerExecution.start_changeset(plan)
+             |> Repo.insert()
+
+    assert {:error, changeset} =
+             %TriggerExecution{}
+             |> TriggerExecution.start_changeset(plan)
+             |> Repo.insert()
+
+    assert {"has already been taken", _metadata} = changeset.errors[:trigger_id]
   end
 
   defp plan! do

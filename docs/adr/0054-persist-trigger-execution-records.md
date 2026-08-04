@@ -26,6 +26,11 @@ plan. Revalidate the trigger, event, matcher result, UTC instants, and calculate
 cooldown before retaining fields in a changeset. Do not expose a generic
 changeset, arbitrary query interface, or terminal transition API.
 
+SQLite does not report a constraint name for foreign-key violations through the
+adapter. The later store boundary must verify the referenced event inside its
+transaction and normalize any remaining constraint exception; this record does
+not attach an ineffective foreign-key changeset annotation.
+
 ## Consequences
 
 The schema encodes one bounded lifecycle and one record per trigger/event pair.
