@@ -20,12 +20,14 @@ occurrence and optional observation instants in storage-supported years, map
 shapes for facts and labels, and JSON-compatible previous, current, fact, and
 label values.
 
-Bound every collection to 256 entries, nesting to 8 levels, map keys to 512
-bytes, individual strings to 16 KiB, the complete payload and identifiers to 64
-KiB, and traversed nodes to 1,024. Restrict integers to the interoperable JSON
-safe range and reject non-finite floats, structs, atoms, non-string map keys,
-improper lists, invalid UTF-8, and embedded NUL bytes. Return only the stable
-`:invalid_event` classification.
+Bound every collection to 256 entries, collection nesting to 8 levels, map keys
+to 512 bytes, individual strings to 16 KiB, aggregate UTF-8 string and map-key
+content across the payload and identifiers to 64 KiB, and traversed nodes to
+1,024. The node limit and interoperable JSON-safe integer range separately
+bound non-text representation size. Reject non-finite floats, structs, atoms,
+non-string map keys, improper lists, invalid UTF-8, embedded NUL bytes, and
+forged structs with extra fields. Return only the stable `:invalid_event`
+classification.
 
 Do not extract facts, persist events, perform matching, construct prompts, log
 payloads, or call external systems in this validation boundary.

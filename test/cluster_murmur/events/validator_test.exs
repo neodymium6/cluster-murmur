@@ -49,10 +49,26 @@ defmodule ClusterMurmur.Events.ValidatorTest do
     for rejected <- [
           event(occurred_at: local),
           event(occurred_at: %{~U[2026-08-04 12:00:00Z] | hour: 24}),
-          event(observed_at: unsupported_year)
+          event(observed_at: unsupported_year),
+          event(
+            occurred_at:
+              Map.put(
+                ~U[2026-08-04 12:00:00Z],
+                :unexpected_private_payload,
+                String.duplicate("x", 1024 * 1024)
+              )
+          )
         ] do
       assert Validator.validate(rejected) == {:error, :invalid_event}
     end
+  end
+
+  test "rejects forged event maps with fields outside the exact struct" do
+    forged =
+      event([])
+      |> Map.put(:unexpected_private_payload, String.duplicate("x", 1024 * 1024))
+
+    assert Validator.validate(forged) == {:error, :invalid_event}
   end
 
   test "rejects non-JSON and malformed payload shapes" do
