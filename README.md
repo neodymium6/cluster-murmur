@@ -19,12 +19,12 @@ persona-prompt file reader, and cross-category character catalog assembly are
 in place. The bounded version 1 event-matcher grammar and deterministic
 evaluation, event-trigger category validation, and complete startup
 configuration assembly are also implemented. Matching event-trigger selection
-is deterministic and bounded. Standard five-field schedule-trigger validation
-uses a reviewed, embedded IANA timezone snapshot without runtime updates.
-Stochastic trigger validation, observation ingestion, persistence, trigger
-execution, LLM generation, and Discord publication are not implemented yet. Do
-not deploy this revision or connect it to infrastructure, model providers, or
-Discord.
+is deterministic and bounded. Standard five-field schedule-trigger and bounded
+shifted-exponential stochastic-trigger validation use a reviewed, embedded IANA
+timezone snapshot without runtime updates. Observation ingestion, persistence,
+trigger execution, LLM generation, and Discord publication are not implemented
+yet. Do not deploy this revision or connect it to infrastructure, model
+providers, or Discord.
 
 ## Boundary
 

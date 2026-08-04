@@ -3,19 +3,22 @@ defmodule ClusterMurmur.Config.Triggers do
   Validates and combines version 1 trigger documents.
 
   Event triggers contain a bounded declarative matcher and one fixed
-  start-conversation action. Schedule triggers contain a standard five-field
-  cron expression, an embedded IANA timezone, and one fixed emit-event action.
-  References remain unresolved until complete configuration assembly.
+  start-conversation action. Schedule and stochastic triggers contain bounded
+  timing policies and one fixed emit-event action. References remain unresolved
+  until complete configuration assembly.
   """
 
   alias ClusterMurmur.Config.{Duration, EventMatcher, LoadedDocument, SchemaValidator, Value}
-  alias ClusterMurmur.Triggers.{EmittedEvent, EventTrigger, ScheduleTrigger}
+  alias ClusterMurmur.Triggers.ActiveHours
+  alias ClusterMurmur.Triggers.{EmittedEvent, EventTrigger, ScheduleTrigger, StochasticTrigger}
 
   @draft "http://json-schema.org/draft-07/schema#"
   @id_pattern "^[A-Za-z0-9][A-Za-z0-9._-]*$"
   @max_triggers 256
   @max_cron_bytes 256
   @max_timezone_bytes 128
+  @max_interval_ms 365 * 86_400_000
+  @max_daily_limit 10_000
   @month_names ~w(JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC)
   @weekday_names ~w(MON TUE WED THU FRI SAT SUN)
 
@@ -88,6 +91,66 @@ defmodule ClusterMurmur.Config.Triggers do
     }
   }
 
+  @stochastic_trigger_schema %{
+    "type" => "object",
+    "required" => ["id", "stochastic", "action"],
+    "additionalProperties" => false,
+    "properties" => %{
+      "id" => %{"type" => "string", "pattern" => @id_pattern},
+      "stochastic" => %{
+        "type" => "object",
+        "required" => ["distribution", "mean_interval", "minimum_interval"],
+        "additionalProperties" => false,
+        "properties" => %{
+          "distribution" => %{"type" => "string", "enum" => ["shifted_exponential"]},
+          "mean_interval" => %{"type" => "string", "minLength" => 1, "maxLength" => 32},
+          "minimum_interval" => %{
+            "type" => "string",
+            "minLength" => 1,
+            "maxLength" => 32
+          },
+          "active_hours" => %{
+            "type" => "object",
+            "required" => ["start", "end", "timezone"],
+            "additionalProperties" => false,
+            "properties" => %{
+              "start" => %{"type" => "string", "minLength" => 5, "maxLength" => 5},
+              "end" => %{"type" => "string", "minLength" => 5, "maxLength" => 5},
+              "timezone" => %{
+                "type" => "string",
+                "minLength" => 1,
+                "maxLength" => @max_timezone_bytes
+              }
+            }
+          },
+          "daily_limit" => %{
+            "type" => "integer",
+            "minimum" => 1,
+            "maximum" => @max_daily_limit
+          }
+        }
+      },
+      "action" => %{
+        "type" => "object",
+        "required" => ["type", "event"],
+        "additionalProperties" => false,
+        "properties" => %{
+          "type" => %{"type" => "string", "enum" => ["emit_event"]},
+          "event" => %{
+            "type" => "object",
+            "required" => ["type", "group", "subject"],
+            "additionalProperties" => false,
+            "properties" => %{
+              "type" => %{"type" => "string", "pattern" => @id_pattern},
+              "group" => %{"type" => "string", "pattern" => @id_pattern},
+              "subject" => %{"type" => "string", "pattern" => @id_pattern}
+            }
+          }
+        }
+      }
+    }
+  }
+
   @schema %{
     "$schema" => @draft,
     "type" => "object",
@@ -96,7 +159,9 @@ defmodule ClusterMurmur.Config.Triggers do
     "properties" => %{
       "triggers" => %{
         "type" => "array",
-        "items" => %{"oneOf" => [@event_trigger_schema, @schedule_trigger_schema]}
+        "items" => %{
+          "oneOf" => [@event_trigger_schema, @schedule_trigger_schema, @stochastic_trigger_schema]
+        }
       }
     }
   }
@@ -105,7 +170,7 @@ defmodule ClusterMurmur.Config.Triggers do
   @enforce_keys [:triggers]
   defstruct [:triggers]
 
-  @type trigger :: EventTrigger.t() | ScheduleTrigger.t()
+  @type trigger :: EventTrigger.t() | ScheduleTrigger.t() | StochasticTrigger.t()
   @type t :: %__MODULE__{triggers: %{required(String.t()) => trigger()}}
   @type error ::
           :duplicate_trigger
@@ -261,6 +326,32 @@ defmodule ClusterMurmur.Config.Triggers do
     end
   end
 
+  defp build_trigger(%{"stochastic" => stochastic} = attributes, _matcher_validator, timezones) do
+    with {:ok, id} <- validate_id(attributes["id"]),
+         {:ok, mean_interval_ms} <- validate_positive_interval(stochastic["mean_interval"]),
+         {:ok, minimum_interval_ms} <-
+           validate_positive_interval(stochastic["minimum_interval"]),
+         true <- mean_interval_ms > minimum_interval_ms,
+         {:ok, active_hours} <- validate_active_hours(stochastic["active_hours"], timezones),
+         {:ok, daily_limit} <- validate_daily_limit(stochastic["daily_limit"]),
+         true <- is_nil(daily_limit) or not is_nil(active_hours),
+         {:ok, event} <- validate_emitted_event(attributes["action"]["event"]) do
+      {:ok,
+       %StochasticTrigger{
+         id: id,
+         distribution: :shifted_exponential,
+         mean_interval_ms: mean_interval_ms,
+         minimum_interval_ms: minimum_interval_ms,
+         active_hours: active_hours,
+         daily_limit: daily_limit,
+         action: :emit_event,
+         event: event
+       }}
+    else
+      _failure -> {:error, :invalid_trigger_document}
+    end
+  end
+
   defp build_trigger(_attributes, _matcher_validator, _timezones),
     do: {:error, :invalid_trigger_document}
 
@@ -285,6 +376,51 @@ defmodule ClusterMurmur.Config.Triggers do
       {:error, _reason} -> {:error, :invalid_trigger_document}
     end
   end
+
+  defp validate_positive_interval(value) do
+    case Duration.parse(value) do
+      {:ok, milliseconds} when milliseconds > 0 and milliseconds <= @max_interval_ms ->
+        {:ok, milliseconds}
+
+      _failure ->
+        {:error, :invalid_trigger_document}
+    end
+  end
+
+  defp validate_active_hours(nil, _timezones), do: {:ok, nil}
+
+  defp validate_active_hours(attributes, timezones) do
+    with {:ok, start_minute} <- validate_clock_time(attributes["start"]),
+         {:ok, end_minute} <- validate_clock_time(attributes["end"]),
+         true <- start_minute != end_minute,
+         {:ok, timezone} <- validate_timezone(attributes["timezone"], timezones) do
+      {:ok,
+       %ActiveHours{
+         start_minute: start_minute,
+         end_minute: end_minute,
+         timezone: timezone
+       }}
+    else
+      _failure -> {:error, :invalid_trigger_document}
+    end
+  end
+
+  defp validate_clock_time(value) when is_binary(value) do
+    case Regex.run(~r/\A([01][0-9]|2[0-3]):([0-5][0-9])\z/, value, capture: :all_but_first) do
+      [hour, minute] -> {:ok, String.to_integer(hour) * 60 + String.to_integer(minute)}
+      nil -> {:error, :invalid_trigger_document}
+    end
+  end
+
+  defp validate_clock_time(_value), do: {:error, :invalid_trigger_document}
+
+  defp validate_daily_limit(nil), do: {:ok, nil}
+
+  defp validate_daily_limit(value)
+       when is_integer(value) and value > 0 and value <= @max_daily_limit,
+       do: {:ok, value}
+
+  defp validate_daily_limit(_value), do: {:error, :invalid_trigger_document}
 
   defp validate_cron(value)
        when is_binary(value) and byte_size(value) <= @max_cron_bytes do

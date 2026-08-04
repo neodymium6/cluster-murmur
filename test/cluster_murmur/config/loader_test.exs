@@ -244,6 +244,26 @@ defmodule ClusterMurmur.Config.LoaderTest do
             subject: daily-summary
     """)
 
+    write_fixture(context.config_root, "triggers/stochastic.yaml", """
+    triggers:
+      - id: ambient
+        stochastic:
+          distribution: shifted_exponential
+          mean_interval: 8h
+          minimum_interval: 2h
+          active_hours:
+            start: "23:00"
+            end: "08:00"
+            timezone: Asia/Tokyo
+          daily_limit: 3
+        action:
+          type: emit_event
+          event:
+            type: stochastic.fired
+            group: operations
+            subject: ambient
+    """)
+
     write_fixture(context.config_root, "routing.yaml", """
     routing:
       default:
@@ -257,6 +277,9 @@ defmodule ClusterMurmur.Config.LoaderTest do
 
     assert %{action: :emit_event, timezone: "Asia/Tokyo"} =
              configuration.triggers.triggers["daily-summary"]
+
+    assert %{distribution: :shifted_exponential, daily_limit: 3} =
+             configuration.triggers.triggers["ambient"]
 
     File.write!(
       trigger_path,

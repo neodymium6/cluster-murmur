@@ -3,7 +3,8 @@ defmodule ClusterMurmur.Config.TriggersTest do
 
   alias ClusterMurmur.Config.{LoadedDocument, Triggers}
   alias ClusterMurmur.Events.Matcher.Predicate
-  alias ClusterMurmur.Triggers.{EmittedEvent, EventTrigger, ScheduleTrigger}
+  alias ClusterMurmur.Triggers.{ActiveHours, EmittedEvent, EventTrigger}
+  alias ClusterMurmur.Triggers.{ScheduleTrigger, StochasticTrigger}
 
   test "validates, normalizes, and combines event-trigger documents" do
     first =
@@ -90,6 +91,67 @@ defmodule ClusterMurmur.Config.TriggersTest do
              Triggers.parse_documents([loaded(%{"triggers" => schedules})])
 
     assert map_size(triggers) == 2
+  end
+
+  test "validates and normalizes bounded stochastic triggers" do
+    stochastic = stochastic_trigger("ambient", "8h", "2h", "social")
+
+    assert {:ok, %Triggers{triggers: triggers}} =
+             Triggers.parse_documents([loaded(%{"triggers" => [stochastic]})])
+
+    assert %StochasticTrigger{
+             id: "ambient",
+             distribution: :shifted_exponential,
+             mean_interval_ms: 28_800_000,
+             minimum_interval_ms: 7_200_000,
+             active_hours: %ActiveHours{
+               start_minute: 480,
+               end_minute: 1380,
+               timezone: "Asia/Tokyo"
+             },
+             daily_limit: 3,
+             action: :emit_event,
+             event: %EmittedEvent{type: "stochastic.fired", group: "social"}
+           } = triggers["ambient"]
+  end
+
+  test "accepts omitted stochastic active hours and daily limit" do
+    trigger =
+      stochastic_trigger("unbounded-window", "2h", "30m", "social")
+      |> update_in(["stochastic"], &Map.drop(&1, ["active_hours", "daily_limit"]))
+
+    assert {:ok, %Triggers{triggers: %{"unbounded-window" => parsed}}} =
+             Triggers.parse_documents([loaded(%{"triggers" => [trigger]})])
+
+    assert %StochasticTrigger{active_hours: nil, daily_limit: nil} = parsed
+  end
+
+  test "rejects invalid stochastic timing, bounds, and shapes" do
+    valid = stochastic_trigger("ambient", "8h", "2h", "social")
+
+    invalid = [
+      put_in(valid, ["stochastic", "distribution"], "uniform"),
+      put_in(valid, ["stochastic", "mean_interval"], "2h"),
+      put_in(valid, ["stochastic", "mean_interval"], "1h"),
+      put_in(valid, ["stochastic", "minimum_interval"], "0ms"),
+      put_in(valid, ["stochastic", "mean_interval"], "366d"),
+      put_in(valid, ["stochastic", "active_hours", "start"], "8:00"),
+      put_in(valid, ["stochastic", "active_hours", "end"], "24:00"),
+      put_in(valid, ["stochastic", "active_hours", "end"], "08:00"),
+      put_in(valid, ["stochastic", "active_hours", "timezone"], "example.invalid"),
+      put_in(valid, ["stochastic", "daily_limit"], 0),
+      put_in(valid, ["stochastic", "daily_limit"], 10_001),
+      update_in(valid, ["stochastic"], &Map.delete(&1, "active_hours")),
+      put_in(valid, ["action", "type"], "start_conversation"),
+      put_in(valid, ["stochastic", "extra"], true),
+      put_in(valid, ["stochastic", "active_hours", "extra"], true),
+      Map.put(valid, "cooldown", "1h")
+    ]
+
+    for attributes <- invalid do
+      assert Triggers.parse_documents([loaded(%{"triggers" => [attributes]})]) ==
+               {:error, :invalid_trigger_document}
+    end
   end
 
   test "rejects malformed schedules, nonstandard cron shapes, and unknown timezones" do
@@ -224,9 +286,37 @@ defmodule ClusterMurmur.Config.TriggersTest do
       }
     }
 
-    set = %Triggers{triggers: %{"private-trigger" => trigger, "private-schedule" => schedule}}
+    stochastic = %StochasticTrigger{
+      id: "private-random",
+      distribution: :shifted_exponential,
+      mean_interval_ms: 2_000,
+      minimum_interval_ms: 1_000,
+      active_hours: %ActiveHours{
+        start_minute: 1,
+        end_minute: 2,
+        timezone: "private/zone"
+      },
+      daily_limit: 1,
+      action: :emit_event,
+      event: schedule.event
+    }
 
-    for inspected <- [inspect(trigger), inspect(schedule), inspect(schedule.event), inspect(set)] do
+    set = %Triggers{
+      triggers: %{
+        "private-trigger" => trigger,
+        "private-schedule" => schedule,
+        "private-random" => stochastic
+      }
+    }
+
+    for inspected <- [
+          inspect(trigger),
+          inspect(schedule),
+          inspect(stochastic),
+          inspect(stochastic.active_hours),
+          inspect(schedule.event),
+          inspect(set)
+        ] do
       refute inspected =~ "private"
       refute inspected =~ "binding"
     end
@@ -257,6 +347,31 @@ defmodule ClusterMurmur.Config.TriggersTest do
         "type" => "emit_event",
         "event" => %{
           "type" => "schedule.fired",
+          "group" => group,
+          "subject" => id
+        }
+      }
+    }
+  end
+
+  defp stochastic_trigger(id, mean_interval, minimum_interval, group) do
+    %{
+      "id" => id,
+      "stochastic" => %{
+        "distribution" => "shifted_exponential",
+        "mean_interval" => mean_interval,
+        "minimum_interval" => minimum_interval,
+        "active_hours" => %{
+          "start" => "08:00",
+          "end" => "23:00",
+          "timezone" => "Asia/Tokyo"
+        },
+        "daily_limit" => 3
+      },
+      "action" => %{
+        "type" => "emit_event",
+        "event" => %{
+          "type" => "stochastic.fired",
           "group" => group,
           "subject" => id
         }

@@ -365,8 +365,6 @@ does not execute schedules or emit events.
 
 ### Stochastic triggers
 
-Stochastic trigger validation is not implemented yet.
-
 ```yaml
 triggers:
   - id: occasional-murmur
@@ -388,7 +386,17 @@ triggers:
 ```
 
 Version 1 supports only `shifted_exponential`, sampled as the minimum interval
-plus an exponential random delay. The next run and daily counters are durable.
+plus an exponential random delay whose mean is the difference between
+`mean_interval` and `minimum_interval`. Both intervals must be positive, the
+mean must be greater than the minimum, and neither may exceed 365 days.
+
+`active_hours` and `daily_limit` are optional. Active-hour endpoints use strict
+24-hour `HH:MM` notation, must differ, may define a window that crosses
+midnight, and use an embedded IANA timezone. A daily limit is an integer from 1
+through 10,000 and requires `active_hours` so its daily reset has an explicit
+timezone. The action and event-group reference follow the schedule trigger
+contract. Validation does not sample randomness, calculate a next run, persist
+counters, or emit events.
 
 ## LLM provider
 

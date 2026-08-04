@@ -66,6 +66,36 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
     assert Configuration.parse(context.config, set) == {:error, :unknown_trigger_group}
   end
 
+  test "assembles stochastic triggers and resolves emitted event groups", context do
+    documents =
+      put_in(valid_documents(context), [:triggers], [
+        loaded("/config/stochastic.yaml", %{
+          "triggers" => [stochastic_trigger("ambient", "operations")]
+        })
+      ])
+
+    assert {:ok, %Configuration{} = configuration} =
+             Configuration.parse(
+               context.config,
+               %DocumentSet{manifest: manifest(), documents: documents}
+             )
+
+    assert %{distribution: :shifted_exponential, event: %{group: "operations"}} =
+             configuration.triggers.triggers["ambient"]
+  end
+
+  test "rejects stochastic triggers that emit into unknown groups", context do
+    documents =
+      put_in(valid_documents(context), [:triggers], [
+        loaded("/config/stochastic.yaml", %{
+          "triggers" => [stochastic_trigger("ambient", "missing")]
+        })
+      ])
+
+    set = %DocumentSet{manifest: manifest(), documents: documents}
+    assert Configuration.parse(context.config, set) == {:error, :unknown_trigger_group}
+  end
+
   test "labels category failures without exposing rejected values", context do
     invalid_triggers =
       put_in(valid_documents(context), [:triggers], [
@@ -193,6 +223,21 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
       "action" => %{
         "type" => "emit_event",
         "event" => %{"type" => "schedule.fired", "group" => group, "subject" => id}
+      }
+    }
+  end
+
+  defp stochastic_trigger(id, group) do
+    %{
+      "id" => id,
+      "stochastic" => %{
+        "distribution" => "shifted_exponential",
+        "mean_interval" => "8h",
+        "minimum_interval" => "2h"
+      },
+      "action" => %{
+        "type" => "emit_event",
+        "event" => %{"type" => "stochastic.fired", "group" => group, "subject" => id}
       }
     }
   end
