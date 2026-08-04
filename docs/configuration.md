@@ -13,7 +13,9 @@ identifiers.
 
 ## Loading model
 
-Configuration uses YAML 1.2. A fixed top-level file includes files by category:
+Configuration uses YAML 1.2. Duration and common scalar validation are
+implemented, but document loading and the remaining validation pipeline are
+still design targets. A fixed top-level file includes files by category:
 
 ```text
 config/
@@ -79,7 +81,9 @@ following is found:
 - an unreadable, oversized, empty, or insecurely referenced secret file; or
 - a configuration that would remove a required conversation bound.
 
-IDs are non-empty, stable strings suitable for persistence keys. Durations use
+IDs are portable ASCII strings suitable for persistence keys. They start with
+an ASCII letter or digit and continue with ASCII letters, digits, `.`, `_`, or
+`-`. Human-facing fields such as `display_name` may use Unicode. Durations use
 an integer followed by one of `ms`, `s`, `m`, `h`, or `d`. Times use 24-hour
 `HH:MM` notation. Timezones use IANA names such as `Asia/Tokyo` or `Etc/UTC`.
 
