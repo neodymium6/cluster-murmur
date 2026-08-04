@@ -1,21 +1,43 @@
 defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
   use ExUnit.Case, async: false
 
-  alias ClusterMurmur.Persistence.{StochasticSchedule, StochasticScheduleStore}
-  alias ClusterMurmur.Repo
-  alias ClusterMurmur.Repo.Migrations.CreateStochasticSchedules
+  alias ClusterMurmur.Persistence.{
+    StochasticSchedule,
+    StochasticScheduleClaim,
+    StochasticScheduleStore
+  }
 
-  @migration_version 20_260_804_130_000
+  alias ClusterMurmur.Repo
+
+  alias ClusterMurmur.Repo.Migrations.{
+    AddStochasticScheduleClaims,
+    CreateStochasticSchedules
+  }
+
+  @claim_migration_version 20_260_804_160_000
+  @schedule_migration_version 20_260_804_130_000
 
   setup_all do
-    assert Ecto.Migrator.up(Repo, @migration_version, CreateStochasticSchedules,
+    assert Ecto.Migrator.up(Repo, @schedule_migration_version, CreateStochasticSchedules,
+             log: false,
+             log_migrations_sql: false,
+             log_migrator_sql: false
+           ) == :ok
+
+    assert Ecto.Migrator.up(Repo, @claim_migration_version, AddStochasticScheduleClaims,
              log: false,
              log_migrations_sql: false,
              log_migrator_sql: false
            ) == :ok
 
     on_exit(fn ->
-      Ecto.Migrator.down(Repo, @migration_version, CreateStochasticSchedules,
+      Ecto.Migrator.down(Repo, @claim_migration_version, AddStochasticScheduleClaims,
+        log: false,
+        log_migrations_sql: false,
+        log_migrator_sql: false
+      )
+
+      Ecto.Migrator.down(Repo, @schedule_migration_version, CreateStochasticSchedules,
         log: false,
         log_migrations_sql: false,
         log_migrator_sql: false
@@ -160,6 +182,156 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
              {:error, :storage_unavailable}
   end
 
+  test "claims one due schedule with a redacted fixed lease" do
+    assert {:ok, _initial} =
+             StochasticScheduleStore.restore_or_initialize(
+               "ambient",
+               ~U[2026-08-04 14:00:00.000000Z]
+             )
+
+    assert {:ok, claim} =
+             StochasticScheduleStore.claim_due(
+               "ambient",
+               ~U[2026-08-04 14:00:00.000000Z],
+               ~U[2026-08-04 14:00:01.000000Z]
+             )
+
+    assert %StochasticScheduleClaim{
+             trigger_id: "ambient",
+             expected_next_run_at: ~U[2026-08-04 14:00:00.000000Z],
+             token: token,
+             started_at: ~U[2026-08-04 14:00:01.000000Z],
+             expires_at: ~U[2026-08-04 14:01:01.000000Z]
+           } = claim
+
+    assert {:ok, decoded_token} = Base.url_decode64(token, padding: false)
+    assert byte_size(decoded_token) == 32
+    refute inspect(claim) =~ "ambient"
+    refute inspect(claim) =~ token
+    refute inspect(claim) =~ "2026"
+
+    claim_expires_at = claim.expires_at
+    claim_started_at = claim.started_at
+
+    assert %StochasticSchedule{
+             claim_token: ^token,
+             claim_started_at: ^claim_started_at,
+             claim_expires_at: ^claim_expires_at
+           } =
+             Repo.get!(StochasticSchedule, "ambient")
+
+    assert {:ok, restored} =
+             StochasticScheduleStore.restore_or_initialize(
+               "ambient",
+               ~U[2026-08-05 14:00:00.000000Z]
+             )
+
+    assert restored.claim_token == nil
+    assert restored.claim_started_at == nil
+    assert restored.claim_expires_at == nil
+
+    assert %StochasticSchedule{
+             claim_token: ^token,
+             claim_started_at: ^claim_started_at,
+             claim_expires_at: ^claim_expires_at
+           } =
+             Repo.get!(StochasticSchedule, "ambient")
+
+    assert StochasticScheduleStore.list_due(~U[2026-08-04 14:01:00.999999Z]) == {:ok, []}
+
+    assert {:ok, [available]} =
+             StochasticScheduleStore.list_due(~U[2026-08-04 14:01:01.000000Z])
+
+    assert available.trigger_id == "ambient"
+    assert available.claim_token == nil
+    assert available.claim_started_at == nil
+    assert available.claim_expires_at == nil
+  end
+
+  test "atomically rejects duplicate claims and replaces only an expired lease" do
+    assert {:ok, _initial} =
+             StochasticScheduleStore.restore_or_initialize(
+               "ambient",
+               ~U[2026-08-04 14:00:00.000000Z]
+             )
+
+    first =
+      claim_due!("ambient", ~U[2026-08-04 14:00:00.000000Z], ~U[2026-08-04 14:00:00.000000Z])
+
+    assert StochasticScheduleStore.claim_due(
+             "ambient",
+             ~U[2026-08-04 14:00:00.000000Z],
+             ~U[2026-08-04 14:00:59.999999Z]
+           ) == {:error, :schedule_conflict}
+
+    assert {:ok, second} =
+             StochasticScheduleStore.claim_due(
+               "ambient",
+               ~U[2026-08-04 14:00:00.000000Z],
+               ~U[2026-08-04 14:01:00.000000Z]
+             )
+
+    refute second.token == first.token
+
+    assert StochasticScheduleStore.record_execution(
+             first,
+             ~U[2026-08-04 14:00:30.000000Z],
+             ~U[2026-08-04 14:00:30.000000Z],
+             ~U[2026-08-04 18:00:00.000000Z],
+             nil
+           ) == {:error, :schedule_conflict}
+  end
+
+  test "authorizes only one of two concurrent claim attempts" do
+    assert {:ok, _initial} =
+             StochasticScheduleStore.restore_or_initialize(
+               "ambient",
+               ~U[2026-08-04 14:00:00.000000Z]
+             )
+
+    attempts =
+      for _attempt <- 1..2 do
+        Task.async(fn ->
+          StochasticScheduleStore.claim_due(
+            "ambient",
+            ~U[2026-08-04 14:00:00.000000Z],
+            ~U[2026-08-04 14:00:00.000000Z]
+          )
+        end)
+      end
+      |> Task.await_many()
+
+    assert Enum.count(attempts, &match?({:ok, %StochasticScheduleClaim{}}, &1)) == 1
+    assert Enum.count(attempts, &(&1 == {:error, :schedule_conflict})) == 1
+  end
+
+  test "rejects invalid or unavailable claims before exposing values" do
+    invalid = [
+      {"invalid id", ~U[2026-08-04 14:00:00.000000Z], ~U[2026-08-04 14:00:00.000000Z]},
+      {"ambient", nil, ~U[2026-08-04 14:00:00.000000Z]},
+      {"ambient", ~U[2026-08-04 14:00:00.000000Z], nil},
+      {"ambient", ~U[2026-08-04 14:00:00.000000Z],
+       DateTime.new!(~D[9999-12-31], ~T[23:59:59.000000], "Etc/UTC")}
+    ]
+
+    for arguments <- invalid do
+      assert apply(StochasticScheduleStore, :claim_due, Tuple.to_list(arguments)) ==
+               {:error, :invalid_schedule}
+    end
+
+    Repo.put_dynamic_repo(:missing_stochastic_schedule_repo)
+
+    result =
+      StochasticScheduleStore.claim_due(
+        "private-trigger",
+        ~U[2026-08-04 14:00:00.000000Z],
+        ~U[2026-08-04 14:00:00.000000Z]
+      )
+
+    assert result == {:error, :storage_unavailable}
+    refute inspect(result) =~ "private"
+  end
+
   test "records a completed due execution and advances its next run" do
     assert {:ok, _initial} =
              StochasticScheduleStore.restore_or_initialize(
@@ -167,10 +339,17 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
                ~U[2026-08-04 14:00:00.000000Z]
              )
 
+    claim =
+      claim_due!(
+        "ambient",
+        ~U[2026-08-04 14:00:00.000000Z],
+        ~U[2026-08-04 14:00:00.000000Z]
+      )
+
     assert {:ok, advanced} =
              StochasticScheduleStore.record_execution(
-               "ambient",
-               ~U[2026-08-04 14:00:00.000000Z],
+               claim,
+               ~U[2026-08-04 14:00:01.000000Z],
                ~U[2026-08-04 14:00:01.000000Z],
                ~U[2026-08-04 18:00:00.000000Z],
                nil
@@ -180,7 +359,10 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
              last_run_at: ~U[2026-08-04 14:00:01.000000Z],
              next_run_at: ~U[2026-08-04 18:00:00.000000Z],
              daily_count: 0,
-             daily_count_date: nil
+             daily_count_date: nil,
+             claim_token: nil,
+             claim_started_at: nil,
+             claim_expires_at: nil
            } = advanced
   end
 
@@ -191,10 +373,17 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
                ~U[2026-08-04 14:00:00.000000Z]
              )
 
+    first_claim =
+      claim_due!(
+        "ambient",
+        ~U[2026-08-04 14:00:00.000000Z],
+        ~U[2026-08-04 14:00:00.000000Z]
+      )
+
     assert {:ok, first} =
              StochasticScheduleStore.record_execution(
-               "ambient",
-               ~U[2026-08-04 14:00:00.000000Z],
+               first_claim,
+               ~U[2026-08-04 14:00:01.000000Z],
                ~U[2026-08-04 14:00:01.000000Z],
                ~U[2026-08-04 16:00:00.000000Z],
                ~D[2026-08-04]
@@ -203,10 +392,17 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
     assert first.daily_count == 1
     assert first.daily_count_date == ~D[2026-08-04]
 
+    second_claim =
+      claim_due!(
+        "ambient",
+        ~U[2026-08-04 16:00:00.000000Z],
+        ~U[2026-08-04 16:00:00.000000Z]
+      )
+
     assert {:ok, second} =
              StochasticScheduleStore.record_execution(
-               "ambient",
-               ~U[2026-08-04 16:00:00.000000Z],
+               second_claim,
+               ~U[2026-08-04 16:00:01.000000Z],
                ~U[2026-08-04 16:00:01.000000Z],
                ~U[2026-08-05 01:00:00.000000Z],
                ~D[2026-08-04]
@@ -215,10 +411,17 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
     assert second.daily_count == 2
     assert second.daily_count_date == ~D[2026-08-04]
 
+    third_claim =
+      claim_due!(
+        "ambient",
+        ~U[2026-08-05 01:00:00.000000Z],
+        ~U[2026-08-05 01:00:00.000000Z]
+      )
+
     assert {:ok, third} =
              StochasticScheduleStore.record_execution(
-               "ambient",
-               ~U[2026-08-05 01:00:00.000000Z],
+               third_claim,
+               ~U[2026-08-05 01:00:01.000000Z],
                ~U[2026-08-05 01:00:01.000000Z],
                ~U[2026-08-05 08:00:00.000000Z],
                ~D[2026-08-05]
@@ -228,27 +431,57 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
     assert third.daily_count_date == ~D[2026-08-05]
   end
 
-  test "does not mutate stale or not-yet-due schedule versions" do
+  test "does not claim stale or not-yet-due schedule versions" do
     assert {:ok, initial} =
              StochasticScheduleStore.restore_or_initialize(
                "ambient",
                ~U[2026-08-04 14:00:00.000000Z]
              )
 
-    for {expected_next_run_at, executed_at} <- [
+    for {expected_next_run_at, claimed_at} <- [
           {~U[2026-08-04 13:00:00.000000Z], ~U[2026-08-04 14:00:01.000000Z]},
           {~U[2026-08-04 14:00:00.000000Z], ~U[2026-08-04 13:59:59.000000Z]}
         ] do
-      assert StochasticScheduleStore.record_execution(
+      assert StochasticScheduleStore.claim_due(
                "ambient",
                expected_next_run_at,
+               claimed_at
+             ) == {:error, :schedule_conflict}
+    end
+
+    assert Repo.get!(StochasticSchedule, "ambient") == initial
+  end
+
+  test "rejects execution before claim and completion recorded after expiry" do
+    assert {:ok, _initial} =
+             StochasticScheduleStore.restore_or_initialize(
+               "ambient",
+               ~U[2026-08-04 14:00:00.000000Z]
+             )
+
+    claim =
+      claim_due!(
+        "ambient",
+        ~U[2026-08-04 14:00:00.000000Z],
+        ~U[2026-08-04 14:00:00.000000Z]
+      )
+
+    claimed_schedule = Repo.get!(StochasticSchedule, "ambient")
+
+    for {executed_at, recorded_at} <- [
+          {~U[2026-08-04 13:59:59.999999Z], ~U[2026-08-04 14:00:01.000000Z]},
+          {~U[2026-08-04 14:00:30.000000Z], ~U[2026-08-04 14:01:00.000000Z]}
+        ] do
+      assert StochasticScheduleStore.record_execution(
+               claim,
                executed_at,
+               recorded_at,
                ~U[2026-08-04 18:00:00.000000Z],
                nil
              ) == {:error, :schedule_conflict}
     end
 
-    assert Repo.get!(StochasticSchedule, "ambient") == initial
+    assert Repo.get!(StochasticSchedule, "ambient") == claimed_schedule
   end
 
   test "refuses to overflow a persisted daily bucket" do
@@ -266,30 +499,42 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
              })
              |> Repo.update()
 
+    claim =
+      claim_due!(
+        "ambient",
+        ~U[2026-08-04 14:00:00.000000Z],
+        ~U[2026-08-04 14:00:00.000000Z]
+      )
+
+    claimed_schedule = Repo.get!(StochasticSchedule, "ambient")
+
     assert StochasticScheduleStore.record_execution(
-             "ambient",
-             ~U[2026-08-04 14:00:00.000000Z],
+             claim,
+             ~U[2026-08-04 14:00:01.000000Z],
              ~U[2026-08-04 14:00:01.000000Z],
              ~U[2026-08-04 18:00:00.000000Z],
              ~D[2026-08-04]
            ) == {:error, :daily_limit_reached}
 
-    assert Repo.get!(StochasticSchedule, "ambient") == full_bucket
+    refute claimed_schedule == full_bucket
+    assert Repo.get!(StochasticSchedule, "ambient") == claimed_schedule
   end
 
   test "rejects invalid execution records before accessing storage" do
     Repo.put_dynamic_repo(:missing_stochastic_schedule_repo)
+    claim = claim_fixture()
+    executed_at = ~U[2026-08-04 14:00:01.000000Z]
+    next_run_at = ~U[2026-08-04 18:00:00.000000Z]
 
     invalid = [
-      {"invalid id", ~U[2026-08-04 14:00:00.000000Z], ~U[2026-08-04 14:00:01.000000Z],
-       ~U[2026-08-04 18:00:00.000000Z], nil},
-      {"ambient", nil, ~U[2026-08-04 14:00:01.000000Z], ~U[2026-08-04 18:00:00.000000Z], nil},
-      {"ambient", ~U[2026-08-04 14:00:00.000000Z], ~U[2026-08-04 14:00:01.000000Z],
-       ~U[2026-08-04 14:00:01.000000Z], nil},
-      {"ambient", ~U[2026-08-04 14:00:00.000000Z], ~U[2026-08-04 14:00:01.000000Z],
-       ~U[2026-08-04 18:00:00.000000Z], %{~D[2026-08-04] | month: 13}},
-      {"ambient", ~U[2026-08-04 14:00:00.000000Z], ~U[2026-08-04 14:00:01.000000Z],
-       ~U[2026-08-04 18:00:00.000000Z], %{~D[2026-08-04] | month: :invalid}}
+      {nil, executed_at, executed_at, next_run_at, nil},
+      {%{claim | trigger_id: "invalid id"}, executed_at, executed_at, next_run_at, nil},
+      {%{claim | token: "invalid"}, executed_at, executed_at, next_run_at, nil},
+      {claim, nil, executed_at, next_run_at, nil},
+      {claim, executed_at, nil, next_run_at, nil},
+      {claim, executed_at, executed_at, executed_at, nil},
+      {claim, executed_at, executed_at, next_run_at, %{~D[2026-08-04] | month: 13}},
+      {claim, executed_at, executed_at, next_run_at, %{~D[2026-08-04] | month: :invalid}}
     ]
 
     for arguments <- invalid do
@@ -302,11 +547,28 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
     Repo.put_dynamic_repo(:missing_stochastic_schedule_repo)
 
     assert StochasticScheduleStore.record_execution(
-             "private-trigger",
-             ~U[2026-08-04 14:00:00.000000Z],
+             claim_fixture("private-trigger"),
+             ~U[2026-08-04 14:00:01.000000Z],
              ~U[2026-08-04 14:00:01.000000Z],
              ~U[2026-08-04 18:00:00.000000Z],
              nil
            ) == {:error, :storage_unavailable}
+  end
+
+  defp claim_due!(trigger_id, expected_next_run_at, claimed_at) do
+    assert {:ok, claim} =
+             StochasticScheduleStore.claim_due(trigger_id, expected_next_run_at, claimed_at)
+
+    claim
+  end
+
+  defp claim_fixture(trigger_id \\ "ambient") do
+    %StochasticScheduleClaim{
+      trigger_id: trigger_id,
+      expected_next_run_at: ~U[2026-08-04 14:00:00.000000Z],
+      token: Base.url_encode64(:binary.copy(<<1>>, 32), padding: false),
+      started_at: ~U[2026-08-04 14:00:00.000000Z],
+      expires_at: ~U[2026-08-04 14:01:00.000000Z]
+    }
   end
 end

@@ -2,7 +2,11 @@
 
 ## Status
 
-Accepted.
+Accepted; amended by ADR 0042.
+
+ADR 0042 requires its opaque live claim in place of independently supplied
+trigger and expected-version values; the transactional advancement below is
+otherwise retained.
 
 ## Context
 

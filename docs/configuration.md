@@ -191,12 +191,14 @@ logging and sensitive connection-error details are disabled. These connection
 settings and the first stochastic-schedule schema and migration are implemented.
 The first domain store transaction restores an existing stochastic schedule or
 inserts its initial next run without replacing durable state. Its read-only due
-query returns at most 100 redacted records in deterministic order and does not
-claim them. A separate optimistic transaction can record a successfully
-completed execution, advance its next run, and update its local-date counter
-only when the expected schedule version still matches. Due claiming, other
-schemas and stores, automatic migration execution, and retention behavior remain
-later implementation stages.
+query returns at most 100 available redacted records in deterministic order. A
+separate immediate transaction can claim one exact due version through an
+internally generated 256-bit capability with a fixed 60-second expiry. Only the
+matching claim, executed and recorded within its lease interval, can clear the
+lease, advance the next run, and update its local-date counter atomically. Lease
+renewal, early release, external execution, exactly-once delivery, other schemas
+and stores, automatic migration execution, and retention behavior remain later
+stages.
 
 `ClusterMurmur.Release.migrate!/0`, invoked after every application instance
 using the database has stopped, is the only application migration operation. It

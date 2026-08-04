@@ -44,7 +44,54 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleTest do
           valid(
             last_run_at: DateTime.new!(Date.new!(10_000, 8, 4), ~T[12:00:00.000000], "Etc/UTC")
           ),
-          valid(daily_count_date: Date.new!(10_000, 8, 4))
+          valid(daily_count_date: Date.new!(10_000, 8, 4)),
+          valid(
+            claim_token: claim_token(),
+            claim_started_at: ~U[2026-08-04 14:00:00.000000Z],
+            claim_expires_at:
+              DateTime.new!(Date.new!(10_000, 8, 4), ~T[12:00:00.000000], "Etc/UTC")
+          )
+        ] do
+      refute StochasticSchedule.changeset(%StochasticSchedule{}, attributes).valid?
+    end
+  end
+
+  test "requires a bounded opaque token and expiry as one claim pair" do
+    assert StochasticSchedule.changeset(
+             %StochasticSchedule{},
+             valid(
+               claim_token: claim_token(),
+               claim_started_at: ~U[2026-08-04 14:00:00.000000Z],
+               claim_expires_at: ~U[2026-08-04 14:01:00.000000Z]
+             )
+           ).valid?
+
+    for attributes <- [
+          valid(
+            claim_token: "short",
+            claim_started_at: ~U[2026-08-04 14:00:00.000000Z],
+            claim_expires_at: ~U[2026-08-04 14:01:00.000000Z]
+          ),
+          valid(
+            claim_token: claim_token(),
+            claim_started_at: nil,
+            claim_expires_at: ~U[2026-08-04 14:01:00.000000Z]
+          ),
+          valid(
+            claim_token: claim_token(),
+            claim_started_at: ~U[2026-08-04 14:00:00.000000Z],
+            claim_expires_at: nil
+          ),
+          valid(
+            claim_token: nil,
+            claim_started_at: ~U[2026-08-04 14:00:00.000000Z],
+            claim_expires_at: ~U[2026-08-04 14:01:00.000000Z]
+          ),
+          valid(
+            claim_token: claim_token(),
+            claim_started_at: ~U[2026-08-04 14:00:00.000000Z],
+            claim_expires_at: ~U[2026-08-04 14:00:00.000000Z]
+          )
         ] do
       refute StochasticSchedule.changeset(%StochasticSchedule{}, attributes).valid?
     end
@@ -101,7 +148,10 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleTest do
       trigger_id: "private-trigger",
       next_run_at: ~U[2026-08-04 14:00:00.000000Z],
       daily_count: 3,
-      daily_count_date: ~D[2026-08-04]
+      daily_count_date: ~D[2026-08-04],
+      claim_token: claim_token(),
+      claim_started_at: ~U[2026-08-04 14:00:00.000000Z],
+      claim_expires_at: ~U[2026-08-04 14:01:00.000000Z]
     }
 
     schedule =
@@ -113,6 +163,7 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleTest do
       refute inspected =~ "private-trigger"
       refute inspected =~ "2026-08-04"
       refute inspected =~ "14:00"
+      refute inspected =~ claim_token()
     end
   end
 
@@ -129,4 +180,6 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleTest do
     )
     |> Map.new()
   end
+
+  defp claim_token, do: Base.url_encode64(:binary.copy(<<1>>, 32), padding: false)
 end
