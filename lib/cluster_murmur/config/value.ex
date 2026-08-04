@@ -7,7 +7,26 @@ defmodule ClusterMurmur.Config.Value do
   """
 
   @type validation_error ::
-          :invalid_id | :invalid_positive_integer | :invalid_probability | :invalid_weight
+          :invalid_environment_variable_name
+          | :invalid_id
+          | :invalid_positive_integer
+          | :invalid_probability
+          | :invalid_weight
+
+  @max_environment_variable_name_bytes 128
+
+  @spec environment_variable_name(term()) ::
+          {:ok, String.t()} | {:error, :invalid_environment_variable_name}
+  def environment_variable_name(value) when is_binary(value) do
+    if byte_size(value) <= @max_environment_variable_name_bytes and String.valid?(value) and
+         Regex.match?(~r/\A[A-Za-z_][A-Za-z0-9_]*\z/, value) do
+      {:ok, value}
+    else
+      {:error, :invalid_environment_variable_name}
+    end
+  end
+
+  def environment_variable_name(_value), do: {:error, :invalid_environment_variable_name}
 
   @spec id(term()) :: {:ok, String.t()} | {:error, :invalid_id}
   def id(value) when is_binary(value) do

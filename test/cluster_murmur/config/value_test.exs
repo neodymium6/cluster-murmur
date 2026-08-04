@@ -3,6 +3,24 @@ defmodule ClusterMurmur.Config.ValueTest do
 
   alias ClusterMurmur.Config.Value
 
+  test "accepts portable bounded environment-variable names" do
+    assert Value.environment_variable_name("WEBHOOK_FILE") == {:ok, "WEBHOOK_FILE"}
+    assert Value.environment_variable_name("_cluster_murmur_1") == {:ok, "_cluster_murmur_1"}
+
+    for value <- [
+          "",
+          "1WEBHOOK",
+          "WEBHOOK-FILE",
+          String.duplicate("A", 129),
+          "観測者",
+          <<255>>,
+          nil
+        ] do
+      assert Value.environment_variable_name(value) ==
+               {:error, :invalid_environment_variable_name}
+    end
+  end
+
   test "accepts portable machine-readable IDs" do
     assert Value.id("observer") == {:ok, "observer"}
     assert Value.id("Observer-2_internal.v1") == {:ok, "Observer-2_internal.v1"}
