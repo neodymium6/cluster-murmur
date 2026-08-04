@@ -108,7 +108,16 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionTest do
       cooldown_until: plan.cooldown_until
     }
 
-    for execution <- [loaded, %TriggerExecution{status: :failed}] do
+    forged_source = Ecto.put_meta(%TriggerExecution{}, source: "events")
+    forged_prefix = Ecto.put_meta(%TriggerExecution{}, prefix: "private")
+
+    for execution <- [
+          loaded,
+          %TriggerExecution{status: :failed},
+          forged_source,
+          forged_prefix,
+          Map.put(%TriggerExecution{}, :unexpected_private_value, "private")
+        ] do
       changeset = TriggerExecution.start_changeset(execution, plan)
       refute changeset.valid?
       assert changeset.changes == %{}

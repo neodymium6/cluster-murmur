@@ -42,19 +42,8 @@ defmodule ClusterMurmur.Persistence.TriggerExecution do
 
   @doc "Builds a redacted started record from one complete event-trigger execution plan."
   @spec start_changeset(t(), term()) :: Ecto.Changeset.t()
-  def start_changeset(
-        %__MODULE__{
-          __meta__: %Ecto.Schema.Metadata{state: :built},
-          trigger_id: nil,
-          event_id: nil,
-          status: nil,
-          executed_at: nil,
-          cooldown_until: nil,
-          error_class: nil
-        } = execution,
-        %Plan{} = plan
-      ) do
-    if valid_plan?(plan) do
+  def start_changeset(%__MODULE__{} = execution, %Plan{} = plan) do
+    if pristine_execution?(execution) and valid_plan?(plan) do
       execution
       |> cast(
         %{
@@ -79,6 +68,8 @@ defmodule ClusterMurmur.Persistence.TriggerExecution do
   end
 
   def start_changeset(%__MODULE__{} = execution, _plan), do: invalid_changeset(execution)
+
+  defp pristine_execution?(execution), do: execution == %__MODULE__{}
 
   defp valid_plan?(plan) do
     exact_plan?(plan) and
