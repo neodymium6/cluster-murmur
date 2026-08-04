@@ -13,6 +13,21 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
   alias ClusterMurmur.Repo
   alias ClusterMurmur.Triggers.EventTriggerExecutionPlanner.Plan
 
+  @event_identity_fields [
+    :id,
+    :type,
+    :source,
+    :subject,
+    :group,
+    :severity,
+    :previous,
+    :current,
+    :dedupe_key,
+    :correlation_key,
+    :facts,
+    :labels
+  ]
+
   @type error ::
           :event_conflict
           | :event_not_found
@@ -69,12 +84,30 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
 
   defp require_identical_event(%Plan{} = plan) do
     case EventStore.fetch(plan.event.id) do
-      {:ok, event} when event == plan.event -> :ok
-      {:ok, _different_event} -> {:error, :event_conflict}
-      {:error, :event_not_found} -> {:error, :event_not_found}
-      _failure -> {:error, :storage_unavailable}
+      {:ok, event} ->
+        if identical_event?(event, plan.event), do: :ok, else: {:error, :event_conflict}
+
+      {:error, :event_not_found} ->
+        {:error, :event_not_found}
+
+      _failure ->
+        {:error, :storage_unavailable}
     end
   end
+
+  defp identical_event?(persisted, planned) do
+    Map.take(persisted, @event_identity_fields) == Map.take(planned, @event_identity_fields) and
+      same_datetime?(persisted.occurred_at, planned.occurred_at) and
+      same_optional_datetime?(persisted.observed_at, planned.observed_at)
+  end
+
+  defp same_datetime?(%DateTime{} = left, %DateTime{} = right),
+    do: DateTime.compare(left, right) == :eq
+
+  defp same_datetime?(_left, _right), do: false
+
+  defp same_optional_datetime?(nil, nil), do: true
+  defp same_optional_datetime?(left, right), do: same_datetime?(left, right)
 
   defp reject_existing_pair(candidate) do
     case Repo.get_by(TriggerExecution,

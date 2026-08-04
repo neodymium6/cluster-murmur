@@ -75,6 +75,19 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStoreTest do
     assert Repo.aggregate(TriggerExecution, :count) == 0
   end
 
+  test "compares event instants after storage precision normalization" do
+    for {id, occurred_at, executed_at} <- [
+          {"precision-0", ~U[2026-08-04 11:59:59Z], ~U[2026-08-04 12:00:00.000000Z]},
+          {"precision-3", ~U[2026-08-04 11:59:59.123Z], ~U[2026-08-04 12:01:00.000000Z]}
+        ] do
+      event = event(id: id, occurred_at: occurred_at, observed_at: occurred_at)
+      plan = plan!(event, executed_at)
+
+      assert {:ok, _event_record} = EventStore.insert(event)
+      assert {:ok, %TriggerExecution{event_id: ^id}} = TriggerExecutionStore.start(plan)
+    end
+  end
+
   test "rejects a repeated trigger and event pair" do
     plan = plan!(event(), ~U[2026-08-04 12:00:00.000000Z])
     assert {:ok, _event_record} = EventStore.insert(plan.event)
