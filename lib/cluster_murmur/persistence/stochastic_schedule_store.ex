@@ -30,14 +30,16 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStore do
   @spec restore_or_initialize(term(), term()) ::
           {:ok, StochasticSchedule.t()} | {:error, error()}
   def restore_or_initialize(trigger_id, next_run_at) do
-    changeset =
-      StochasticSchedule.changeset(%StochasticSchedule{}, %{
-        trigger_id: trigger_id,
-        next_run_at: next_run_at
-      })
+    if valid_storage_datetime?(next_run_at) do
+      changeset =
+        StochasticSchedule.changeset(%StochasticSchedule{}, %{
+          trigger_id: trigger_id,
+          next_run_at: next_run_at
+        })
 
-    if changeset.valid? do
-      persist(changeset, trigger_id)
+      if changeset.valid?,
+        do: persist(changeset, trigger_id),
+        else: {:error, :invalid_schedule}
     else
       {:error, :invalid_schedule}
     end
