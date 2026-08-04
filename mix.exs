@@ -23,6 +23,7 @@ defmodule ClusterMurmur.MixProject do
 
   defp deps do
     [
+      {:ex_json_schema, "~> 0.11.4"},
       {:yamerl, "~> 0.10.0"}
     ]
   end
