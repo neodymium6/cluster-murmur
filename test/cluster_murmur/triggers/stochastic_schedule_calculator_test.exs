@@ -74,10 +74,29 @@ defmodule ClusterMurmur.Triggers.StochasticScheduleCalculatorTest do
 
     forged = %{~U[2026-08-04 12:00:00Z] | utc_offset: 3_600, zone_abbr: "PRIVATE"}
 
-    for invalid <- [nil, local, forged] do
+    unsupported_year =
+      10_000
+      |> NaiveDateTime.new!(1, 1, 0, 0, 0)
+      |> DateTime.from_naive!("Etc/UTC")
+
+    for invalid <- [nil, local, forged, unsupported_year] do
       assert StochasticScheduleCalculator.next_run(trigger(), invalid, RaisingRandom) ==
                {:error, :invalid_datetime}
     end
+  end
+
+  test "rejects a sampled run beyond the durable datetime range" do
+    assert StochasticScheduleCalculator.next_run(
+             trigger(),
+             ~U[9999-12-31 23:59:57.999000Z],
+             ZeroRandom
+           ) == {:ok, ~U[9999-12-31 23:59:59.999000Z]}
+
+    assert StochasticScheduleCalculator.next_run(
+             trigger(),
+             ~U[9999-12-31 23:59:58Z],
+             ZeroRandom
+           ) == {:error, :no_next_run}
   end
 
   test "preserves stable sampler errors" do
