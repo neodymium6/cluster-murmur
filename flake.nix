@@ -111,6 +111,32 @@
                 mix test
                 mix escript.build
                 test "$(escript ./cluster-murmur --version)" = "$(tr -d '\n' < VERSION)"
+
+                export MIX_ENV=prod
+                mix release --overwrite
+                release_bin="$MIX_BUILD_PATH/rel/cluster_murmur/bin/cluster_murmur"
+                migration_root="$TMPDIR/migration-success"
+                migration_database="$migration_root/cluster-murmur.sqlite3"
+                mkdir -p "$migration_root"
+                chmod 0700 "$migration_root"
+                CLUSTER_MURMUR_DATABASE_PATH="$migration_database" \
+                  "$release_bin" eval 'ClusterMurmur.Release.migrate!()'
+                test "$(sqlite3 "$migration_database" \
+                  "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'stochastic_schedules'")" \
+                  = "stochastic_schedules"
+                test "$(stat -c '%a' "$migration_database")" = "600"
+
+                rejected_database="$TMPDIR/missing/sensitive-marker.sqlite3"
+                rejected_output="$TMPDIR/migration-failure.log"
+                if CLUSTER_MURMUR_DATABASE_PATH="$rejected_database" \
+                  "$release_bin" eval 'ClusterMurmur.Release.migrate!()' \
+                  > /dev/null 2> "$rejected_output"; then
+                  exit 1
+                fi
+                grep -q 'database migration failed' "$rejected_output"
+                if grep -q 'sensitive-marker\|migration-failure' "$rejected_output"; then
+                  exit 1
+                fi
                 touch "$out"
               '';
 

@@ -10,7 +10,8 @@ defmodule ClusterMurmur.MixProject do
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      escript: [main_module: ClusterMurmur.CLI, name: "cluster-murmur", app: nil]
+      escript: [main_module: ClusterMurmur.CLI, name: "cluster-murmur", app: nil],
+      releases: [cluster_murmur: []]
     ]
   end
 

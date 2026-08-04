@@ -179,6 +179,10 @@ Prepare the default development directory from the repository root with:
 ```bash
 mkdir -p .local
 chmod 0700 .local
+MIX_ENV=prod mix release
+CLUSTER_MURMUR_DATABASE_PATH="$PWD/.local/cluster-murmur.sqlite3" \
+  _build/prod/rel/cluster_murmur/bin/cluster_murmur eval \
+  'ClusterMurmur.Release.migrate!()'
 ```
 
 The repository has one connection, uses immediate transactions, enables foreign
@@ -193,6 +197,15 @@ completed execution, advance its next run, and update its local-date counter
 only when the expected schedule version still matches. Due claiming, other
 schemas and stores, automatic migration execution, and retention behavior remain
 later implementation stages.
+
+`ClusterMurmur.Release.migrate!/0`, invoked after every application instance
+using the database has stopped, is the only application migration operation. It
+applies packaged migrations to the fixed configured repository, is safe to
+repeat, and reports only a generic failure. It rejects a running application or
+repository in its own evaluation VM; this local check cannot detect a separate
+release VM. It does not perform rollback or accept caller-selected repositories
+or paths. The bootstrap escript is version-only because native libraries and
+migration files require an extracted release filesystem.
 
 Generic Ecto URL configuration is rejected because URL parsing occurs after the
 repository callback and could otherwise replace the validated database path or
