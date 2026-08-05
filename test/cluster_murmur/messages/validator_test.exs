@@ -103,6 +103,12 @@ defmodule ClusterMurmur.Messages.ValidatorTest do
            }) == :ok
   end
 
+  test "validates content without requiring message metadata" do
+    assert Validator.validate_content("The latest bounded fact is ready.") == :ok
+    assert Validator.validate_content("https://example.invalid") == {:error, :invalid_message}
+    assert Validator.validate_content(123) == {:error, :invalid_message}
+  end
+
   test "bounds domain scanning work for adversarial maximum-size content" do
     valid = message(:llm, nil)
     adversarial = String.duplicate("a.", 8_192)

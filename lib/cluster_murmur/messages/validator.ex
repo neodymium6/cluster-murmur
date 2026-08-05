@@ -59,6 +59,16 @@ defmodule ClusterMurmur.Messages.Validator do
 
   def validate(_message), do: {:error, :invalid_message}
 
+  @doc "Validates bounded output content without constructing a message."
+  @spec validate_content(term()) :: :ok | {:error, error()}
+  def validate_content(content) do
+    if valid_content?(content), do: :ok, else: {:error, :invalid_message}
+  rescue
+    _error -> {:error, :invalid_message}
+  catch
+    _kind, _reason -> {:error, :invalid_message}
+  end
+
   defp exact_message?(message) do
     map_size(message) == @message_key_count and
       Enum.all?(@message_keys, &Map.has_key?(message, &1))
