@@ -95,6 +95,9 @@ resolver then returns normalized LLM text or an explicit fallback decision
 without exposing provider diagnostics. A bounded mounted-secret reader resolves
 only validated environment-variable names to absolute regular-file targets and
 returns a trimmed non-empty UTF-8 value without exposing sensitive diagnostics. A
+provider-settings boundary resolves bounded OpenAI-compatible endpoint, model,
+and mounted API-key values without making a network request or exposing them
+through inspection. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
