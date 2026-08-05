@@ -8,7 +8,7 @@ defmodule ClusterMurmur.Config.Bindings do
   """
 
   alias ClusterMurmur.Config.{LoadedDocument, SchemaValidator, Value}
-  alias ClusterMurmur.Personas.Binding
+  alias ClusterMurmur.Personas.{Binding, BindingValidator}
 
   @draft "http://json-schema.org/draft-07/schema#"
   @id_pattern "^[A-Za-z0-9][A-Za-z0-9._-]*$"
@@ -144,7 +144,11 @@ defmodule ClusterMurmur.Config.Bindings do
     with {:ok, id} <- validate_id(attributes["id"]),
          {:ok, group} <- validate_id(attributes["match"]["group"]),
          {:ok, candidates} <- validate_candidates(attributes["candidates"]) do
-      {:ok, %Binding{id: id, group: group, candidates: candidates}}
+      binding = %Binding{id: id, group: group, candidates: candidates}
+
+      if BindingValidator.validate(binding) == :ok,
+        do: {:ok, binding},
+        else: {:error, :invalid_binding_document}
     end
   end
 
