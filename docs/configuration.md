@@ -529,7 +529,10 @@ webhook URL. Its name is a portable ASCII environment-variable identifier of at
 most 128 bytes. Version 1 requires exactly one default routing document.
 Group-specific routes are a post-MVP extension. Their future shape
 is reserved as `routing.groups`, but version 1 validation must reject that field
-until multi-channel routing is implemented and reviewed.
+until multi-channel routing is implemented and reviewed. The implemented
+runtime settings boundary loads this file with fixed bounds and accepts only a
+token-bearing HTTPS Discord incoming-webhook URL; it does not execute the
+webhook.
 
 ## Secret handling
 
