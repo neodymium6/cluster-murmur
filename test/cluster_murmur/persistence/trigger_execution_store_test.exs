@@ -314,6 +314,50 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStoreTest do
     end
   end
 
+  test "fails an abandoned execution without changing its durable facts" do
+    started = start_execution!()
+
+    assert {:ok, failed} =
+             TriggerExecutionStore.fail_abandoned(
+               started,
+               ~U[2026-08-04 12:00:00.000000Z]
+             )
+
+    assert failed.status == :failed
+    assert failed.error_class == "runtime.interrupted"
+    assert failed.executed_at == started.executed_at
+    assert failed.cooldown_until == started.cooldown_until
+  end
+
+  test "skips recent and terminal executions during recovery" do
+    started = start_execution!()
+
+    assert TriggerExecutionStore.fail_abandoned(
+             started,
+             ~U[2026-08-04 11:59:59.999999Z]
+           ) == {:skip, :recent}
+
+    assert {:ok, completed} = TriggerExecutionStore.complete(started)
+
+    assert TriggerExecutionStore.fail_abandoned(
+             completed,
+             ~U[2026-08-04 12:01:00.000000Z]
+           ) == {:skip, :terminal}
+  end
+
+  test "preserves recovery validation errors before storage access" do
+    started = start_execution!()
+    Repo.put_dynamic_repo(:missing_trigger_execution_repo)
+
+    assert TriggerExecutionStore.fail_abandoned(nil, nil) ==
+             {:error, :invalid_execution}
+
+    assert TriggerExecutionStore.fail_abandoned(
+             started,
+             %{~U[2026-08-04 12:00:00Z] | hour: 24}
+           ) == {:error, :invalid_datetime}
+  end
+
   defp start_execution!(
          event \\ event(),
          executed_at \\ ~U[2026-08-04 12:00:00.000000Z],

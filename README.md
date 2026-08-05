@@ -30,11 +30,12 @@ durable cooldown. Exact compare-and-set transitions finish a started execution
 once as completed or failed without changing cooldown state. A bounded
 read-only path lists incomplete starts for later recovery policy, and all loaded
 execution consumers share one exact runtime validator. A pure classifier marks
-loaded starts as abandoned or recent relative to an injected cutoff. A separate
-constrained redacted event record, packaged migration, and narrow idempotent
-insert store persist immutable events without exposing generic queries or
-trigger deduplication policy. A primary-key-only restore path decodes records
-through the same bounded domain validator. Standard
+loaded starts as abandoned or recent relative to an injected cutoff, and a
+narrow CAS closes abandoned starts as interrupted without retrying them. A
+separate constrained redacted event record, packaged migration, and narrow
+idempotent insert store persist immutable events without exposing generic
+queries or trigger deduplication policy. A primary-key-only restore path decodes
+records through the same bounded domain validator. Standard
 five-field schedule-trigger and bounded
 shifted-exponential stochastic-trigger validation use a reviewed, embedded IANA
 timezone snapshot without runtime updates. Pure shifted-exponential next-run
