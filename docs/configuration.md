@@ -508,7 +508,10 @@ llm:
 `base_url_env` and `model_env` name environment variables containing deployment
 values. `api_key_file_env` names an environment variable whose value is the
 path to a mounted secret file. The API key itself is never accepted in YAML or
-as a direct environment-variable value.
+as a direct environment-variable value. The implemented runtime settings
+boundary accepts a normalized internal projection of these fields, resolves the
+three deployment values with fixed bounds, and does not make a provider
+connection. Parsing this YAML shape into that projection remains future work.
 
 ## Discord routing
 
