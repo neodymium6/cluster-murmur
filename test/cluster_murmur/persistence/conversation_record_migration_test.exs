@@ -21,7 +21,7 @@ defmodule ClusterMurmur.Persistence.ConversationRecordMigrationTest do
                name: nil,
                database: database,
                allow_in_memory: false,
-               pool_size: 2
+               pool_size: 1
              )
 
     try do

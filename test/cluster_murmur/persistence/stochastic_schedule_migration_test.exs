@@ -19,7 +19,7 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleMigrationTest do
                name: nil,
                database: database,
                allow_in_memory: false,
-               pool_size: 2
+               pool_size: 1
              )
 
     try do
@@ -118,7 +118,7 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleMigrationTest do
                name: nil,
                database: database,
                allow_in_memory: false,
-               pool_size: 2
+               pool_size: 1
              )
 
     token = Base.url_encode64(:binary.copy(<<1>>, 32), padding: false)
