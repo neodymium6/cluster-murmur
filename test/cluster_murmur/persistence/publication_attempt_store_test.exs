@@ -128,6 +128,123 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
     end
   end
 
+  test "closes a started attempt with one classified failure idempotently", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    completed_at = %{completed_at() | microsecond: {0, 3}}
+
+    assert {:ok, failed} = PublicationAttemptStore.fail(started, :timeout, completed_at)
+    assert failed.status == :failed
+    assert failed.error_class == :timeout
+    assert failed.completed_at.microsecond == {0, 6}
+    assert PublicationAttemptStore.fail(started, :timeout, completed_at()) == {:ok, failed}
+    assert PublicationAttemptStore.fetch(message.id) == {:ok, failed}
+  end
+
+  test "closes a started attempt with one ambiguous interruption idempotently", %{
+    message: message
+  } do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    assert {:ok, ambiguous} =
+             PublicationAttemptStore.mark_ambiguous(started, completed_at())
+
+    assert ambiguous.status == :ambiguous
+    assert ambiguous.error_class == :interrupted
+
+    assert PublicationAttemptStore.mark_ambiguous(started, completed_at()) ==
+             {:ok, ambiguous}
+  end
+
+  test "does not overwrite a different terminal outcome", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    assert {:ok, failed} =
+             PublicationAttemptStore.fail(started, :unavailable, completed_at())
+
+    assert PublicationAttemptStore.fail(started, :timeout, completed_at()) ==
+             {:error, :publication_attempt_conflict}
+
+    assert PublicationAttemptStore.mark_ambiguous(started, completed_at()) ==
+             {:error, :publication_attempt_conflict}
+
+    assert PublicationAttemptStore.fetch(message.id) == {:ok, failed}
+  end
+
+  test "rejects invalid terminal inputs before storage access", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    Repo.put_dynamic_repo(:missing_publication_attempt_repo)
+
+    assert PublicationAttemptStore.fail(started, :interrupted, completed_at()) ==
+             {:error, :invalid_external_error}
+
+    assert PublicationAttemptStore.fail(
+             started,
+             :timeout,
+             DateTime.add(started_at(), -1, :microsecond)
+           ) == {:error, :invalid_datetime}
+
+    assert PublicationAttemptStore.mark_ambiguous(%{started | status: :failed}, completed_at()) ==
+             {:error, :invalid_publication_attempt_record}
+  end
+
+  test "fails closed when the durable attempt changed or became invalid", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    assert {1, nil} =
+             Repo.update_all(PublicationAttemptRecord,
+               set: [started_at: DateTime.add(started_at(), 1, :microsecond)]
+             )
+
+    assert PublicationAttemptStore.fail(started, :timeout, completed_at()) ==
+             {:error, :publication_attempt_conflict}
+
+    Ecto.Adapters.SQL.query!(Repo, "PRAGMA ignore_check_constraints = ON", [], log: false)
+
+    try do
+      assert {1, nil} =
+               Repo.update_all(PublicationAttemptRecord,
+                 set: [status: :failed, completed_at: nil, error_class: nil]
+               )
+    after
+      Ecto.Adapters.SQL.query!(Repo, "PRAGMA ignore_check_constraints = OFF", [], log: false)
+    end
+
+    assert PublicationAttemptStore.fail(started, :timeout, completed_at()) ==
+             {:error, :invalid_publication_attempt_record}
+  end
+
+  test "returns a generic terminal storage failure", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    Repo.put_dynamic_repo(:missing_publication_attempt_repo)
+
+    assert PublicationAttemptStore.fail(started, :timeout, completed_at()) ==
+             {:error, :storage_unavailable}
+
+    assert PublicationAttemptStore.mark_ambiguous(started, completed_at()) ==
+             {:error, :storage_unavailable}
+  end
+
   test "rejects a different retry for an existing attempt", %{message: message} do
     {plan, persona, settings} = plan(message)
 
@@ -263,6 +380,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
   end
 
   defp started_at, do: ~U[2026-08-05 12:02:00.000000Z]
+  defp completed_at, do: ~U[2026-08-05 12:03:00.000000Z]
 
   defp persona do
     %Persona{
