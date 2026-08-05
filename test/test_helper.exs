@@ -26,4 +26,11 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand(
+    "../priv/repo/migrations/20260805200000_create_conversations.exs",
+    __DIR__
+  )
+)
+
 ExUnit.start()
