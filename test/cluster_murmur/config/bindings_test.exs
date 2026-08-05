@@ -53,6 +53,11 @@ defmodule ClusterMurmur.Config.BindingsTest do
       %{"bindings" => [put_in(valid, ["match", "extra"], true)]},
       %{"bindings" => [Map.put(valid, "candidates", [])]},
       %{"bindings" => [put_in(valid, ["candidates", Access.at(0), "weight"], -1)]},
+      %{
+        "bindings" => [
+          put_in(valid, ["candidates", Access.at(0), "weight"], Integer.pow(2, 1_024))
+        ]
+      },
       %{"bindings" => [put_in(valid, ["candidates", Access.at(0), "extra"], true)]}
     ]
 
