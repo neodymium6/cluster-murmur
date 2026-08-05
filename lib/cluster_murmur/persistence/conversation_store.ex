@@ -28,6 +28,7 @@ defmodule ClusterMurmur.Persistence.ConversationStore do
     :started_at,
     :completed_at
   ]
+  @max_incomplete_conversations 100
 
   @type error ::
           :conversation_conflict
@@ -65,6 +66,26 @@ defmodule ClusterMurmur.Persistence.ConversationStore do
   @spec fail(term(), term()) :: {:ok, ConversationRecord.t()} | {:error, error()}
   def fail(record, completed_at), do: finish(record, :failed, completed_at)
 
+  @doc "Lists at most 100 active conversations started at or before one UTC cutoff."
+  @spec list_active_before(term()) ::
+          {:ok, [ConversationRecord.t()]}
+          | {:error, :invalid_datetime | :invalid_conversation_record | :storage_unavailable}
+  def list_active_before(cutoff) do
+    if DateTimeValidator.validate_storage_utc(cutoff) == :ok do
+      records = Repo.all(active_before_query(cutoff))
+
+      if Enum.all?(records, &(ConversationRecordValidator.validate_active(&1) == :ok)),
+        do: {:ok, records},
+        else: {:error, :invalid_conversation_record}
+    else
+      {:error, :invalid_datetime}
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
   defp persist_start(changeset) do
     candidate = Ecto.Changeset.apply_changes(changeset)
 
@@ -81,6 +102,15 @@ defmodule ClusterMurmur.Persistence.ConversationStore do
       _failure ->
         {:error, :storage_unavailable}
     end
+  end
+
+  defp active_before_query(cutoff) do
+    from record in ConversationRecord,
+      where:
+        fragment("? IN ('starting', 'generating', 'waiting')", record.status) and
+          record.started_at <= ^cutoff,
+      order_by: [asc: record.started_at, asc: record.id],
+      limit: @max_incomplete_conversations
   end
 
   defp start_transaction(candidate) do

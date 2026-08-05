@@ -7,10 +7,16 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
   alias ClusterMurmur.Events.Event
   alias ClusterMurmur.Persistence.{ConversationRecord, ConversationStore, EventStore}
   alias ClusterMurmur.Repo
-  alias ClusterMurmur.Repo.Migrations.{CreateConversations, CreateEvents}
+
+  alias ClusterMurmur.Repo.Migrations.{
+    AddIncompleteConversationIndex,
+    CreateConversations,
+    CreateEvents
+  }
 
   @events_version 20_260_804_180_500
   @conversations_version 20_260_805_200_000
+  @incomplete_index_version 20_260_805_210_000
 
   setup_all do
     assert Ecto.Migrator.up(Repo, @events_version, CreateEvents,
@@ -25,7 +31,19 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
              log_migrator_sql: false
            ) == :ok
 
+    assert Ecto.Migrator.up(Repo, @incomplete_index_version, AddIncompleteConversationIndex,
+             log: false,
+             log_migrations_sql: false,
+             log_migrator_sql: false
+           ) == :ok
+
     on_exit(fn ->
+      Ecto.Migrator.down(Repo, @incomplete_index_version, AddIncompleteConversationIndex,
+        log: false,
+        log_migrations_sql: false,
+        log_migrator_sql: false
+      )
+
       Ecto.Migrator.down(Repo, @conversations_version, CreateConversations,
         log: false,
         log_migrations_sql: false,
@@ -197,9 +215,55 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
     assert Repo.get!(ConversationRecord, started.id).status == :starting
   end
 
-  defp start_conversation!(id) do
+  test "lists only active conversations at or before a supplied cutoff" do
+    oldest = start_conversation!("oldest", ~U[2026-08-05 11:58:00.000000Z])
+    completed = start_conversation!("completed", ~U[2026-08-05 11:59:00.000000Z])
+    generating = start_conversation!("generating", ~U[2026-08-05 11:59:30.000000Z])
+    boundary = start_conversation!("boundary", ~U[2026-08-05 12:00:00.000000Z])
+    _later = start_conversation!("later", ~U[2026-08-05 12:00:00.000001Z])
+
+    assert {1, nil} =
+             Repo.update_all(
+               from(record in ConversationRecord, where: record.id == ^generating.id),
+               set: [status: :generating]
+             )
+
+    assert {:ok, _terminal} =
+             ConversationStore.complete(completed, ~U[2026-08-05 12:00:30.000000Z])
+
+    assert ConversationStore.list_active_before(~U[2026-08-05 12:00:00Z]) ==
+             {:ok, [oldest, Repo.get!(ConversationRecord, generating.id), boundary]}
+  end
+
+  test "bounds and deterministically orders incomplete results" do
+    for index <- 101..1//-1 do
+      suffix = index |> Integer.to_string() |> String.pad_leading(3, "0")
+      start_conversation!("recovery-#{suffix}", ~U[2026-08-05 12:00:00.000000Z])
+    end
+
+    assert {:ok, records} =
+             ConversationStore.list_active_before(~U[2026-08-05 12:00:00.000000Z])
+
+    assert length(records) == 100
+    assert hd(records).id == "recovery-001"
+    assert List.last(records).id == "recovery-100"
+    assert Enum.map(records, & &1.id) == Enum.sort(Enum.map(records, & &1.id))
+  end
+
+  test "rejects invalid listing cutoffs before accessing storage" do
+    Repo.put_dynamic_repo(:missing_conversation_repo)
+
+    for cutoff <- [nil, %{~U[2026-08-05 12:00:00Z] | hour: 24}] do
+      assert ConversationStore.list_active_before(cutoff) == {:error, :invalid_datetime}
+    end
+  end
+
+  defp start_conversation!(id, started_at \\ ~U[2026-08-05 12:00:00Z]) do
     assert {:ok, _event_record} = EventStore.insert(event())
-    assert {:ok, record} = ConversationStore.start(conversation(id: id))
+
+    assert {:ok, record} =
+             ConversationStore.start(conversation(id: id, started_at: started_at))
+
     record
   end
 

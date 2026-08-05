@@ -2,10 +2,16 @@ defmodule ClusterMurmur.Persistence.ConversationRecordMigrationTest do
   use ExUnit.Case, async: false
 
   alias ClusterMurmur.Repo
-  alias ClusterMurmur.Repo.Migrations.{CreateConversations, CreateEvents}
+
+  alias ClusterMurmur.Repo.Migrations.{
+    AddIncompleteConversationIndex,
+    CreateConversations,
+    CreateEvents
+  }
 
   @events_version 20_260_804_180_500
   @conversations_version 20_260_805_200_000
+  @incomplete_index_version 20_260_805_210_000
 
   test "migrates a constrained conversation lifecycle table" do
     {root, database} = private_database_path()
@@ -21,6 +27,7 @@ defmodule ClusterMurmur.Persistence.ConversationRecordMigrationTest do
     try do
       migrate_up(pid, @events_version, CreateEvents)
       migrate_up(pid, @conversations_version, CreateConversations)
+      migrate_up(pid, @incomplete_index_version, AddIncompleteConversationIndex)
 
       assert table_columns(pid) == [
                "id",
@@ -34,7 +41,16 @@ defmodule ClusterMurmur.Persistence.ConversationRecordMigrationTest do
 
       index_rows = indexes(pid)
       assert Enum.any?(index_rows, &Enum.member?(&1, "conversations_root_event_id_index"))
-      assert Enum.any?(index_rows, &Enum.member?(&1, "conversations_status_started_at_index"))
+      refute Enum.any?(index_rows, &Enum.member?(&1, "conversations_status_started_at_index"))
+
+      assert Enum.any?(
+               index_rows,
+               &Enum.member?(&1, "conversations_incomplete_started_at_id_index")
+             )
+
+      plan = incomplete_query_plan(pid)
+      assert plan =~ "conversations_incomplete_started_at_id_index"
+      refute plan =~ "USE TEMP B-TREE"
 
       assert {:ok, _result} = insert_event(pid)
       assert {:ok, _result} = insert_conversation(pid, %{})
@@ -63,6 +79,7 @@ defmodule ClusterMurmur.Persistence.ConversationRecordMigrationTest do
 
       assert_constraint(fn -> insert_conversation(pid, %{}) end)
 
+      migrate_down(pid, @incomplete_index_version, AddIncompleteConversationIndex)
       migrate_down(pid, @conversations_version, CreateConversations)
       refute "conversations" in table_names(pid)
       migrate_down(pid, @events_version, CreateEvents)
@@ -157,6 +174,24 @@ defmodule ClusterMurmur.Persistence.ConversationRecordMigrationTest do
       Ecto.Adapters.SQL.query!(repo, "PRAGMA index_list(conversations)", [], log: false)
 
     rows
+  end
+
+  defp incomplete_query_plan(repo) do
+    %{rows: rows} =
+      Ecto.Adapters.SQL.query!(
+        repo,
+        """
+        EXPLAIN QUERY PLAN
+        SELECT id FROM conversations
+        WHERE status IN ('starting', 'generating', 'waiting') AND started_at <= ?
+        ORDER BY started_at ASC, id ASC
+        LIMIT 100
+        """,
+        ["2026-08-05T12:00:00.000000Z"],
+        log: false
+      )
+
+    rows |> List.flatten() |> Enum.filter(&is_binary/1) |> Enum.join("\n")
   end
 
   defp table_names(repo) do
