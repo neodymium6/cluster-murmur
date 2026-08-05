@@ -67,7 +67,9 @@ non-negative finite weights, and unique persona references. A pure starter
 projection revalidates bounded persona and cooldown snapshots, excludes
 disabled personas and active cooldowns at an injected UTC instant, and emits
 redacted configured weight components in stable persona order without sampling.
-A
+A bounded selector revalidates those projections, handles empty, zero-total,
+and sole-positive outcomes without randomness, and delegates only a final
+stable weighted choice among multiple positive candidates. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
