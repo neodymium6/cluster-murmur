@@ -54,4 +54,11 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand(
+    "../priv/repo/migrations/20260805224000_create_persona_cooldowns.exs",
+    __DIR__
+  )
+)
+
 ExUnit.start()
