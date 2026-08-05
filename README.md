@@ -27,7 +27,8 @@ eligibility before later orchestration. A constrained trigger-execution record
 defines the durable lifecycle, and a narrow immediate transaction starts it
 only for an identical committed event, a new trigger/event pair, and an expired
 durable cooldown. Exact compare-and-set transitions finish a started execution
-once as completed or failed without changing cooldown state. A separate
+once as completed or failed without changing cooldown state. A bounded
+read-only path lists incomplete starts for later recovery policy. A separate
 constrained redacted event record, packaged migration, and narrow idempotent
 insert store persist immutable events without exposing generic queries or
 trigger deduplication policy. A primary-key-only restore path decodes records

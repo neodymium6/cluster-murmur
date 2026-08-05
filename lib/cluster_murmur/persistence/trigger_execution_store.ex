@@ -24,6 +24,7 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
   @error_class_pattern ~r/\A[a-z][a-z0-9._-]*\z/
   @max_id_bytes DomainLimits.max_id_bytes()
   @max_error_class_bytes 128
+  @max_recovery_executions 100
 
   @event_identity_fields [
     :id,
@@ -71,6 +72,31 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
   @doc "Marks one exact started execution failed with a bounded stable error class."
   @spec fail(term(), term()) :: {:ok, TriggerExecution.t()} | {:error, error()}
   def fail(execution, error_class), do: finish(execution, :failed, error_class)
+
+  @doc "Lists at most 100 started executions at or before one supplied UTC cutoff."
+  @spec list_started_before(term()) ::
+          {:ok, [TriggerExecution.t()]} | {:error, :invalid_datetime | :storage_unavailable}
+  def list_started_before(cutoff) do
+    if DateTimeValidator.validate_storage_utc(cutoff) == :ok do
+      query =
+        from execution in TriggerExecution,
+          where: execution.status == :started and execution.executed_at <= ^cutoff,
+          order_by: [
+            asc: execution.executed_at,
+            asc: execution.trigger_id,
+            asc: execution.event_id
+          ],
+          limit: @max_recovery_executions
+
+      {:ok, Repo.all(query)}
+    else
+      {:error, :invalid_datetime}
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
 
   defp finish(execution, status, error_class) do
     if valid_terminal_input?(execution, status, error_class) do
