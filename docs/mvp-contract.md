@@ -146,7 +146,7 @@ defmodule ClusterMurmur.Observers.Client do
 end
 
 defmodule ClusterMurmur.Generation.Provider do
-  @callback generate(map()) ::
+  @callback generate(ClusterMurmur.Generation.PromptRequest.t()) ::
               {:ok, String.t()} | {:error, ClusterMurmur.ExternalError.t()}
 end
 
