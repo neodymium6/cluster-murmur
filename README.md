@@ -43,7 +43,9 @@ incomplete records for later recovery policy. Typed generated messages now have
 a redacted fail-closed boundary for IDs, origin, content, publication identity,
 UTC time, and bounded conversation projections. A constrained message record and
 packaged migration now persist that fixed shape without generic store access.
-Exact loaded records share a fail-closed validator before later store use. A
+Exact loaded records share a fail-closed validator before store use. A narrow
+transaction appends an unpublished message only for an exact active conversation
+while advancing its turn and LLM-call counters atomically. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
