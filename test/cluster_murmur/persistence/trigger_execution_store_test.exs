@@ -148,6 +148,99 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStoreTest do
     end
   end
 
+  test "marks one exact started execution completed" do
+    started = start_execution!()
+
+    assert {:ok, %TriggerExecution{} = completed} =
+             TriggerExecutionStore.complete(started)
+
+    assert completed.status == :completed
+    assert completed.error_class == nil
+    assert completed.executed_at == started.executed_at
+    assert completed.cooldown_until == started.cooldown_until
+
+    assert Repo.get_by!(TriggerExecution,
+             trigger_id: started.trigger_id,
+             event_id: started.event_id
+           ).status == :completed
+  end
+
+  test "marks one exact started execution failed with a stable error class" do
+    started = start_execution!()
+
+    assert {:ok, %TriggerExecution{} = failed} =
+             TriggerExecutionStore.fail(started, "provider.unavailable")
+
+    assert failed.status == :failed
+    assert failed.error_class == "provider.unavailable"
+    assert failed.executed_at == started.executed_at
+    assert failed.cooldown_until == started.cooldown_until
+
+    inspected = inspect(failed)
+    refute inspected =~ "provider"
+    refute inspected =~ started.event_id
+  end
+
+  test "allows only one terminal transition" do
+    started = start_execution!()
+    assert {:ok, completed} = TriggerExecutionStore.complete(started)
+
+    assert TriggerExecutionStore.complete(started) == {:error, :execution_conflict}
+
+    assert TriggerExecutionStore.fail(started, "provider.unavailable") ==
+             {:error, :execution_conflict}
+
+    assert TriggerExecutionStore.fail(completed, "provider.unavailable") ==
+             {:error, :invalid_execution}
+  end
+
+  test "requires the exact loaded started capability before storage access" do
+    started = start_execution!()
+    forged_source = Ecto.put_meta(started, source: "events")
+    forged_prefix = Ecto.put_meta(started, prefix: "private")
+    stale = %{started | cooldown_until: DateTime.add(started.cooldown_until, 1, :second)}
+
+    for rejected <- [
+          nil,
+          %TriggerExecution{},
+          Map.put(started, :unexpected_private_value, "private"),
+          forged_source,
+          forged_prefix,
+          %{started | status: :completed},
+          %{started | trigger_id: "invalid id"},
+          %{started | executed_at: %{started.executed_at | hour: 24}}
+        ] do
+      assert TriggerExecutionStore.complete(rejected) == {:error, :invalid_execution}
+    end
+
+    assert TriggerExecutionStore.complete(stale) == {:error, :execution_conflict}
+  end
+
+  test "rejects invalid failure classes before accessing storage" do
+    started = start_execution!()
+    Repo.put_dynamic_repo(:missing_trigger_execution_repo)
+
+    for error_class <- [
+          nil,
+          :unavailable,
+          "",
+          "Invalid.Error",
+          "provider error",
+          "private\0error",
+          String.duplicate("a", 129)
+        ] do
+      assert TriggerExecutionStore.fail(started, error_class) ==
+               {:error, :invalid_execution}
+    end
+  end
+
+  defp start_execution! do
+    plan = plan!(event(), ~U[2026-08-04 12:00:00.000000Z])
+    assert {:ok, _event_record} = EventStore.insert(plan.event)
+    assert {:ok, execution} = TriggerExecutionStore.start(plan)
+    execution
+  end
+
   defp plan!(event, executed_at) do
     assert {:ok, plan} = EventTriggerExecutionPlanner.plan(trigger(), event, nil, executed_at)
     plan
