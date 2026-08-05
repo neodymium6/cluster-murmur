@@ -11,18 +11,11 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
   import Ecto.Query, only: [from: 2]
 
   alias ClusterMurmur.DateTimeValidator
-  alias ClusterMurmur.DomainLimits
-  alias ClusterMurmur.Events.Validator, as: EventValidator
-  alias ClusterMurmur.Persistence.{EventStore, TriggerExecution}
+  alias ClusterMurmur.Persistence.{EventStore, TriggerExecution, TriggerExecutionValidator}
   alias ClusterMurmur.Repo
   alias ClusterMurmur.Triggers.EventTriggerExecutionPlanner.Plan
 
-  @execution_keys TriggerExecution.__struct__() |> Map.keys()
-  @execution_key_count length(@execution_keys)
-  @loaded_metadata Ecto.put_meta(%TriggerExecution{}, state: :loaded).__meta__
-  @trigger_id_pattern ~r/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/
   @error_class_pattern ~r/\A[a-z][a-z0-9._-]*\z/
-  @max_id_bytes DomainLimits.max_id_bytes()
   @max_error_class_bytes 128
   @max_recovery_executions 100
 
@@ -196,47 +189,13 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
   end
 
   defp valid_terminal_input?(execution, status, error_class) do
-    exact_started_execution?(execution) and valid_terminal_status?(status, error_class)
+    TriggerExecutionValidator.validate_started(execution) == :ok and
+      valid_terminal_status?(status, error_class)
   rescue
     _error -> false
   catch
     _kind, _reason -> false
   end
-
-  defp exact_started_execution?(
-         %TriggerExecution{
-           __meta__: metadata,
-           trigger_id: trigger_id,
-           event_id: event_id,
-           status: :started,
-           executed_at: executed_at,
-           cooldown_until: cooldown_until,
-           error_class: nil
-         } = execution
-       ) do
-    map_size(execution) == @execution_key_count and
-      Enum.all?(@execution_keys, &Map.has_key?(execution, &1)) and
-      metadata == @loaded_metadata and
-      valid_trigger_id?(trigger_id) and
-      EventValidator.validate_id(event_id) == :ok and
-      valid_loaded_datetime?(executed_at) and
-      valid_loaded_datetime?(cooldown_until) and
-      DateTime.compare(cooldown_until, executed_at) in [:gt, :eq]
-  end
-
-  defp exact_started_execution?(_execution), do: false
-
-  defp valid_trigger_id?(trigger_id)
-       when is_binary(trigger_id) and byte_size(trigger_id) <= @max_id_bytes do
-    String.valid?(trigger_id) and Regex.match?(@trigger_id_pattern, trigger_id)
-  end
-
-  defp valid_trigger_id?(_trigger_id), do: false
-
-  defp valid_loaded_datetime?(%DateTime{microsecond: {_value, 6}} = datetime),
-    do: DateTimeValidator.validate_storage_utc(datetime) == :ok
-
-  defp valid_loaded_datetime?(_datetime), do: false
 
   defp valid_terminal_status?(:completed, nil), do: true
 
