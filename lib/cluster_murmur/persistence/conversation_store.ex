@@ -14,7 +14,8 @@ defmodule ClusterMurmur.Persistence.ConversationStore do
   alias ClusterMurmur.Persistence.{
     ConversationRecord,
     ConversationRecordValidator,
-    EventStore
+    EventStore,
+    MessageStore
   }
 
   alias ClusterMurmur.Repo
@@ -36,6 +37,7 @@ defmodule ClusterMurmur.Persistence.ConversationStore do
           | :invalid_conversation
           | :invalid_conversation_record
           | :invalid_datetime
+          | :invalid_message_record
           | :storage_unavailable
 
   @doc "Starts one pristine conversation for an existing validated event."
@@ -158,16 +160,35 @@ defmodule ClusterMurmur.Persistence.ConversationStore do
 
   defp finish(record, status, completed_at) do
     with :ok <- ConversationRecordValidator.validate_active(record),
-         :ok <- validate_completion(completed_at, record.started_at) do
+         :ok <- validate_completion(completed_at, record.started_at),
+         :ok <- validate_terminal_history(record, completed_at) do
       persist_terminal(record, status, completed_at)
     else
+      {:error, :conversation_conflict} -> {:error, :conversation_conflict}
       {:error, :invalid_conversation_record} -> {:error, :invalid_conversation_record}
       {:error, :invalid_datetime} -> {:error, :invalid_datetime}
+      {:error, :invalid_message_record} -> {:error, :invalid_message_record}
+      {:error, :storage_unavailable} -> {:error, :storage_unavailable}
     end
   rescue
     _error -> {:error, :storage_unavailable}
   catch
     :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  defp validate_terminal_history(record, completed_at) do
+    case MessageStore.list_for_conversation(record) do
+      {:ok, []} ->
+        :ok
+
+      {:ok, messages} ->
+        if DateTime.compare(List.last(messages).inserted_at, completed_at) in [:lt, :eq],
+          do: :ok,
+          else: {:error, :invalid_datetime}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   defp validate_completion(completed_at, started_at) do

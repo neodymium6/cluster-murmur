@@ -91,9 +91,17 @@ defmodule ClusterMurmur.Persistence.ConversationMessageHistoryTest do
     {_records, conversation} = append_messages!(conversation, 1)
 
     assert {:ok, terminal} =
-             ConversationStore.complete(conversation, ~U[2026-08-05 12:00:00.000000Z])
+             ConversationStore.complete(conversation, ~U[2026-08-05 12:02:00.000000Z])
 
-    assert MessageStore.list_for_conversation(terminal) ==
+    assert {1, nil} =
+             Repo.update_all(
+               from(record in ConversationRecord, where: record.id == ^terminal.id),
+               set: [completed_at: ~U[2026-08-05 12:00:00.000000Z]]
+             )
+
+    corrupted = Repo.get!(ConversationRecord, terminal.id)
+
+    assert MessageStore.list_for_conversation(corrupted) ==
              {:error, :invalid_message_record}
   end
 
