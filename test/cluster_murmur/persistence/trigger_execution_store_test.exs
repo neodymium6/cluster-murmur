@@ -240,21 +240,101 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStoreTest do
     end
   end
 
-  defp start_execution! do
-    plan = plan!(event(), ~U[2026-08-04 12:00:00.000000Z])
-    assert {:ok, _event_record} = EventStore.insert(plan.event)
+  test "lists only started executions at or before a supplied cutoff" do
+    oldest =
+      start_execution!(
+        event(id: "oldest-event"),
+        ~U[2026-08-04 11:58:00.000000Z],
+        "oldest-trigger"
+      )
+
+    completed =
+      start_execution!(
+        event(id: "completed-event"),
+        ~U[2026-08-04 11:59:00.000000Z],
+        "completed-trigger"
+      )
+
+    failed =
+      start_execution!(
+        event(id: "failed-event"),
+        ~U[2026-08-04 11:59:30.000000Z],
+        "failed-trigger"
+      )
+
+    boundary =
+      start_execution!(
+        event(id: "boundary-event"),
+        ~U[2026-08-04 12:00:00.000000Z],
+        "boundary-trigger"
+      )
+
+    _later =
+      start_execution!(
+        event(id: "later-event"),
+        ~U[2026-08-04 12:00:00.000001Z],
+        "later-trigger"
+      )
+
+    assert {:ok, _completed} = TriggerExecutionStore.complete(completed)
+    assert {:ok, _failed} = TriggerExecutionStore.fail(failed, "runtime.interrupted")
+
+    assert TriggerExecutionStore.list_started_before(~U[2026-08-04 12:00:00Z]) ==
+             {:ok, [oldest, boundary]}
+  end
+
+  test "bounds and deterministically orders recovery results" do
+    for index <- 101..1//-1 do
+      suffix = index |> Integer.to_string() |> String.pad_leading(3, "0")
+
+      start_execution!(
+        event(id: "recovery-event-#{suffix}"),
+        ~U[2026-08-04 12:00:00.000000Z],
+        "recovery-trigger-#{suffix}"
+      )
+    end
+
+    assert {:ok, executions} =
+             TriggerExecutionStore.list_started_before(~U[2026-08-04 12:00:00.000000Z])
+
+    assert length(executions) == 100
+    assert hd(executions).trigger_id == "recovery-trigger-001"
+    assert List.last(executions).trigger_id == "recovery-trigger-100"
+
+    assert Enum.map(executions, & &1.trigger_id) ==
+             Enum.sort(Enum.map(executions, & &1.trigger_id))
+  end
+
+  test "rejects invalid recovery cutoffs before accessing storage" do
+    Repo.put_dynamic_repo(:missing_trigger_execution_repo)
+
+    for cutoff <- [nil, %{~U[2026-08-04 12:00:00Z] | hour: 24}] do
+      assert TriggerExecutionStore.list_started_before(cutoff) ==
+               {:error, :invalid_datetime}
+    end
+  end
+
+  defp start_execution!(
+         event \\ event(),
+         executed_at \\ ~U[2026-08-04 12:00:00.000000Z],
+         trigger_id \\ "failure-conversation"
+       ) do
+    plan = plan!(event, executed_at, trigger_id)
+    assert {:ok, _event_record} = EventStore.insert(event)
     assert {:ok, execution} = TriggerExecutionStore.start(plan)
     execution
   end
 
-  defp plan!(event, executed_at) do
-    assert {:ok, plan} = EventTriggerExecutionPlanner.plan(trigger(), event, nil, executed_at)
+  defp plan!(event, executed_at, trigger_id \\ "failure-conversation") do
+    assert {:ok, plan} =
+             EventTriggerExecutionPlanner.plan(trigger(trigger_id), event, nil, executed_at)
+
     plan
   end
 
-  defp trigger do
+  defp trigger(id) do
     %EventTrigger{
-      id: "failure-conversation",
+      id: id,
       matcher: %Matcher{
         predicates: [%Predicate{field: "type", operator: :equals, value: "observation.failed"}]
       },
