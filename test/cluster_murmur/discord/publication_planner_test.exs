@@ -14,6 +14,7 @@ defmodule ClusterMurmur.Discord.PublicationPlannerTest do
     assert plan.payload.content == "A bounded confirmed fact."
     assert plan.payload.username == "Observer"
     assert plan.payload.allowed_mentions == %{parse: []}
+    assert plan.persona == persona()
     assert plan.settings == settings()
   end
 
