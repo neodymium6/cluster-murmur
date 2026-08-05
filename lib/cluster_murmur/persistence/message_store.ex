@@ -3,8 +3,9 @@ defmodule ClusterMurmur.Persistence.MessageStore do
   Persists and restores bounded messages through narrow capability-based operations.
 
   Appends require an exact loaded active conversation, publication updates
-  require an exact unpublished message, and history reads require an exact
-  conversation in any lifecycle state. The store does not select a persona,
+  require an exact unpublished message, conversation-history reads require an
+  exact conversation in any lifecycle state, and persona-history reads require
+  a bounded ID and injected cutoff. The store does not select a persona,
   generate content, publish to Discord, or decide whether another turn is
   allowed by configured policy.
   """
@@ -12,7 +13,7 @@ defmodule ClusterMurmur.Persistence.MessageStore do
   import Ecto.Changeset, only: [change: 2, unique_constraint: 2]
   import Ecto.Query, only: [from: 2]
 
-  alias ClusterMurmur.DomainLimits
+  alias ClusterMurmur.{DateTimeValidator, DomainLimits}
   alias ClusterMurmur.Messages.Message
   alias ClusterMurmur.Messages.Validator, as: MessageValidator
 
@@ -26,7 +27,10 @@ defmodule ClusterMurmur.Persistence.MessageStore do
   alias ClusterMurmur.Repo
 
   @max_conversation_messages 12
+  @max_persona_messages 6
   @max_safe_integer DomainLimits.max_safe_integer()
+  @max_id_bytes DomainLimits.max_id_bytes()
+  @id_pattern ~r/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/
   @conversation_fields [
     :id,
     :root_event_id,
@@ -48,9 +52,12 @@ defmodule ClusterMurmur.Persistence.MessageStore do
   @type error ::
           :conversation_conflict
           | :conversation_limit
+          | :invalid_conversation_id
           | :invalid_conversation_record
+          | :invalid_datetime
           | :invalid_message
           | :invalid_message_record
+          | :invalid_persona_id
           | :message_conflict
           | :publication_conflict
           | :invalid_publication_id
@@ -122,8 +129,51 @@ defmodule ClusterMurmur.Persistence.MessageStore do
     :exit, _reason -> {:error, :storage_unavailable}
   end
 
+  @doc "Lists 6 currently published persona messages generated at or before a UTC cutoff."
+  @spec list_for_persona(term(), term(), term()) ::
+          {:ok, [Message.t()]}
+          | {:error,
+             :invalid_conversation_id
+             | :invalid_datetime
+             | :invalid_message_record
+             | :invalid_persona_id
+             | :storage_unavailable}
+  def list_for_persona(persona_id, excluded_conversation_id, cutoff) do
+    with :ok <- validate_persona_id(persona_id),
+         :ok <- validate_conversation_id(excluded_conversation_id),
+         :ok <- DateTimeValidator.validate_storage_utc(cutoff) do
+      read_persona_history(persona_id, excluded_conversation_id, cutoff)
+    else
+      {:error, :invalid_persona_id} -> {:error, :invalid_persona_id}
+      {:error, :invalid_conversation_id} -> {:error, :invalid_conversation_id}
+      {:error, :invalid_datetime} -> {:error, :invalid_datetime}
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
   defp require_unpublished(%MessageRecord{discord_message_id: nil}), do: :ok
   defp require_unpublished(_record), do: {:error, :publication_conflict}
+
+  defp validate_persona_id(persona_id)
+       when is_binary(persona_id) and byte_size(persona_id) in 1..@max_id_bytes do
+    if String.valid?(persona_id) and Regex.match?(@id_pattern, persona_id),
+      do: :ok,
+      else: {:error, :invalid_persona_id}
+  end
+
+  defp validate_persona_id(_persona_id), do: {:error, :invalid_persona_id}
+
+  defp validate_conversation_id(conversation_id)
+       when is_binary(conversation_id) and byte_size(conversation_id) in 1..@max_id_bytes do
+    if String.valid?(conversation_id) and Regex.match?(@id_pattern, conversation_id),
+      do: :ok,
+      else: {:error, :invalid_conversation_id}
+  end
+
+  defp validate_conversation_id(_conversation_id), do: {:error, :invalid_conversation_id}
 
   defp validate_publication_id(record, discord_message_id) when is_binary(discord_message_id) do
     message = %Message{
@@ -486,5 +536,44 @@ defmodule ClusterMurmur.Persistence.MessageStore do
       discord_message_id: record.discord_message_id,
       inserted_at: record.inserted_at
     }
+  end
+
+  defp read_persona_history(persona_id, excluded_conversation_id, cutoff) do
+    records =
+      persona_id
+      |> persona_history_query(excluded_conversation_id, cutoff)
+      |> Repo.all()
+      |> Enum.reverse()
+
+    if valid_persona_history?(records, persona_id, cutoff),
+      do: {:ok, Enum.map(records, &project_message/1)},
+      else: {:error, :invalid_message_record}
+  end
+
+  defp persona_history_query(persona_id, excluded_conversation_id, cutoff) do
+    from record in MessageRecord,
+      where:
+        record.persona_id == ^persona_id and
+          record.conversation_id != ^excluded_conversation_id and
+          not is_nil(record.discord_message_id) and
+          record.inserted_at <= ^cutoff,
+      order_by: [desc: record.inserted_at, desc: record.id],
+      limit: @max_persona_messages
+  end
+
+  defp valid_persona_history?(records, persona_id, cutoff) do
+    records
+    |> Enum.reduce_while(nil, fn record, previous_at ->
+      valid? =
+        MessageRecordValidator.validate(record) == :ok and
+          record.persona_id == persona_id and
+          not is_nil(record.discord_message_id) and
+          DateTime.compare(record.inserted_at, cutoff) in [:lt, :eq] and
+          (is_nil(previous_at) or
+             DateTime.compare(record.inserted_at, previous_at) in [:gt, :eq])
+
+      if valid?, do: {:cont, record.inserted_at}, else: {:halt, :error}
+    end)
+    |> Kernel.!=(:error)
   end
 end

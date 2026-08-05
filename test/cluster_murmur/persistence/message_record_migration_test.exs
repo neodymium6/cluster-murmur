@@ -1,9 +1,13 @@
 defmodule ClusterMurmur.Persistence.MessageRecordMigrationTest do
   use ExUnit.Case, async: false
 
+  import Ecto.Query, only: [from: 2]
+
+  alias ClusterMurmur.Persistence.MessageRecord
   alias ClusterMurmur.Repo
 
   alias ClusterMurmur.Repo.Migrations.{
+    AddPersonaMessageHistoryIndex,
     CreateConversations,
     CreateEvents,
     CreateMessages
@@ -12,6 +16,7 @@ defmodule ClusterMurmur.Persistence.MessageRecordMigrationTest do
   @events_version 20_260_804_180_500
   @conversations_version 20_260_805_200_000
   @messages_version 20_260_805_220_000
+  @persona_history_index_version 20_260_805_223_000
 
   test "migrates a constrained generated-message table" do
     {root, database} = private_database_path()
@@ -28,6 +33,7 @@ defmodule ClusterMurmur.Persistence.MessageRecordMigrationTest do
       migrate_up(pid, @events_version, CreateEvents)
       migrate_up(pid, @conversations_version, CreateConversations)
       migrate_up(pid, @messages_version, CreateMessages)
+      migrate_up(pid, @persona_history_index_version, AddPersonaMessageHistoryIndex)
 
       assert table_columns(pid) == [
                "id",
@@ -47,6 +53,15 @@ defmodule ClusterMurmur.Persistence.MessageRecordMigrationTest do
              )
 
       assert Enum.any?(index_rows, &Enum.member?(&1, "messages_discord_message_id_index"))
+
+      assert Enum.any?(
+               index_rows,
+               &Enum.member?(&1, "messages_published_persona_inserted_at_id_index")
+             )
+
+      plan = persona_history_query_plan(pid)
+      assert plan =~ "messages_published_persona_inserted_at_id_index"
+      refute plan =~ "USE TEMP B-TREE"
 
       assert {:ok, _result} = insert_event(pid)
       assert {:ok, _result} = insert_conversation(pid)
@@ -83,6 +98,7 @@ defmodule ClusterMurmur.Persistence.MessageRecordMigrationTest do
         })
       end)
 
+      migrate_down(pid, @persona_history_index_version, AddPersonaMessageHistoryIndex)
       migrate_down(pid, @messages_version, CreateMessages)
       refute "messages" in table_names(pid)
       migrate_down(pid, @conversations_version, CreateConversations)
@@ -193,6 +209,30 @@ defmodule ClusterMurmur.Persistence.MessageRecordMigrationTest do
   defp indexes(repo) do
     %{rows: rows} = Ecto.Adapters.SQL.query!(repo, "PRAGMA index_list(messages)", [], log: false)
     rows
+  end
+
+  defp persona_history_query_plan(repo) do
+    query =
+      from record in MessageRecord,
+        where:
+          record.persona_id == ^"observer" and record.conversation_id != ^"current" and
+            not is_nil(record.discord_message_id) and
+            record.inserted_at <= ^~U[2026-08-05 12:10:00.000000Z],
+        order_by: [desc: record.inserted_at, desc: record.id],
+        limit: 6,
+        select: record.id
+
+    {sql, parameters} = Ecto.Adapters.SQL.to_sql(:all, Repo, query)
+
+    %{rows: rows} =
+      Ecto.Adapters.SQL.query!(
+        repo,
+        "EXPLAIN QUERY PLAN " <> sql,
+        parameters,
+        log: false
+      )
+
+    rows |> List.flatten() |> Enum.filter(&is_binary/1) |> Enum.join("\n")
   end
 
   defp table_names(repo) do
