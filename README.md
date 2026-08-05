@@ -32,6 +32,8 @@ read-only path lists incomplete starts for later recovery policy, and all loaded
 execution consumers share one exact runtime validator. A pure classifier marks
 loaded starts as abandoned or recent relative to an injected cutoff, and a
 narrow CAS closes abandoned starts as interrupted without retrying them. A
+shared fail-closed validator now bounds exact runtime conversation metadata and
+rejects untyped message projections before conversation persistence. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
