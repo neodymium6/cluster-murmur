@@ -105,6 +105,10 @@ persona, enforces API character limits, and always disables mention parsing. A
 pure durable-state publication planner skips known published records and emits
 only redacted validated plans for unpublished records, while leaving ambiguous
 external outcomes to an explicit later recovery policy. A
+fixed redacted observation entity-state value and SQLite record now preserve
+bounded debounce progress and latest facts behind composite source/subject
+identity constraints; loaded validation and monotonic store access remain the
+next boundary. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
