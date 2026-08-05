@@ -90,7 +90,9 @@ A redacted provider-neutral prompt request preserves those categories as fixed
 structured fields without delimiter interpolation. Raw provider text passes a
 bounded deterministic normalizer that removes narrow control and redundant
 speaker-label forms, then rejects unsafe URLs, network locations, mentions, or
-invalid content through the shared message boundary. A
+invalid content through the shared message boundary. A pure provider-result
+resolver then returns normalized LLM text or an explicit fallback decision
+without exposing provider diagnostics. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
