@@ -138,6 +138,7 @@ defmodule ClusterMurmur.Config.PersonasTest do
           %{"interests" => %{"operations" => -1}},
           %{"behavior" => %{"reply_weight" => -1}},
           %{"behavior" => %{"cooldown" => "later"}},
+          %{"behavior" => %{"cooldown" => "366d"}},
           %{"behavior" => %{"unknown" => true}}
         ] do
       attributes = Map.merge(base, extra)
