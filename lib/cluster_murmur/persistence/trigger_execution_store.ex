@@ -13,6 +13,7 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
   alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.Persistence.{EventStore, TriggerExecution, TriggerExecutionValidator}
   alias ClusterMurmur.Repo
+  alias ClusterMurmur.Triggers.TriggerExecutionRecovery
   alias ClusterMurmur.Triggers.EventTriggerExecutionPlanner.Plan
 
   @error_class_pattern ~r/\A[a-z][a-z0-9._-]*\z/
@@ -38,6 +39,7 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
           :event_conflict
           | :event_not_found
           | :execution_conflict
+          | :invalid_datetime
           | :invalid_execution
           | :storage_unavailable
 
@@ -89,6 +91,19 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
     _error -> {:error, :storage_unavailable}
   catch
     :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  @doc "Fails one abandoned started execution without retrying its action."
+  @spec fail_abandoned(term(), term()) ::
+          {:ok, TriggerExecution.t()}
+          | {:skip, :recent | :terminal}
+          | {:error, error()}
+  def fail_abandoned(execution, cutoff) do
+    case TriggerExecutionRecovery.classify(execution, cutoff) do
+      {:ok, :abandoned} -> finish(execution, :failed, "runtime.interrupted")
+      {:ok, reason} when reason in [:recent, :terminal] -> {:skip, reason}
+      {:error, _reason} = error -> error
+    end
   end
 
   defp finish(execution, status, error_class) do
