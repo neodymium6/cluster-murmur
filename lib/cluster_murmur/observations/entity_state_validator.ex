@@ -16,6 +16,8 @@ defmodule ClusterMurmur.Observations.EntityStateValidator do
   @observed_states [:healthy, :unhealthy]
   @max_count DomainLimits.max_safe_integer()
   @max_encoded_payload_bytes 128 * 1_024
+  @projected_event_id String.duplicate("e", 76)
+  @projected_event_dedupe_key String.duplicate("d", 86)
 
   @type error :: :invalid_entity_state
 
@@ -101,25 +103,22 @@ defmodule ClusterMurmur.Observations.EntityStateValidator do
 
   defp valid_payload?(state) do
     Validator.validate(%Event{
-      id: "entity-state",
+      id: @projected_event_id,
       type: "observation.entity-state",
       source: state.source,
       subject: state.subject,
       group: nil,
-      severity: nil,
-      previous: Atom.to_string(state.current_state),
-      current: optional_state(state.pending_state),
+      severity: "warning",
+      previous: "unhealthy",
+      current: "unhealthy",
       occurred_at: state.last_observed_at,
       observed_at: state.last_changed_at,
-      dedupe_key: nil,
+      dedupe_key: @projected_event_dedupe_key,
       correlation_key: nil,
       facts: state.facts,
       labels: state.labels
     }) == :ok
   end
-
-  defp optional_state(nil), do: nil
-  defp optional_state(state), do: Atom.to_string(state)
 
   defp encode_json(value) do
     {:ok, value |> normalize_nulls() |> :json.encode() |> IO.iodata_to_binary()}
