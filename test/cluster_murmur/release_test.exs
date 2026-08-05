@@ -10,7 +10,8 @@ defmodule ClusterMurmur.ReleaseTest do
     20_260_804_130_000,
     20_260_804_160_000,
     20_260_804_180_500,
-    20_260_804_200_000
+    20_260_804_200_000,
+    20_260_805_200_000
   ]
 
   setup do
@@ -63,6 +64,7 @@ defmodule ClusterMurmur.ReleaseTest do
     assert table_exists?("stochastic_schedules")
     assert table_exists?("events")
     assert table_exists?("trigger_executions")
+    assert table_exists?("conversations")
     assert migrated_versions() == @migration_versions
   end
 
