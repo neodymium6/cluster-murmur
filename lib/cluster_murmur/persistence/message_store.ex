@@ -7,9 +7,12 @@ defmodule ClusterMurmur.Persistence.MessageStore do
   another turn is allowed by configured policy.
   """
 
+  import Ecto.Changeset, only: [change: 2, unique_constraint: 2]
   import Ecto.Query, only: [from: 2]
 
   alias ClusterMurmur.DomainLimits
+  alias ClusterMurmur.Messages.Message
+  alias ClusterMurmur.Messages.Validator, as: MessageValidator
 
   alias ClusterMurmur.Persistence.{
     ConversationRecord,
@@ -37,6 +40,8 @@ defmodule ClusterMurmur.Persistence.MessageStore do
           | :invalid_message
           | :invalid_message_record
           | :message_conflict
+          | :publication_conflict
+          | :invalid_publication_id
           | :storage_unavailable
 
   @doc "Appends one unpublished message and advances both durable counters once."
@@ -61,6 +66,50 @@ defmodule ClusterMurmur.Persistence.MessageStore do
   catch
     :exit, _reason -> {:error, :storage_unavailable}
   end
+
+  @doc "Records one canonical Discord message ID for an exact unpublished record."
+  @spec record_publication(term(), term()) ::
+          {:ok, MessageRecord.t()} | {:error, error()}
+  def record_publication(record, discord_message_id) do
+    with :ok <- MessageRecordValidator.validate(record),
+         :ok <- require_unpublished(record),
+         :ok <- validate_publication_id(record, discord_message_id) do
+      persist_publication(record, discord_message_id)
+    else
+      {:error, reason}
+      when reason in [
+             :invalid_message_record,
+             :publication_conflict,
+             :invalid_publication_id
+           ] ->
+        {:error, reason}
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  defp require_unpublished(%MessageRecord{discord_message_id: nil}), do: :ok
+  defp require_unpublished(_record), do: {:error, :publication_conflict}
+
+  defp validate_publication_id(record, discord_message_id) when is_binary(discord_message_id) do
+    message = %Message{
+      conversation_id: record.conversation_id,
+      persona_id: record.persona_id,
+      origin: record.origin,
+      content: record.content,
+      discord_message_id: discord_message_id,
+      inserted_at: record.inserted_at
+    }
+
+    if MessageValidator.validate(message) == :ok,
+      do: :ok,
+      else: {:error, :invalid_publication_id}
+  end
+
+  defp validate_publication_id(_record, _discord_message_id),
+    do: {:error, :invalid_publication_id}
 
   defp validate_message(conversation, message) do
     changeset = MessageRecord.changeset(%MessageRecord{}, message)
@@ -205,6 +254,88 @@ defmodule ClusterMurmur.Persistence.MessageStore do
 
       nil ->
         {:error, :storage_unavailable}
+    end
+  end
+
+  defp persist_publication(record, discord_message_id) do
+    case Repo.transaction(fn -> publication_transaction(record, discord_message_id) end) do
+      {:ok, %MessageRecord{} = published} ->
+        {:ok, published}
+
+      {:error, reason} when reason in [:invalid_message_record, :publication_conflict] ->
+        {:error, reason}
+
+      _failure ->
+        {:error, :storage_unavailable}
+    end
+  end
+
+  defp publication_transaction(record, discord_message_id) do
+    with {:ok, persisted} <- restore_exact_unpublished(record),
+         :ok <- update_publication_id(persisted, discord_message_id),
+         {:ok, published} <- restore_published(persisted, discord_message_id) do
+      published
+    else
+      {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp restore_exact_unpublished(expected) do
+    case Repo.get(MessageRecord, expected.id) do
+      %MessageRecord{} = persisted ->
+        cond do
+          MessageRecordValidator.validate(persisted) != :ok ->
+            {:error, :invalid_message_record}
+
+          persisted.discord_message_id != nil ->
+            {:error, :publication_conflict}
+
+          Map.take(persisted, [:id | @message_fields]) !=
+              Map.take(expected, [:id | @message_fields]) ->
+            {:error, :publication_conflict}
+
+          true ->
+            {:ok, persisted}
+        end
+
+      nil ->
+        {:error, :publication_conflict}
+    end
+  end
+
+  defp update_publication_id(persisted, discord_message_id) do
+    changeset =
+      persisted
+      |> change(discord_message_id: discord_message_id)
+      |> unique_constraint(:discord_message_id)
+
+    case Repo.update(changeset) do
+      {:ok, %MessageRecord{}} ->
+        :ok
+
+      {:error, %Ecto.Changeset{} = failed} ->
+        if Keyword.has_key?(failed.errors, :discord_message_id),
+          do: {:error, :publication_conflict},
+          else: {:error, :storage_unavailable}
+
+      _failure ->
+        {:error, :storage_unavailable}
+    end
+  end
+
+  defp restore_published(previous, discord_message_id) do
+    expected = %{previous | discord_message_id: discord_message_id}
+
+    case Repo.get(MessageRecord, previous.id) do
+      %MessageRecord{} = published ->
+        if Map.take(published, [:id | @message_fields]) ==
+             Map.take(expected, [:id | @message_fields]) and
+             MessageRecordValidator.validate(published) == :ok,
+           do: {:ok, published},
+           else: {:error, :invalid_message_record}
+
+      nil ->
+        {:error, :invalid_message_record}
     end
   end
 end
