@@ -16,6 +16,10 @@ defmodule ClusterMurmur.Persistence.ConversationRecordValidatorTest do
     end
 
     assert ConversationRecordValidator.validate_started(loaded(:starting, nil)) == :ok
+
+    for status <- [:starting, :generating, :waiting] do
+      assert ConversationRecordValidator.validate_active(loaded(status, nil)) == :ok
+    end
   end
 
   test "started validation requires a pristine start" do
@@ -27,6 +31,14 @@ defmodule ClusterMurmur.Persistence.ConversationRecordValidatorTest do
         ] do
       assert ConversationRecordValidator.validate_started(record) ==
                {:error, :invalid_conversation_record}
+    end
+  end
+
+  test "active validation rejects terminal records" do
+    for status <- [:completed, :cancelled, :failed] do
+      assert ConversationRecordValidator.validate_active(
+               loaded(status, ~U[2026-08-05 12:01:00.000000Z])
+             ) == {:error, :invalid_conversation_record}
     end
   end
 

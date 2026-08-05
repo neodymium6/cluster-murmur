@@ -1,6 +1,8 @@
 defmodule ClusterMurmur.Persistence.ConversationStoreTest do
   use ExUnit.Case, async: false
 
+  import Ecto.Query, only: [from: 2]
+
   alias ClusterMurmur.Conversations.Conversation
   alias ClusterMurmur.Events.Event
   alias ClusterMurmur.Persistence.{ConversationRecord, ConversationStore, EventStore}
@@ -107,6 +109,98 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
 
     assert result == {:error, :storage_unavailable}
     refute inspect(result) =~ "private"
+  end
+
+  test "finishes one exact active conversation in each terminal state" do
+    for {index, active_status, operation, expected_status} <- [
+          {1, :starting, &ConversationStore.complete/2, :completed},
+          {2, :generating, &ConversationStore.cancel/2, :cancelled},
+          {3, :waiting, &ConversationStore.fail/2, :failed}
+        ] do
+      started = start_conversation!("conversation-#{index}")
+
+      if active_status != :starting do
+        assert {1, nil} =
+                 Repo.update_all(
+                   from(record in ConversationRecord, where: record.id == ^started.id),
+                   set: [status: active_status]
+                 )
+      end
+
+      active = Repo.get!(ConversationRecord, started.id)
+      completed_at = ~U[2026-08-05 12:01:00Z]
+
+      assert {:ok, terminal} = operation.(active, completed_at)
+      assert terminal.status == expected_status
+      assert DateTime.compare(terminal.completed_at, completed_at) == :eq
+      assert terminal.completed_at.microsecond == {0, 6}
+      assert terminal.root_event_id == active.root_event_id
+      assert terminal.turn_count == active.turn_count
+      assert terminal.llm_call_count == active.llm_call_count
+    end
+  end
+
+  test "allows only one terminal transition" do
+    started = start_conversation!("one-way-conversation")
+    completed_at = ~U[2026-08-05 12:01:00.000000Z]
+
+    assert {:ok, completed} = ConversationStore.complete(started, completed_at)
+
+    assert ConversationStore.cancel(started, completed_at) ==
+             {:error, :conversation_conflict}
+
+    assert ConversationStore.fail(completed, completed_at) ==
+             {:error, :invalid_conversation_record}
+  end
+
+  test "requires the exact loaded active capability" do
+    started = start_conversation!("exact-capability")
+
+    invalid = [
+      nil,
+      %ConversationRecord{},
+      Map.put(started, :unexpected_private_value, "private"),
+      Ecto.put_meta(started, source: "events"),
+      Ecto.put_meta(started, prefix: "private"),
+      %{started | id: "invalid id"},
+      %{started | started_at: %{started.started_at | microsecond: {0, 0}}}
+    ]
+
+    Repo.put_dynamic_repo(:missing_conversation_repo)
+
+    for rejected <- invalid do
+      assert ConversationStore.complete(rejected, ~U[2026-08-05 12:01:00.000000Z]) ==
+               {:error, :invalid_conversation_record}
+    end
+  end
+
+  test "rejects invalid or earlier completion instants before storage" do
+    started = start_conversation!("invalid-completion")
+    Repo.put_dynamic_repo(:missing_conversation_repo)
+
+    for completed_at <- [
+          nil,
+          %{~U[2026-08-05 12:01:00Z] | hour: 24},
+          ~U[2026-08-05 11:59:59.999999Z]
+        ] do
+      assert ConversationStore.complete(started, completed_at) == {:error, :invalid_datetime}
+    end
+  end
+
+  test "detects a stale active capability without overwriting durable state" do
+    started = start_conversation!("stale-capability")
+    stale = %{started | turn_count: 1}
+
+    assert ConversationStore.fail(stale, ~U[2026-08-05 12:01:00.000000Z]) ==
+             {:error, :conversation_conflict}
+
+    assert Repo.get!(ConversationRecord, started.id).status == :starting
+  end
+
+  defp start_conversation!(id) do
+    assert {:ok, _event_record} = EventStore.insert(event())
+    assert {:ok, record} = ConversationStore.start(conversation(id: id))
+    record
   end
 
   defp event do
