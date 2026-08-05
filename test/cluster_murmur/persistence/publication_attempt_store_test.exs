@@ -162,6 +162,201 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
              {:ok, ambiguous}
   end
 
+  test "atomically records one known publication success idempotently", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    assert {:ok, {succeeded, published}} =
+             PublicationAttemptStore.succeed(started, message, "12345", completed_at())
+
+    assert succeeded.status == :succeeded
+    assert succeeded.completed_at == completed_at()
+    assert succeeded.error_class == nil
+    assert published.discord_message_id == "12345"
+
+    assert PublicationAttemptStore.succeed(started, message, "12345", completed_at()) ==
+             {:ok, {succeeded, published}}
+
+    assert PublicationAttemptStore.fetch(message.id) == {:ok, succeeded}
+    assert Repo.get!(MessageRecord, message.id) == published
+  end
+
+  test "does not reinterpret a known success", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    assert {:ok, {succeeded, published}} =
+             PublicationAttemptStore.succeed(started, message, "12345", completed_at())
+
+    assert PublicationAttemptStore.succeed(started, message, "67890", completed_at()) ==
+             {:error, :publication_attempt_conflict}
+
+    assert PublicationAttemptStore.succeed(
+             started,
+             message,
+             "12345",
+             DateTime.add(completed_at(), 1, :microsecond)
+           ) == {:error, :publication_attempt_conflict}
+
+    assert PublicationAttemptStore.fail(started, :timeout, completed_at()) ==
+             {:error, :publication_attempt_conflict}
+
+    assert PublicationAttemptStore.fetch(message.id) == {:ok, succeeded}
+    assert Repo.get!(MessageRecord, message.id) == published
+  end
+
+  test "rolls back the attempt when the Discord ID conflicts", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, first_attempt} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    assert {:ok, {_succeeded, _published}} =
+             PublicationAttemptStore.succeed(first_attempt, message, "12345", completed_at())
+
+    second =
+      Repo.insert!(%MessageRecord{
+        conversation_id: "conversation-1",
+        persona_id: "observer",
+        origin: :llm,
+        content: "A second bounded confirmed fact.",
+        inserted_at: ~U[2026-08-05 12:04:00.000000Z]
+      })
+
+    {second_plan, persona, settings} = plan(second)
+
+    assert {:ok, second_attempt} =
+             PublicationAttemptStore.start(
+               second_plan,
+               second,
+               persona,
+               settings,
+               ~U[2026-08-05 12:05:00.000000Z]
+             )
+
+    assert PublicationAttemptStore.succeed(
+             second_attempt,
+             second,
+             "12345",
+             ~U[2026-08-05 12:06:00.000000Z]
+           ) == {:error, :publication_conflict}
+
+    assert PublicationAttemptStore.fetch(second.id) == {:ok, second_attempt}
+    assert Repo.get!(MessageRecord, second.id) == second
+  end
+
+  test "rejects invalid success inputs before storage access", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    Repo.put_dynamic_repo(:missing_publication_attempt_repo)
+
+    for discord_message_id <- [nil, "", "0", "012345", "message-1"] do
+      assert PublicationAttemptStore.succeed(
+               started,
+               message,
+               discord_message_id,
+               completed_at()
+             ) == {:error, :invalid_publication_id}
+    end
+
+    assert PublicationAttemptStore.succeed(
+             started,
+             %{message | id: message.id + 1},
+             "12345",
+             completed_at()
+           ) == {:error, :publication_conflict}
+
+    assert PublicationAttemptStore.succeed(
+             started,
+             message,
+             "12345",
+             DateTime.add(started_at(), -1, :microsecond)
+           ) == {:error, :invalid_datetime}
+  end
+
+  test "rolls back both success records after a valid trigger rewrite", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    Ecto.Adapters.SQL.query!(
+      Repo,
+      """
+      CREATE TRIGGER rewrite_succeeded_attempt
+      AFTER UPDATE OF status ON publication_attempts
+      BEGIN
+        UPDATE publication_attempts
+        SET completed_at = '2026-08-05T12:03:01.000000Z'
+        WHERE message_id = NEW.message_id;
+      END
+      """,
+      [],
+      log: false
+    )
+
+    try do
+      assert PublicationAttemptStore.succeed(started, message, "12345", completed_at()) ==
+               {:error, :publication_attempt_conflict}
+
+      assert PublicationAttemptStore.fetch(message.id) == {:ok, started}
+      assert Repo.get!(MessageRecord, message.id) == message
+    after
+      Ecto.Adapters.SQL.query!(Repo, "DROP TRIGGER rewrite_succeeded_attempt", [], log: false)
+    end
+  end
+
+  test "rolls back both success records after a valid message rewrite", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    Ecto.Adapters.SQL.query!(
+      Repo,
+      """
+      CREATE TRIGGER rewrite_succeeded_message
+      AFTER UPDATE OF discord_message_id ON messages
+      BEGIN
+        UPDATE messages
+        SET discord_message_id = '67890'
+        WHERE id = NEW.id;
+      END
+      """,
+      [],
+      log: false
+    )
+
+    try do
+      assert PublicationAttemptStore.succeed(started, message, "12345", completed_at()) ==
+               {:error, :publication_conflict}
+
+      assert PublicationAttemptStore.fetch(message.id) == {:ok, started}
+      assert Repo.get!(MessageRecord, message.id) == message
+    after
+      Ecto.Adapters.SQL.query!(Repo, "DROP TRIGGER rewrite_succeeded_message", [], log: false)
+    end
+  end
+
+  test "returns a generic success storage failure", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    Repo.put_dynamic_repo(:missing_publication_attempt_repo)
+
+    assert PublicationAttemptStore.succeed(started, message, "12345", completed_at()) ==
+             {:error, :storage_unavailable}
+  end
+
   test "does not overwrite a different terminal outcome", %{message: message} do
     {plan, persona, settings} = plan(message)
 
