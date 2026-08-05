@@ -1,10 +1,12 @@
 defmodule ClusterMurmur.Persistence.MessageStore do
   @moduledoc """
-  Atomically appends unpublished messages and advances durable conversation counters.
+  Persists and restores bounded messages through narrow capability-based operations.
 
-  The store accepts one exact loaded active conversation capability. It does
-  not select a persona, generate content, publish to Discord, or decide whether
-  another turn is allowed by configured policy.
+  Appends require an exact loaded active conversation, publication updates
+  require an exact unpublished message, and history reads require an exact
+  conversation in any lifecycle state. The store does not select a persona,
+  generate content, publish to Discord, or decide whether another turn is
+  allowed by configured policy.
   """
 
   import Ecto.Changeset, only: [change: 2, unique_constraint: 2]
@@ -23,7 +25,17 @@ defmodule ClusterMurmur.Persistence.MessageStore do
 
   alias ClusterMurmur.Repo
 
+  @max_conversation_messages 12
   @max_safe_integer DomainLimits.max_safe_integer()
+  @conversation_fields [
+    :id,
+    :root_event_id,
+    :status,
+    :turn_count,
+    :llm_call_count,
+    :started_at,
+    :completed_at
+  ]
   @message_fields [
     :conversation_id,
     :persona_id,
@@ -83,6 +95,26 @@ defmodule ClusterMurmur.Persistence.MessageStore do
              :invalid_publication_id
            ] ->
         {:error, reason}
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  @doc "Lists at most 12 latest messages for one exact conversation in chronological order."
+  @spec list_for_conversation(term()) ::
+          {:ok, [Message.t()]}
+          | {:error,
+             :conversation_conflict
+             | :invalid_conversation_record
+             | :invalid_message_record
+             | :storage_unavailable}
+  def list_for_conversation(conversation) do
+    if ConversationRecordValidator.validate(conversation) == :ok do
+      read_conversation_history(conversation)
+    else
+      {:error, :invalid_conversation_record}
     end
   rescue
     _error -> {:error, :storage_unavailable}
@@ -337,5 +369,122 @@ defmodule ClusterMurmur.Persistence.MessageStore do
       nil ->
         {:error, :invalid_message_record}
     end
+  end
+
+  defp read_conversation_history(conversation) do
+    case Repo.transaction(fn -> conversation_history_transaction(conversation) end) do
+      {:ok, messages} when is_list(messages) ->
+        {:ok, messages}
+
+      {:error, reason}
+      when reason in [
+             :conversation_conflict,
+             :invalid_conversation_record,
+             :invalid_message_record
+           ] ->
+        {:error, reason}
+
+      _failure ->
+        {:error, :storage_unavailable}
+    end
+  end
+
+  defp conversation_history_transaction(expected) do
+    with {:ok, conversation} <- restore_exact_conversation(expected),
+         :ok <- validate_message_count(conversation),
+         {:ok, messages} <- load_conversation_messages(conversation) do
+      messages
+    else
+      {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp restore_exact_conversation(expected) do
+    case Repo.get(ConversationRecord, expected.id) do
+      %ConversationRecord{} = persisted ->
+        cond do
+          ConversationRecordValidator.validate(persisted) != :ok ->
+            {:error, :invalid_conversation_record}
+
+          Map.take(persisted, @conversation_fields) !=
+              Map.take(expected, @conversation_fields) ->
+            {:error, :conversation_conflict}
+
+          true ->
+            {:ok, persisted}
+        end
+
+      nil ->
+        {:error, :conversation_conflict}
+    end
+  end
+
+  defp validate_message_count(conversation) do
+    total =
+      Repo.aggregate(
+        from(record in MessageRecord,
+          where: record.conversation_id == ^conversation.id
+        ),
+        :count
+      )
+
+    if total == conversation.turn_count and
+         conversation.llm_call_count >= conversation.turn_count,
+       do: :ok,
+       else: {:error, :invalid_conversation_record}
+  end
+
+  defp load_conversation_messages(conversation) do
+    records =
+      conversation.id
+      |> conversation_history_query()
+      |> Repo.all()
+      |> Enum.reverse()
+
+    if valid_conversation_history?(
+         records,
+         conversation.id,
+         conversation.started_at,
+         conversation.completed_at
+       ),
+       do: {:ok, Enum.map(records, &project_message/1)},
+       else: {:error, :invalid_message_record}
+  end
+
+  defp conversation_history_query(conversation_id) do
+    from record in MessageRecord,
+      where: record.conversation_id == ^conversation_id,
+      order_by: [desc: record.inserted_at, desc: record.id],
+      limit: @max_conversation_messages
+  end
+
+  defp valid_conversation_history?(records, conversation_id, started_at, completed_at) do
+    result =
+      Enum.reduce_while(records, {:ok, started_at}, fn record, {:ok, previous_at} ->
+        if MessageRecordValidator.validate(record) == :ok and
+             record.conversation_id == conversation_id and
+             DateTime.compare(record.inserted_at, previous_at) in [:gt, :eq] and
+             within_completion?(record.inserted_at, completed_at),
+           do: {:cont, {:ok, record.inserted_at}},
+           else: {:halt, :error}
+      end)
+
+    match?({:ok, _last_message_at}, result)
+  end
+
+  defp within_completion?(_inserted_at, nil), do: true
+
+  defp within_completion?(inserted_at, completed_at),
+    do: DateTime.compare(inserted_at, completed_at) in [:lt, :eq]
+
+  defp project_message(record) do
+    %Message{
+      conversation_id: record.conversation_id,
+      persona_id: record.persona_id,
+      origin: record.origin,
+      content: record.content,
+      discord_message_id: record.discord_message_id,
+      inserted_at: record.inserted_at
+    }
   end
 end
