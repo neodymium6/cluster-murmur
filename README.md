@@ -69,7 +69,10 @@ disabled personas and active cooldowns at an injected UTC instant, and emits
 redacted configured weight components in stable persona order without sampling.
 A bounded selector revalidates those projections, handles empty, zero-total,
 and sole-positive outcomes without randomness, and delegates only a final
-stable weighted choice among multiple positive candidates. A
+stable weighted choice among multiple positive candidates. A pure conversation
+budget evaluator revalidates injected UTC time and runtime state, then projects
+clamped remaining turns, participant slots, duration, and LLM calls without
+closing a conversation merely because its existing participant set is full. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
