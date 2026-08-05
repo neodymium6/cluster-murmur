@@ -57,6 +57,9 @@ the latest spoken instant and a correlated UTC selection deadline. Loaded
 cooldowns pass through one exact fail-closed validator before store use. A
 narrow store restores optional state and monotonically records newer spoken
 facts with idempotent retries, exact compare-and-set, and durable revalidation. A
+pure deterministic fallback emits one neutral factual template for a validated
+event and revalidates the complete generated message without interpreting or
+interpolating arbitrary event data. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
