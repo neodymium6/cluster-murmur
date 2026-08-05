@@ -35,7 +35,9 @@ narrow CAS closes abandoned starts as interrupted without retrying them. A
 shared fail-closed validator now bounds exact runtime conversation metadata and
 rejects untyped message projections before conversation persistence. A fixed,
 constrained conversation lifecycle record and migration now provide redacted
-durable metadata without generic repository access. A
+durable metadata without generic repository access. A narrow transaction starts
+that lifecycle once for an existing validated event and returns only an exact
+redacted record. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
