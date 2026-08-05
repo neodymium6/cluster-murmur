@@ -543,4 +543,8 @@ operator's private deployment repository:
 
 Secret readers must impose file-size limits, reject empty values, avoid
 following unsafe references, and never include file contents or resolved paths
-in logs or validation errors.
+in logs or validation errors. The shared mounted-secret reader accepts only an
+absolute path from a validated named environment variable and a regular-file
+target, reads at most 16 KiB, and returns a trimmed non-empty UTF-8 value.
+Projected-volume symlinks are allowed when their final target is a regular
+file. Secret-specific settings validate the returned opaque value before use.
