@@ -78,6 +78,9 @@ event-group relevance, cooldowns, and explicit consecutive/reentry policy,
 emitting only stable redacted configured weight components before reply gating.
 An independent reply gate returns an explicit reply or no-reply decision from
 the bounded event-group probability and at most one injected uniform sample. A
+bounded responder selector honors that gate, adds an independent weighted
+no-reply outcome, and delegates only the final choice among multiple positive
+validated outcomes to injected randomness. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
