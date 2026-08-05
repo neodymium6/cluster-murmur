@@ -59,7 +59,9 @@ narrow store restores optional state and monotonically records newer spoken
 facts with idempotent retries, exact compare-and-set, and durable revalidation. A
 pure deterministic fallback emits one neutral factual template for a validated
 event and revalidates the complete generated message without interpreting or
-interpolating arbitrary event data. A
+interpolating arbitrary event data. Configured personas now pass through one
+exact fail-closed runtime validator that also enforces the shared cooldown
+interval bound before later selection or generation. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes

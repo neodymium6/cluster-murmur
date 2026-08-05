@@ -9,7 +9,7 @@ defmodule ClusterMurmur.Config.Personas do
 
   alias ClusterMurmur.Config.{Duration, LoadedDocument, PathResolver, PromptReader}
   alias ClusterMurmur.Config.{SchemaValidator, Value}
-  alias ClusterMurmur.Personas.Persona
+  alias ClusterMurmur.Personas.{Persona, Validator}
 
   @draft "http://json-schema.org/draft-07/schema#"
   @id_pattern "^[A-Za-z0-9][A-Za-z0-9._-]*$"
@@ -163,18 +163,21 @@ defmodule ClusterMurmur.Config.Personas do
          {:ok, interests} <- validate_interests(Map.get(attributes, "interests", %{})),
          {:ok, behavior} <- validate_behavior(Map.get(attributes, "behavior", %{})),
          {:ok, prompt} <- read_prompt(config_path, source_path, attributes["prompt_file"]) do
-      {:ok,
-       %Persona{
-         id: id,
-         display_name: display_name,
-         avatar: avatar,
-         prompt: prompt,
-         enabled: Map.get(attributes, "enabled", true),
-         interests: interests,
-         behavior: behavior,
-         relationships: %{},
-         metadata: %{}
-       }}
+      persona = %Persona{
+        id: id,
+        display_name: display_name,
+        avatar: avatar,
+        prompt: prompt,
+        enabled: Map.get(attributes, "enabled", true),
+        interests: interests,
+        behavior: behavior,
+        relationships: %{},
+        metadata: %{}
+      }
+
+      if Validator.validate(persona) == :ok,
+        do: {:ok, persona},
+        else: {:error, :invalid_persona_document}
     end
   end
 
