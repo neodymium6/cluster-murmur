@@ -7,7 +7,9 @@ defmodule ClusterMurmur.Discord.Publisher do
   configured webhook URL or raw HTTP details through return values or logs.
   """
 
+  alias ClusterMurmur.Discord.PublicationPayload
   alias ClusterMurmur.ExternalError
 
-  @callback publish(map()) :: {:ok, String.t()} | {:error, ExternalError.t()}
+  @callback publish(PublicationPayload.t()) ::
+              {:ok, String.t()} | {:error, ExternalError.t()}
 end

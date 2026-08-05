@@ -151,7 +151,7 @@ defmodule ClusterMurmur.Generation.Provider do
 end
 
 defmodule ClusterMurmur.Discord.Publisher do
-  @callback publish(map()) ::
+  @callback publish(ClusterMurmur.Discord.PublicationPayload.t()) ::
               {:ok, String.t()} | {:error, ClusterMurmur.ExternalError.t()}
 end
 ```
@@ -304,7 +304,8 @@ consume conversation budgets and must pass the same output validator.
 The MVP is outbound-only. Each publication supplies content plus the selected
 persona's display name and avatar override to a pre-created Discord Webhook.
 Webhook URLs are read from mounted secret files and must never be returned in
-errors or logs.
+errors or logs. Publication payloads always send an empty `allowed_mentions`
+parse list so Discord cannot expand user, role, or broadcast mentions.
 
 Discord Gateway ingestion and `discord.mentioned` event production are not MVP
 features. The event type and `Questions.ToolPolicy` boundary remain reserved so
