@@ -200,12 +200,18 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStoreTest do
     forged_prefix = Ecto.put_meta(started, prefix: "private")
     stale = %{started | cooldown_until: DateTime.add(started.cooldown_until, 1, :second)}
 
+    forged_precision = %{
+      started
+      | executed_at: %{started.executed_at | microsecond: {0, 0}}
+    }
+
     for rejected <- [
           nil,
           %TriggerExecution{},
           Map.put(started, :unexpected_private_value, "private"),
           forged_source,
           forged_prefix,
+          forged_precision,
           %{started | status: :completed},
           %{started | trigger_id: "invalid id"},
           %{started | executed_at: %{started.executed_at | hour: 24}}

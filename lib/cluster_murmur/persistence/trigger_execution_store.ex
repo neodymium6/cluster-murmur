@@ -193,8 +193,8 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
       metadata == @loaded_metadata and
       valid_trigger_id?(trigger_id) and
       EventValidator.validate_id(event_id) == :ok and
-      DateTimeValidator.validate_storage_utc(executed_at) == :ok and
-      DateTimeValidator.validate_storage_utc(cooldown_until) == :ok and
+      valid_loaded_datetime?(executed_at) and
+      valid_loaded_datetime?(cooldown_until) and
       DateTime.compare(cooldown_until, executed_at) in [:gt, :eq]
   end
 
@@ -206,6 +206,11 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
   end
 
   defp valid_trigger_id?(_trigger_id), do: false
+
+  defp valid_loaded_datetime?(%DateTime{microsecond: {_value, 6}} = datetime),
+    do: DateTimeValidator.validate_storage_utc(datetime) == :ok
+
+  defp valid_loaded_datetime?(_datetime), do: false
 
   defp valid_terminal_status?(:completed, nil), do: true
 
