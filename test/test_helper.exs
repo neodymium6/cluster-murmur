@@ -68,4 +68,11 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand(
+    "../priv/repo/migrations/20260805230000_create_publication_attempts.exs",
+    __DIR__
+  )
+)
+
 ExUnit.start()
