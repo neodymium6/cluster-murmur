@@ -27,6 +27,6 @@ defmodule ClusterMurmur.Conversations.Conversation do
           turn_count: non_neg_integer() | nil,
           llm_call_count: non_neg_integer() | nil,
           participants: [String.t()],
-          messages: [term()]
+          messages: [ClusterMurmur.Messages.Message.t()]
         }
 end

@@ -2,15 +2,14 @@ defmodule ClusterMurmur.Conversations.Validator do
   @moduledoc """
   Validates one exact, bounded runtime conversation without exposing values.
 
-  Generated messages remain outside this boundary until the project defines a
-  typed message value. Conversation metadata may therefore carry only an empty
-  message projection.
+  Message projections use the separately bounded typed message boundary.
   """
 
   alias ClusterMurmur.Conversations.Conversation
   alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.DomainLimits
   alias ClusterMurmur.Events.Validator, as: EventValidator
+  alias ClusterMurmur.Messages.Validator, as: MessageValidator
 
   @conversation_keys Conversation.__struct__() |> Map.keys()
   @conversation_key_count length(@conversation_keys)
@@ -19,6 +18,7 @@ defmodule ClusterMurmur.Conversations.Validator do
   @max_id_bytes DomainLimits.max_id_bytes()
   @max_safe_integer DomainLimits.max_safe_integer()
   @max_participants 256
+  @max_messages 12
 
   @type error :: :invalid_conversation
 
@@ -34,7 +34,7 @@ defmodule ClusterMurmur.Conversations.Validator do
           turn_count: turn_count,
           llm_call_count: llm_call_count,
           participants: participants,
-          messages: []
+          messages: messages
         } = conversation
       )
       when status in @statuses and is_integer(turn_count) and is_integer(llm_call_count) and
@@ -44,7 +44,16 @@ defmodule ClusterMurmur.Conversations.Validator do
          :ok <- EventValidator.validate_id(root_event_id),
          :ok <- validate_datetime(started_at),
          :ok <- validate_optional_later_datetime(last_message_at, started_at),
-         true <- valid_participants?(participants) do
+         true <- valid_participants?(participants),
+         true <-
+           valid_messages?(
+             messages,
+             id,
+             MapSet.new(participants),
+             started_at,
+             last_message_at
+           ),
+         true <- valid_message_counters?(messages, turn_count, llm_call_count) do
       :ok
     else
       _failure -> {:error, :invalid_conversation}
@@ -89,6 +98,90 @@ defmodule ClusterMurmur.Conversations.Validator do
   end
 
   defp valid_participants?(_participants), do: false
+
+  defp valid_messages?(messages, conversation_id, participants, started_at, last_message_at)
+       when is_list(messages),
+       do:
+         bounded_messages?(
+           messages,
+           conversation_id,
+           participants,
+           started_at,
+           last_message_at,
+           nil,
+           0
+         )
+
+  defp valid_messages?(_messages, _conversation_id, _participants, _started_at, _last_message_at),
+    do: false
+
+  defp valid_message_counters?(messages, turn_count, llm_call_count) do
+    projected_count = length(messages)
+    turn_count >= projected_count and llm_call_count >= projected_count
+  end
+
+  defp bounded_messages?(
+         [],
+         _conversation_id,
+         _participants,
+         _started_at,
+         nil,
+         nil,
+         _count
+       ),
+       do: true
+
+  defp bounded_messages?(
+         [],
+         _conversation_id,
+         _participants,
+         _started_at,
+         last_message_at,
+         previous_at,
+         _count
+       ),
+       do: DateTime.compare(previous_at, last_message_at) == :eq
+
+  defp bounded_messages?(
+         [message | messages],
+         conversation_id,
+         participants,
+         started_at,
+         last_message_at,
+         previous_at,
+         count
+       )
+       when count < @max_messages do
+    MessageValidator.validate(message) == :ok and message.conversation_id == conversation_id and
+      MapSet.member?(participants, message.persona_id) and
+      DateTime.compare(message.inserted_at, started_at) in [:gt, :eq] and
+      ordered_after?(message.inserted_at, previous_at) and
+      bounded_messages?(
+        messages,
+        conversation_id,
+        participants,
+        started_at,
+        last_message_at,
+        message.inserted_at,
+        count + 1
+      )
+  end
+
+  defp bounded_messages?(
+         _messages,
+         _conversation_id,
+         _participants,
+         _started_at,
+         _last_message_at,
+         _previous_at,
+         _count
+       ),
+       do: false
+
+  defp ordered_after?(_inserted_at, nil), do: true
+
+  defp ordered_after?(inserted_at, previous_at),
+    do: DateTime.compare(inserted_at, previous_at) in [:gt, :eq]
 
   defp bounded_unique_participants([], seen, _count), do: {:ok, seen}
 

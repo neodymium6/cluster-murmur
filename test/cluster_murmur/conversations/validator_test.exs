@@ -3,6 +3,7 @@ defmodule ClusterMurmur.Conversations.ValidatorTest do
 
   alias ClusterMurmur.Conversations.{Conversation, Validator}
   alias ClusterMurmur.DomainLimits
+  alias ClusterMurmur.Messages.Message
 
   test "accepts exact bounded conversations in every lifecycle state" do
     for status <- [:starting, :generating, :waiting, :completed, :cancelled, :failed] do
@@ -11,8 +12,7 @@ defmodule ClusterMurmur.Conversations.ValidatorTest do
 
     assert Validator.validate(%{
              valid_conversation(:waiting)
-             | last_message_at: ~U[2026-08-05 12:01:00Z],
-               turn_count: 2,
+             | turn_count: 2,
                llm_call_count: 1,
                participants: ["observer", "operator"]
            }) == :ok
@@ -75,11 +75,47 @@ defmodule ClusterMurmur.Conversations.ValidatorTest do
     end
   end
 
-  test "rejects messages until a typed bounded message projection exists" do
-    valid = valid_conversation(:generating)
+  test "accepts only a bounded typed message projection" do
+    valid = %{
+      valid_conversation(:generating)
+      | last_message_at: ~U[2026-08-05 12:00:30Z],
+        participants: ["observer"]
+    }
 
-    assert Validator.validate(%{valid | messages: [%{"content" => "private"}]}) ==
+    message = message()
+
+    bounded = %{valid | turn_count: 12, llm_call_count: 12, messages: List.duplicate(message, 12)}
+    assert Validator.validate(bounded) == :ok
+
+    assert Validator.validate(%{bounded | turn_count: 11}) ==
              {:error, :invalid_conversation}
+
+    assert Validator.validate(%{bounded | llm_call_count: 11}) ==
+             {:error, :invalid_conversation}
+
+    fallback = %{message | origin: :fallback}
+
+    assert Validator.validate(%{valid | turn_count: 1, llm_call_count: 1, messages: [fallback]}) ==
+             :ok
+
+    assert Validator.validate(%{valid | turn_count: 1, llm_call_count: 0, messages: [fallback]}) ==
+             {:error, :invalid_conversation}
+
+    assert Validator.validate(%{valid | last_message_at: message.inserted_at}) ==
+             {:error, :invalid_conversation}
+
+    for messages <- [
+          [%{"content" => "private"}],
+          [%{message | content: "https://example.com"}],
+          [%{message | conversation_id: "another-conversation"}],
+          [%{message | persona_id: "outsider"}],
+          [%{message | inserted_at: ~U[2026-08-05 11:59:59Z]}],
+          List.duplicate(message, 13),
+          [message | :improper]
+        ] do
+      assert Validator.validate(%{bounded | messages: messages}) ==
+               {:error, :invalid_conversation}
+    end
   end
 
   defp valid_conversation(status) do
@@ -93,6 +129,17 @@ defmodule ClusterMurmur.Conversations.ValidatorTest do
       llm_call_count: 0,
       participants: [],
       messages: []
+    }
+  end
+
+  defp message do
+    %Message{
+      conversation_id: "conversation-1",
+      persona_id: "observer",
+      origin: :llm,
+      content: "A bounded fact.",
+      discord_message_id: nil,
+      inserted_at: ~U[2026-08-05 12:00:30Z]
     }
   end
 end
