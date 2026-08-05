@@ -15,11 +15,12 @@ defmodule ClusterMurmur.Discord.PublicationPlanner do
     @moduledoc false
 
     @derive {Inspect, only: []}
-    @enforce_keys [:record, :settings, :payload]
-    defstruct [:record, :settings, :payload]
+    @enforce_keys [:record, :persona, :settings, :payload]
+    defstruct [:record, :persona, :settings, :payload]
 
     @type t :: %__MODULE__{
             record: ClusterMurmur.Persistence.MessageRecord.t(),
+            persona: ClusterMurmur.Personas.Persona.t(),
             settings: ClusterMurmur.Discord.WebhookSettings.t(),
             payload: ClusterMurmur.Discord.PublicationPayload.t()
           }
@@ -49,7 +50,7 @@ defmodule ClusterMurmur.Discord.PublicationPlanner do
   defp plan_record(%MessageRecord{discord_message_id: nil} = record, persona, settings) do
     with :ok <- WebhookSettings.validate(settings),
          {:ok, payload} <- PublicationPayload.build(to_message(record), persona) do
-      {:ok, %Plan{record: record, settings: settings, payload: payload}}
+      {:ok, %Plan{record: record, persona: persona, settings: settings, payload: payload}}
     end
   end
 
