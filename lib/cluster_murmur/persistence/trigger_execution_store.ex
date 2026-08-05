@@ -96,7 +96,7 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
   end
 
   defp identical_event?(persisted, planned) do
-    Map.take(persisted, @event_identity_fields) == Map.take(planned, @event_identity_fields) and
+    Map.take(persisted, @event_identity_fields) === Map.take(planned, @event_identity_fields) and
       same_datetime?(persisted.occurred_at, planned.occurred_at) and
       same_optional_datetime?(persisted.observed_at, planned.observed_at)
   end

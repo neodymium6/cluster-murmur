@@ -88,6 +88,16 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStoreTest do
     end
   end
 
+  test "preserves strict numeric identity in nested event values" do
+    planned = event(facts: %{"attempts" => 1})
+    persisted = %{planned | facts: %{"attempts" => 1.0}}
+    plan = plan!(planned, ~U[2026-08-04 12:00:00.000000Z])
+
+    assert {:ok, _event_record} = EventStore.insert(persisted)
+    assert TriggerExecutionStore.start(plan) == {:error, :event_conflict}
+    assert Repo.aggregate(TriggerExecution, :count) == 0
+  end
+
   test "rejects a repeated trigger and event pair" do
     plan = plan!(event(), ~U[2026-08-04 12:00:00.000000Z])
     assert {:ok, _event_record} = EventStore.insert(plan.event)
