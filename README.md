@@ -87,7 +87,10 @@ generation context keeps an exact identity-and-instructions persona projection,
 validated facts, creative framing, and at most
 12 chronological history lines separate under a combined 128 KiB text bound.
 A redacted provider-neutral prompt request preserves those categories as fixed
-structured fields without delimiter interpolation. A
+structured fields without delimiter interpolation. Raw provider text passes a
+bounded deterministic normalizer that removes narrow control and redundant
+speaker-label forms, then rejects unsafe URLs, network locations, mentions, or
+invalid content through the shared message boundary. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
