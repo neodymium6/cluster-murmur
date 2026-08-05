@@ -47,6 +47,17 @@ defmodule ClusterMurmur.Generation.FactProjectionValidator do
     end
   end
 
+  @doc "Returns the bounded JSON representation size after complete validation."
+  @spec serialized_size(term()) :: {:ok, non_neg_integer()} | {:error, error()}
+  def serialized_size(projection) do
+    with :ok <- validate(projection),
+         {:ok, size} <- json_size(prompt_map(projection)) do
+      {:ok, size}
+    else
+      _failure -> {:error, :invalid_fact_projection}
+    end
+  end
+
   defp exact_projection?(projection) do
     map_size(projection) == @projection_key_count and
       Enum.all?(@projection_keys, &Map.has_key?(projection, &1))

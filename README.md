@@ -82,7 +82,10 @@ bounded responder selector honors that gate, adds an independent weighted
 no-reply outcome, and delegates only the final choice among multiple positive
 validated outcomes to injected randomness. A redacted fact projection exposes
 only fixed application-confirmed event fields to generation and revalidates the
-actual escaped JSON representation against a 64 KiB boundary. A
+actual escaped JSON representation against a 64 KiB boundary. An exact
+generation context keeps an exact identity-and-instructions persona projection,
+validated facts, creative framing, and at most
+12 chronological history lines separate under a combined 128 KiB text bound. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
