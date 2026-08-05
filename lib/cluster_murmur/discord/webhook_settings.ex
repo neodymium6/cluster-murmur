@@ -18,6 +18,9 @@ defmodule ClusterMurmur.Discord.WebhookSettings do
   @enforce_keys [:url]
   defstruct [:url]
 
+  @settings_keys [:__struct__, :url]
+  @settings_key_count length(@settings_keys)
+
   @type t :: %__MODULE__{url: String.t()}
   @type environment_reader :: MountedSecretReader.environment_reader()
   @type error ::
@@ -43,6 +46,24 @@ defmodule ClusterMurmur.Discord.WebhookSettings do
   end
 
   def load(_routing, _environment_reader), do: {:error, :invalid_webhook_settings}
+
+  @doc "Revalidates one exact loaded webhook setting at a runtime boundary."
+  @spec validate(term()) :: :ok | {:error, :invalid_webhook_settings}
+  def validate(%__MODULE__{} = settings) do
+    if map_size(settings) == @settings_key_count and
+         Enum.all?(@settings_keys, &Map.has_key?(settings, &1)) and
+         validate_url(settings.url) == :ok do
+      :ok
+    else
+      {:error, :invalid_webhook_settings}
+    end
+  rescue
+    _error -> {:error, :invalid_webhook_settings}
+  catch
+    _kind, _reason -> {:error, :invalid_webhook_settings}
+  end
+
+  def validate(_settings), do: {:error, :invalid_webhook_settings}
 
   defp validate_routing(routing) do
     if map_size(routing) == @routing_key_count and
