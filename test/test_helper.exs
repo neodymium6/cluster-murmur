@@ -61,4 +61,11 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand(
+    "../priv/repo/migrations/20260805225000_create_entity_states.exs",
+    __DIR__
+  )
+)
+
 ExUnit.start()
