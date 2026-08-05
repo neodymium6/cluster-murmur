@@ -5,18 +5,29 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
 
   alias ClusterMurmur.Conversations.Conversation
   alias ClusterMurmur.Events.Event
-  alias ClusterMurmur.Persistence.{ConversationRecord, ConversationStore, EventStore}
+  alias ClusterMurmur.Messages.Message
+
+  alias ClusterMurmur.Persistence.{
+    ConversationRecord,
+    ConversationStore,
+    EventStore,
+    MessageRecord,
+    MessageStore
+  }
+
   alias ClusterMurmur.Repo
 
   alias ClusterMurmur.Repo.Migrations.{
     AddIncompleteConversationIndex,
     CreateConversations,
-    CreateEvents
+    CreateEvents,
+    CreateMessages
   }
 
   @events_version 20_260_804_180_500
   @conversations_version 20_260_805_200_000
   @incomplete_index_version 20_260_805_210_000
+  @messages_version 20_260_805_220_000
 
   setup_all do
     assert Ecto.Migrator.up(Repo, @events_version, CreateEvents,
@@ -37,7 +48,19 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
              log_migrator_sql: false
            ) == :ok
 
+    assert Ecto.Migrator.up(Repo, @messages_version, CreateMessages,
+             log: false,
+             log_migrations_sql: false,
+             log_migrator_sql: false
+           ) == :ok
+
     on_exit(fn ->
+      Ecto.Migrator.down(Repo, @messages_version, CreateMessages,
+        log: false,
+        log_migrations_sql: false,
+        log_migrator_sql: false
+      )
+
       Ecto.Migrator.down(Repo, @incomplete_index_version, AddIncompleteConversationIndex,
         log: false,
         log_migrations_sql: false,
@@ -61,6 +84,7 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
   end
 
   setup do
+    Ecto.Adapters.SQL.query!(Repo, "DELETE FROM messages", [], log: false)
     Ecto.Adapters.SQL.query!(Repo, "DELETE FROM conversations", [], log: false)
     Ecto.Adapters.SQL.query!(Repo, "DELETE FROM events", [], log: false)
     :ok
@@ -205,6 +229,67 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
     end
   end
 
+  test "rejects every terminal state before the latest committed message" do
+    for {index, operation} <- [
+          {1, &ConversationStore.complete/2},
+          {2, &ConversationStore.cancel/2},
+          {3, &ConversationStore.fail/2}
+        ] do
+      started = start_conversation!("bounded-terminal-#{index}")
+
+      assert {:ok, {_message, advanced}} =
+               MessageStore.append(
+                 started,
+                 message(
+                   conversation_id: started.id,
+                   inserted_at: ~U[2026-08-05 12:01:00.000000Z]
+                 )
+               )
+
+      assert operation.(advanced, ~U[2026-08-05 12:00:59.999999Z]) ==
+               {:error, :invalid_datetime}
+
+      assert Repo.get!(ConversationRecord, started.id) == advanced
+      assert Repo.aggregate(MessageRecord, :count) == index
+    end
+  end
+
+  test "allows a terminal instant equal to the latest committed message" do
+    started = start_conversation!("equal-terminal")
+    inserted_at = ~U[2026-08-05 12:01:00.000000Z]
+
+    assert {:ok, {_message, advanced}} =
+             MessageStore.append(
+               started,
+               message(conversation_id: started.id, inserted_at: inserted_at)
+             )
+
+    assert {:ok, terminal} = ConversationStore.complete(advanced, inserted_at)
+    assert terminal.status == :completed
+    assert DateTime.compare(terminal.completed_at, inserted_at) == :eq
+  end
+
+  test "fails closed on invalid committed message history before terminal transition" do
+    started = start_conversation!("invalid-terminal-history")
+
+    assert {:ok, {_message, advanced}} =
+             MessageStore.append(
+               started,
+               message(conversation_id: started.id)
+             )
+
+    assert {1, nil} =
+             Repo.update_all(
+               from(record in MessageRecord, where: record.conversation_id == ^started.id),
+               set: [content: "https://example.com"]
+             )
+
+    assert ConversationStore.complete(advanced, ~U[2026-08-05 12:02:00.000000Z]) ==
+             {:error, :invalid_message_record}
+
+    assert Repo.get!(ConversationRecord, started.id).status == :starting
+  end
+
   test "detects a stale active capability without overwriting durable state" do
     started = start_conversation!("stale-capability")
     stale = %{started | turn_count: 1}
@@ -290,6 +375,23 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
           llm_call_count: 0,
           participants: [],
           messages: []
+        ],
+        overrides
+      )
+    )
+  end
+
+  defp message(overrides) do
+    struct!(
+      Message,
+      Keyword.merge(
+        [
+          conversation_id: "conversation-1",
+          persona_id: "observer",
+          origin: :llm,
+          content: "A bounded fact.",
+          discord_message_id: nil,
+          inserted_at: ~U[2026-08-05 12:01:00.000000Z]
         ],
         overrides
       )
