@@ -1,0 +1,286 @@
+defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
+  use ExUnit.Case, async: false
+
+  alias ClusterMurmur.Discord.{PublicationPlanner, WebhookSettings}
+
+  alias ClusterMurmur.Persistence.{
+    ConversationRecord,
+    EventRecord,
+    MessageRecord,
+    PublicationAttemptRecord,
+    PublicationAttemptStore
+  }
+
+  alias ClusterMurmur.Personas.Persona
+  alias ClusterMurmur.Repo
+
+  alias ClusterMurmur.Repo.Migrations.{
+    CreateConversations,
+    CreateEvents,
+    CreateMessages,
+    CreatePublicationAttempts
+  }
+
+  @event_version 20_260_804_180_500
+  @conversation_version 20_260_805_200_000
+  @message_version 20_260_805_220_000
+  @attempt_version 20_260_805_230_000
+
+  setup_all do
+    for {version, migration} <- [
+          {@event_version, CreateEvents},
+          {@conversation_version, CreateConversations},
+          {@message_version, CreateMessages},
+          {@attempt_version, CreatePublicationAttempts}
+        ] do
+      assert Ecto.Migrator.up(Repo, version, migration,
+               log: false,
+               log_migrations_sql: false,
+               log_migrator_sql: false
+             ) == :ok
+    end
+
+    on_exit(fn ->
+      for {version, migration} <- [
+            {@attempt_version, CreatePublicationAttempts},
+            {@message_version, CreateMessages},
+            {@conversation_version, CreateConversations},
+            {@event_version, CreateEvents}
+          ] do
+        Ecto.Migrator.down(Repo, version, migration,
+          log: false,
+          log_migrations_sql: false,
+          log_migrator_sql: false
+        )
+      end
+    end)
+
+    :ok
+  end
+
+  setup do
+    Ecto.Adapters.SQL.query!(Repo, "DELETE FROM publication_attempts", [], log: false)
+    Ecto.Adapters.SQL.query!(Repo, "DELETE FROM messages", [], log: false)
+    Ecto.Adapters.SQL.query!(Repo, "DELETE FROM conversations", [], log: false)
+    Ecto.Adapters.SQL.query!(Repo, "DELETE FROM events", [], log: false)
+
+    Repo.insert!(%EventRecord{
+      id: "event-1",
+      type: "observation.failed",
+      source: "example-observer",
+      facts: "{}",
+      labels: "{}",
+      occurred_at: ~U[2026-08-05 12:00:00.000000Z],
+      inserted_at: ~U[2026-08-05 12:00:00.000000Z]
+    })
+
+    Repo.insert!(%ConversationRecord{
+      id: "conversation-1",
+      root_event_id: "event-1",
+      status: :generating,
+      turn_count: 1,
+      llm_call_count: 1,
+      started_at: ~U[2026-08-05 12:00:00.000000Z]
+    })
+
+    message =
+      Repo.insert!(%MessageRecord{
+        conversation_id: "conversation-1",
+        persona_id: "observer",
+        origin: :llm,
+        content: "A bounded confirmed fact.",
+        inserted_at: ~U[2026-08-05 12:01:00.000000Z]
+      })
+
+    {:ok, message: message}
+  end
+
+  test "starts, restores, and idempotently repeats one exact attempt", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, first} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    assert first.status == :started
+    assert PublicationAttemptStore.fetch(message.id) == {:ok, first}
+
+    assert PublicationAttemptStore.start(plan, message, persona, settings, started_at()) ==
+             {:ok, first}
+
+    assert Repo.aggregate(PublicationAttemptRecord, :count) == 1
+  end
+
+  test "normalizes valid UTC precision before durable comparison", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    for precision <- [0, 3] do
+      supplied = %{started_at() | microsecond: {0, precision}}
+
+      assert {:ok, attempt} =
+               PublicationAttemptStore.start(plan, message, persona, settings, supplied)
+
+      assert attempt.started_at.microsecond == {0, 6}
+
+      assert PublicationAttemptStore.start(plan, message, persona, settings, started_at()) ==
+               {:ok, attempt}
+
+      Repo.delete_all(PublicationAttemptRecord)
+    end
+  end
+
+  test "rejects a different retry for an existing attempt", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, first} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    assert PublicationAttemptStore.start(
+             plan,
+             message,
+             persona,
+             settings,
+             DateTime.add(started_at(), 1, :microsecond)
+           ) == {:error, :publication_attempt_conflict}
+
+    assert PublicationAttemptStore.fetch(message.id) == {:ok, first}
+  end
+
+  test "rejects a plan whose durable message changed after validation", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {1, nil} =
+             Repo.update_all(
+               MessageRecord,
+               set: [discord_message_id: "12345"]
+             )
+
+    assert PublicationAttemptStore.start(plan, message, persona, settings, started_at()) ==
+             {:error, :publication_conflict}
+
+    assert Repo.aggregate(PublicationAttemptRecord, :count) == 0
+  end
+
+  test "rejects a still-unpublished durable content rewrite", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {1, nil} = Repo.update_all(MessageRecord, set: [content: "Changed confirmed fact."])
+
+    assert PublicationAttemptStore.start(plan, message, persona, settings, started_at()) ==
+             {:error, :publication_conflict}
+
+    assert Repo.aggregate(PublicationAttemptRecord, :count) == 0
+  end
+
+  test "fails closed on an invalid durable attempt", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, _attempt} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    Ecto.Adapters.SQL.query!(Repo, "PRAGMA ignore_check_constraints = ON", [], log: false)
+
+    try do
+      assert {1, nil} = Repo.update_all(PublicationAttemptRecord, set: [status: :failed])
+    after
+      Ecto.Adapters.SQL.query!(Repo, "PRAGMA ignore_check_constraints = OFF", [], log: false)
+    end
+
+    assert PublicationAttemptStore.fetch(message.id) ==
+             {:error, :invalid_publication_attempt_record}
+
+    assert PublicationAttemptStore.start(plan, message, persona, settings, started_at()) ==
+             {:error, :invalid_publication_attempt_record}
+  end
+
+  test "rolls back a valid insert-time rewrite", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    Ecto.Adapters.SQL.query!(
+      Repo,
+      """
+      CREATE TRIGGER rewrite_publication_attempt
+      AFTER INSERT ON publication_attempts
+      BEGIN
+        UPDATE publication_attempts
+        SET started_at = '2026-08-05T12:02:01.000000Z'
+        WHERE message_id = NEW.message_id;
+      END
+      """,
+      [],
+      log: false
+    )
+
+    try do
+      assert PublicationAttemptStore.start(plan, message, persona, settings, started_at()) ==
+               {:error, :publication_attempt_conflict}
+
+      assert Repo.aggregate(PublicationAttemptRecord, :count) == 0
+    after
+      Ecto.Adapters.SQL.query!(
+        Repo,
+        "DROP TRIGGER rewrite_publication_attempt",
+        [],
+        log: false
+      )
+    end
+  end
+
+  test "rejects invalid plan and timing before storage access", %{message: message} do
+    {plan, persona, settings} = plan(message)
+    Repo.put_dynamic_repo(:missing_publication_attempt_repo)
+
+    assert PublicationAttemptStore.start(nil, message, persona, settings, started_at()) ==
+             {:error, :invalid_publication_plan}
+
+    assert PublicationAttemptStore.start(
+             plan,
+             message,
+             persona,
+             settings,
+             DateTime.add(message.inserted_at, -1, :microsecond)
+           ) == {:error, :invalid_datetime}
+
+    for id <- [nil, 0, 1.0, 9_223_372_036_854_775_808] do
+      assert PublicationAttemptStore.fetch(id) == {:error, :invalid_message_id}
+    end
+  end
+
+  test "returns generic storage failures", %{message: message} do
+    {plan, persona, settings} = plan(message)
+    Repo.put_dynamic_repo(:missing_publication_attempt_repo)
+
+    assert PublicationAttemptStore.fetch(message.id) == {:error, :storage_unavailable}
+
+    assert PublicationAttemptStore.start(plan, message, persona, settings, started_at()) ==
+             {:error, :storage_unavailable}
+  end
+
+  defp plan(message) do
+    persona = persona()
+    settings = settings()
+    assert {:ok, plan} = PublicationPlanner.plan(message, persona, settings)
+    {plan, persona, settings}
+  end
+
+  defp started_at, do: ~U[2026-08-05 12:02:00.000000Z]
+
+  defp persona do
+    %Persona{
+      id: "observer",
+      display_name: "Observer",
+      avatar: nil,
+      prompt: "Use only supplied facts.",
+      enabled: true,
+      interests: %{},
+      behavior: %{},
+      relationships: %{},
+      metadata: %{}
+    }
+  end
+
+  defp settings do
+    %WebhookSettings{
+      url: Enum.join(["https://", "discord", ".", "com", "/api/webhooks/1/fake-token"])
+    }
+  end
+end
