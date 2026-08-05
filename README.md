@@ -73,6 +73,10 @@ stable weighted choice among multiple positive candidates. A pure conversation
 budget evaluator revalidates injected UTC time and runtime state, then projects
 clamped remaining turns, participant slots, duration, and LLM calls without
 closing a conversation merely because its existing participant set is full. A
+pure responder projection combines those limits with binding membership,
+event-group relevance, cooldowns, and explicit consecutive/reentry policy,
+emitting only stable redacted configured weight components before reply gating.
+A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
