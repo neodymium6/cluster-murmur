@@ -7,10 +7,13 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
   attempt. This module never calls Discord or stores raw external responses.
   """
 
+  import Ecto.Changeset, only: [change: 2, unique_constraint: 2]
   import Ecto.Query
 
   alias ClusterMurmur.{DateTimeValidator, Repo}
   alias ClusterMurmur.Discord.PublicationPlanValidator
+  alias ClusterMurmur.Messages.Message
+  alias ClusterMurmur.Messages.Validator, as: MessageValidator
 
   alias ClusterMurmur.Persistence.{
     MessageRecord,
@@ -20,6 +23,15 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
   }
 
   @fields [:message_id, :status, :started_at, :completed_at, :error_class]
+  @message_fields [
+    :id,
+    :conversation_id,
+    :persona_id,
+    :origin,
+    :content,
+    :discord_message_id,
+    :inserted_at
+  ]
   @max_sqlite_integer 9_223_372_036_854_775_807
   @external_errors [
     :authentication_failed,
@@ -35,6 +47,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
           | :invalid_external_error
           | :invalid_message_id
           | :invalid_message_record
+          | :invalid_publication_id
           | :invalid_publication_attempt_record
           | :invalid_publication_plan
           | :publication_attempt_conflict
@@ -100,6 +113,24 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
   def mark_ambiguous(attempt, completed_at),
     do: finish(attempt, :ambiguous, :interrupted, completed_at)
 
+  @doc "Atomically records one known Discord success for an exact started attempt."
+  @spec succeed(term(), term(), term(), term()) ::
+          {:ok, {PublicationAttemptRecord.t(), MessageRecord.t()}} | {:error, error()}
+  def succeed(attempt, message, discord_message_id, completed_at) do
+    with :ok <- validate_started_attempt(attempt),
+         :ok <- validate_success_message(attempt, message),
+         :ok <- validate_publication_id(message, discord_message_id),
+         {:ok, completed_at} <- validate_completed_at(attempt, completed_at) do
+      succeeded = %{attempt | status: :succeeded, completed_at: completed_at, error_class: nil}
+      published = %{message | discord_message_id: discord_message_id}
+      persist_success(attempt, message, succeeded, published)
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
   defp validate_started_at(record, started_at) do
     if DateTimeValidator.validate_storage_utc(started_at) == :ok and
          DateTime.compare(started_at, record.inserted_at) in [:gt, :eq],
@@ -139,6 +170,39 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
 
   defp validate_terminal_error(:ambiguous, :interrupted), do: :ok
   defp validate_terminal_error(_status, _error_class), do: {:error, :invalid_external_error}
+
+  defp validate_success_message(attempt, %MessageRecord{} = message) do
+    cond do
+      MessageRecordValidator.validate(message) != :ok ->
+        {:error, :invalid_message_record}
+
+      message.discord_message_id != nil or attempt.message_id != message.id ->
+        {:error, :publication_conflict}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_success_message(_attempt, _message), do: {:error, :invalid_message_record}
+
+  defp validate_publication_id(message, discord_message_id) when is_binary(discord_message_id) do
+    candidate = %Message{
+      conversation_id: message.conversation_id,
+      persona_id: message.persona_id,
+      origin: message.origin,
+      content: message.content,
+      discord_message_id: discord_message_id,
+      inserted_at: message.inserted_at
+    }
+
+    if MessageValidator.validate(candidate) == :ok,
+      do: :ok,
+      else: {:error, :invalid_publication_id}
+  end
+
+  defp validate_publication_id(_message, _discord_message_id),
+    do: {:error, :invalid_publication_id}
 
   defp validate_completed_at(attempt, completed_at) do
     if DateTimeValidator.validate_storage_utc(completed_at) == :ok and
@@ -180,26 +244,146 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
     end
   end
 
-  defp terminal_transaction(started, candidate) do
-    query =
-      from persisted in PublicationAttemptRecord,
-        where:
-          persisted.message_id == ^started.message_id and
-            persisted.status == :started and
-            persisted.started_at == ^started.started_at and
-            is_nil(persisted.completed_at) and
-            is_nil(persisted.error_class)
+  defp persist_success(started, unpublished, succeeded, published) do
+    operation = fn -> success_transaction(started, unpublished, succeeded, published) end
+
+    case Repo.transaction(operation) do
+      {:ok, {%PublicationAttemptRecord{}, %MessageRecord{}} = result} ->
+        {:ok, result}
+
+      {:error, reason}
+      when reason in [
+             :invalid_message_record,
+             :invalid_publication_attempt_record,
+             :publication_attempt_conflict,
+             :publication_conflict
+           ] ->
+        {:error, reason}
+
+      _failure ->
+        {:error, :storage_unavailable}
+    end
+  end
+
+  defp success_transaction(started, unpublished, succeeded, published) do
+    with {:ok, durable_attempt} <- restore_attempt(started.message_id),
+         {:ok, durable_message} <- restore_message(unpublished.id) do
+      cond do
+        same_facts?(durable_attempt, succeeded) and
+            same_message_facts?(durable_message, published) ->
+          {durable_attempt, durable_message}
+
+        same_facts?(durable_attempt, started) and
+            same_message_facts?(durable_message, unpublished) ->
+          commit_success(started, unpublished, succeeded, published)
+
+        not same_facts?(durable_attempt, started) ->
+          Repo.rollback(:publication_attempt_conflict)
+
+        true ->
+          Repo.rollback(:publication_conflict)
+      end
+    else
+      {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp restore_attempt(message_id) do
+    case Repo.get_by(PublicationAttemptRecord, message_id: message_id) do
+      %PublicationAttemptRecord{} = attempt ->
+        if PublicationAttemptRecordValidator.validate(attempt) == :ok,
+          do: {:ok, attempt},
+          else: {:error, :invalid_publication_attempt_record}
+
+      nil ->
+        {:error, :publication_attempt_conflict}
+    end
+  end
+
+  defp restore_message(message_id) do
+    case Repo.get(MessageRecord, message_id) do
+      %MessageRecord{} = message ->
+        if MessageRecordValidator.validate(message) == :ok,
+          do: {:ok, message},
+          else: {:error, :invalid_message_record}
+
+      nil ->
+        {:error, :publication_conflict}
+    end
+  end
+
+  defp commit_success(started, unpublished, succeeded, published) do
+    with :ok <- compare_and_set_message(unpublished, published.discord_message_id),
+         :ok <- compare_and_set_attempt(started, succeeded),
+         {:ok, durable_attempt} <- restore_attempt(started.message_id),
+         {:ok, durable_message} <- restore_message(unpublished.id) do
+      cond do
+        not same_facts?(durable_attempt, succeeded) ->
+          Repo.rollback(:publication_attempt_conflict)
+
+        not same_message_facts?(durable_message, published) ->
+          Repo.rollback(:publication_conflict)
+
+        true ->
+          {durable_attempt, durable_message}
+      end
+    else
+      {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp compare_and_set_message(message, discord_message_id) do
+    changeset =
+      message
+      |> change(discord_message_id: discord_message_id)
+      |> unique_constraint(:discord_message_id)
+
+    case Repo.update(changeset) do
+      {:ok, %MessageRecord{}} ->
+        :ok
+
+      {:error, %Ecto.Changeset{} = failed} ->
+        if Keyword.has_key?(failed.errors, :discord_message_id),
+          do: {:error, :publication_conflict},
+          else: {:error, :storage_unavailable}
+
+      _failure ->
+        {:error, :storage_unavailable}
+    end
+  end
+
+  defp compare_and_set_attempt(started, terminal) do
+    query = started_attempt_query(started)
 
     updates = [
-      status: candidate.status,
-      completed_at: candidate.completed_at,
-      error_class: candidate.error_class
+      status: terminal.status,
+      completed_at: terminal.completed_at,
+      error_class: terminal.error_class
     ]
 
     case Repo.update_all(query, set: updates) do
-      {count, nil} when count in [0, 1] -> restore_terminal(candidate)
-      _failure -> Repo.rollback(:storage_unavailable)
+      {1, nil} -> :ok
+      {0, nil} -> {:error, :publication_attempt_conflict}
+      _failure -> {:error, :storage_unavailable}
     end
+  end
+
+  defp terminal_transaction(started, candidate) do
+    case compare_and_set_attempt(started, candidate) do
+      :ok -> restore_terminal(candidate)
+      {:error, :publication_attempt_conflict} -> restore_terminal(candidate)
+      {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp started_attempt_query(started) do
+    from persisted in PublicationAttemptRecord,
+      where:
+        persisted.message_id == ^started.message_id and
+          persisted.status == :started and
+          persisted.started_at == ^started.started_at and
+          is_nil(persisted.completed_at) and
+          is_nil(persisted.error_class)
   end
 
   defp restore_terminal(candidate) do
@@ -276,6 +460,9 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
   end
 
   defp same_facts?(left, right), do: Map.take(left, @fields) == Map.take(right, @fields)
+
+  defp same_message_facts?(left, right),
+    do: Map.take(left, @message_fields) == Map.take(right, @message_fields)
 
   defp valid_message_id?(id), do: is_integer(id) and id in 1..@max_sqlite_integer
 end
