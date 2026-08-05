@@ -38,7 +38,8 @@ constrained conversation lifecycle record and migration now provide redacted
 durable metadata without generic repository access. A narrow transaction starts
 that lifecycle once for an existing validated event and returns only an exact
 redacted record. Exact compare-and-set transitions finish an active conversation
-once as completed, cancelled, or failed. A
+once as completed, cancelled, or failed. A bounded read-only path lists exact
+incomplete records for later recovery policy. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes

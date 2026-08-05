@@ -33,4 +33,11 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand(
+    "../priv/repo/migrations/20260805210000_add_incomplete_conversation_index.exs",
+    __DIR__
+  )
+)
+
 ExUnit.start()
