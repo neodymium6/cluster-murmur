@@ -116,6 +116,20 @@ defmodule ClusterMurmur.Discord.WebhookSettingsTest do
              {:error, :invalid_webhook_settings}
   end
 
+  test "revalidates exact settings at later runtime boundaries" do
+    valid = %WebhookSettings{url: webhook_url("/api/webhooks/1/fake-token")}
+
+    assert WebhookSettings.validate(valid) == :ok
+
+    for value <- [
+          nil,
+          %WebhookSettings{url: "https://example.invalid"},
+          Map.put(valid, :private, true)
+        ] do
+      assert WebhookSettings.validate(value) == {:error, :invalid_webhook_settings}
+    end
+  end
+
   defp routing do
     %Routing{webhook_secret_file_env: "DISCORD_WEBHOOK_SECRET_FILE"}
   end

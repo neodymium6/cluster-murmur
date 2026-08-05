@@ -249,9 +249,11 @@ conversation process must stop normally under the conversation
 `DynamicSupervisor`.
 
 At-least-once delivery or a process restart must not create an unbounded
-conversation. Before production readiness, publication and persistence must
-define an idempotency strategy for the crash window between Discord acceptance
-and recording the returned Discord message ID.
+conversation. A pure publication planner now skips records whose Discord ID is
+already committed. Before production readiness, execution and recovery must
+still define a policy for the ambiguous crash window between Discord acceptance
+and recording the returned Discord message ID; that outcome must not be blindly
+retried.
 
 ## Generation contract
 
