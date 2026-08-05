@@ -47,4 +47,11 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand(
+    "../priv/repo/migrations/20260805223000_add_persona_message_history_index.exs",
+    __DIR__
+  )
+)
+
 ExUnit.start()

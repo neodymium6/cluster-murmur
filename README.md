@@ -49,7 +49,10 @@ while advancing its turn and LLM-call counters atomically. A separate one-way
 transaction records a globally unique Discord publication ID without changing
 message facts. An exact read validates durable turn correlation and returns only
 the latest 12 conversation messages in chronological order. Terminal transitions
-also reject completion instants before the latest committed message. A
+also reject completion instants before the latest committed message. A separate
+indexed read excludes the current conversation and returns only the latest six
+currently published persona messages generated at or before an injected UTC
+cutoff. A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
