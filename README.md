@@ -63,7 +63,11 @@ interpolating arbitrary event data. Configured personas now pass through one
 exact fail-closed runtime validator that also enforces the shared cooldown
 interval bound before later selection or generation. Configured bindings also
 share one exact runtime boundary for their IDs, bounded candidate sets,
-non-negative finite weights, and unique persona references. A
+non-negative finite weights, and unique persona references. A pure starter
+projection revalidates bounded persona and cooldown snapshots, excludes
+disabled personas and active cooldowns at an injected UTC instant, and emits
+redacted configured weight components in stable persona order without sampling.
+A
 separate constrained redacted event record, packaged migration, and narrow
 idempotent insert store persist immutable events without exposing generic
 queries or trigger deduplication policy. A primary-key-only restore path decodes
