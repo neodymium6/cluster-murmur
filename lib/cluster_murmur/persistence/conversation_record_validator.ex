@@ -41,6 +41,14 @@ defmodule ClusterMurmur.Persistence.ConversationRecordValidator do
 
   def validate_started(_record), do: {:error, :invalid_conversation_record}
 
+  @doc "Validates one exact loaded record in any nonterminal state."
+  @spec validate_active(term()) :: :ok | {:error, error()}
+  def validate_active(%ConversationRecord{status: status, completed_at: nil} = record)
+      when status in [:starting, :generating, :waiting],
+      do: validate(record)
+
+  def validate_active(_record), do: {:error, :invalid_conversation_record}
+
   defp exact_loaded?(record) do
     map_size(record) == @record_key_count and Enum.all?(@record_keys, &Map.has_key?(record, &1)) and
       record.__meta__ == @loaded_metadata
