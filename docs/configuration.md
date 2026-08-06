@@ -551,6 +551,9 @@ settings aggregate before constructing any external adapter. A failure is
 identified only as a stable provider or webhook settings error; deployment
 values and secret-file paths are never included in the aggregate's inspection
 output or returned errors. This combined step still performs no network call.
+The startup preparation boundary runs complete configuration loading before
+this settings step and returns them together only after both validate. It does
+not start runtime workers or external transports.
 
 ## Secret handling
 
