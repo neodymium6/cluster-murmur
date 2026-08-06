@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted.
+Accepted. The version 1 top-level field set is amended by ADR 0116 to require
+the closed `llm` mapping in addition to `version` and `includes`.
 
 ## Context
 
@@ -13,11 +14,12 @@ limits by resolving each category independently.
 
 ## Decision
 
-Require the top-level manifest to contain exactly `version` and `includes`.
-Version 1 requires the five include categories `event_groups`, `personas`,
-`bindings`, `triggers`, and `routing`, and rejects every other category. Each
-category is a proper list of string patterns. Categories must be present but
-may be empty so later assembly can apply category-specific requirements.
+Require the top-level manifest to contain exactly `version`, `llm`, and
+`includes`. Version 1 requires the five include categories `event_groups`,
+`personas`, `bindings`, `triggers`, and `routing`, and rejects every other
+category. Each category is a proper list of string patterns. Categories must be
+present but may be empty so later assembly can apply category-specific
+requirements. ADR 0116 defines the closed `llm` mapping.
 
 Bound the sum of patterns across all categories to 64. Preserve pattern order
 and duplicates in the validated manifest; bounded include resolution remains

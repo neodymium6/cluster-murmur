@@ -11,6 +11,7 @@ defmodule ClusterMurmur.Config.Catalog do
     Bindings,
     DocumentSet,
     EventGroups,
+    LLM,
     LoadedDocument,
     Manifest,
     Personas
@@ -73,15 +74,22 @@ defmodule ClusterMurmur.Config.Catalog do
 
   defp validate_document_set(_document_set), do: {:error, :invalid_catalog}
 
-  defp validate_manifest(%Manifest{version: 1, includes: includes} = manifest)
+  defp validate_manifest(%Manifest{version: 1, includes: includes, llm: llm} = manifest)
        when is_map(includes) do
     if map_size(includes) == length(@categories) and
          Enum.sort(Map.keys(includes)) == Enum.sort(@categories) do
       decoded_includes = Map.new(@categories, &{Atom.to_string(&1), Map.fetch!(includes, &1)})
 
-      case Manifest.parse(%{"version" => 1, "includes" => decoded_includes}) do
-        {:ok, ^manifest} -> :ok
-        _error -> {:error, :invalid_catalog}
+      with {:ok, llm_document} <- LLM.to_document(llm),
+           {:ok, ^manifest} <-
+             Manifest.parse(%{
+               "version" => 1,
+               "includes" => decoded_includes,
+               "llm" => llm_document
+             }) do
+        :ok
+      else
+        _failure -> {:error, :invalid_catalog}
       end
     else
       {:error, :invalid_catalog}

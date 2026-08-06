@@ -1,11 +1,18 @@
 defmodule ClusterMurmur.Config.ManifestTest do
   use ExUnit.Case, async: true
 
-  alias ClusterMurmur.Config.{DocumentDecoder, Manifest}
+  alias ClusterMurmur.Config.{DocumentDecoder, LLM, Manifest}
 
   test "accepts the bounded decoder output" do
     yaml = """
     version: 1
+    llm:
+      provider: openai_compatible
+      base_url_env: LLM_BASE_URL
+      model_env: LLM_MODEL
+      api_key_file_env: LLM_API_KEY_FILE
+      timeout: 20s
+      max_output_tokens: 300
     includes:
       event_groups: []
       personas: []
@@ -15,12 +22,15 @@ defmodule ClusterMurmur.Config.ManifestTest do
     """
 
     assert {:ok, document} = DocumentDecoder.decode(yaml)
-    assert {:ok, %Manifest{version: 1}} = Manifest.parse(document)
+
+    assert {:ok, %Manifest{version: 1, llm: %LLM{timeout_ms: 20_000}}} =
+             Manifest.parse(document)
   end
 
   test "validates and normalizes the version 1 manifest" do
     document = %{
       "version" => 1,
+      "llm" => valid_llm(),
       "includes" => %{
         "event_groups" => ["event-groups.yaml"],
         "personas" => ["personas/*.yaml"],
@@ -34,6 +44,14 @@ defmodule ClusterMurmur.Config.ManifestTest do
              {:ok,
               %Manifest{
                 version: 1,
+                llm: %LLM{
+                  provider: :openai_compatible,
+                  base_url_env: "LLM_BASE_URL",
+                  model_env: "LLM_MODEL",
+                  api_key_file_env: "LLM_API_KEY_FILE",
+                  timeout_ms: 20_000,
+                  max_output_tokens: 300
+                },
                 includes: %{
                   event_groups: ["event-groups.yaml"],
                   personas: ["personas/*.yaml"],
@@ -51,6 +69,12 @@ defmodule ClusterMurmur.Config.ManifestTest do
   end
 
   test "requires a mapping with exactly the versioned top-level fields" do
+    oversized =
+      Map.merge(
+        valid_document(),
+        Map.new(1..10_000, fn index -> {"forged-#{index}", "value"} end)
+      )
+
     for document <- [nil, [], "version: 1"] do
       assert Manifest.parse(document) == {:error, :invalid_manifest}
     end
@@ -58,8 +82,13 @@ defmodule ClusterMurmur.Config.ManifestTest do
     assert Manifest.parse(Map.delete(valid_document(), "version")) ==
              {:error, :missing_manifest_field}
 
+    assert Manifest.parse(Map.delete(valid_document(), "llm")) ==
+             {:error, :missing_manifest_field}
+
     assert Manifest.parse(Map.put(valid_document(), "extra", true)) ==
              {:error, :unknown_manifest_field}
+
+    assert Manifest.parse(oversized) == {:error, :unknown_manifest_field}
 
     assert Manifest.parse(%{version: 1, includes: %{}}) ==
              {:error, :missing_manifest_field}
@@ -76,17 +105,27 @@ defmodule ClusterMurmur.Config.ManifestTest do
   end
 
   test "requires an includes mapping with every version 1 category" do
-    assert Manifest.parse(%{"version" => 1, "includes" => []}) ==
+    assert Manifest.parse(%{"version" => 1, "llm" => valid_llm(), "includes" => []}) ==
              {:error, :invalid_includes}
 
     includes = valid_includes()
 
     for category <- Map.keys(includes) do
-      document = %{"version" => 1, "includes" => Map.delete(includes, category)}
+      document = %{
+        "version" => 1,
+        "llm" => valid_llm(),
+        "includes" => Map.delete(includes, category)
+      }
+
       assert Manifest.parse(document) == {:error, :missing_include_category}
     end
 
-    document = %{"version" => 1, "includes" => Map.put(includes, "prompts", ["prompts/*.md"])}
+    document = %{
+      "version" => 1,
+      "llm" => valid_llm(),
+      "includes" => Map.put(includes, "prompts", ["prompts/*.md"])
+    }
+
     assert Manifest.parse(document) == {:error, :unknown_include_category}
   end
 
@@ -121,8 +160,20 @@ defmodule ClusterMurmur.Config.ManifestTest do
     assert Manifest.parse(document) == {:error, :too_many_include_patterns}
   end
 
+  test "labels invalid LLM configuration without exposing rejected values" do
+    document = put_in(valid_document(), ["llm", "provider"], "private-provider")
+    result = Manifest.parse(document)
+
+    assert result == {:error, {:llm, :invalid_llm_configuration}}
+    refute inspect(result) =~ "private"
+  end
+
   defp valid_document(overrides \\ %{}, version \\ 1) do
-    %{"version" => version, "includes" => Map.merge(valid_includes(), overrides)}
+    %{
+      "version" => version,
+      "llm" => valid_llm(),
+      "includes" => Map.merge(valid_includes(), overrides)
+    }
   end
 
   defp valid_includes do
@@ -132,6 +183,17 @@ defmodule ClusterMurmur.Config.ManifestTest do
       "bindings" => [],
       "triggers" => [],
       "routing" => []
+    }
+  end
+
+  defp valid_llm do
+    %{
+      "provider" => "openai_compatible",
+      "base_url_env" => "LLM_BASE_URL",
+      "model_env" => "LLM_MODEL",
+      "api_key_file_env" => "LLM_API_KEY_FILE",
+      "timeout" => "20s",
+      "max_output_tokens" => 300
     }
   end
 end

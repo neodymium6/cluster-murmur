@@ -1,7 +1,7 @@
 defmodule ClusterMurmur.Config.CatalogTest do
   use ExUnit.Case, async: true
 
-  alias ClusterMurmur.Config.{Catalog, DocumentSet, LoadedDocument, Manifest}
+  alias ClusterMurmur.Config.{Catalog, DocumentSet, LLM, LoadedDocument, Manifest}
 
   setup do
     root =
@@ -66,7 +66,7 @@ defmodule ClusterMurmur.Config.CatalogTest do
              {:error, :invalid_catalog}
 
     incomplete = %DocumentSet{
-      manifest: %Manifest{version: 1, includes: nil},
+      manifest: %Manifest{version: 1, includes: nil, llm: llm()},
       documents: %{event_groups: [], personas: [], bindings: []}
     }
 
@@ -80,7 +80,7 @@ defmodule ClusterMurmur.Config.CatalogTest do
            ) == {:error, :invalid_catalog}
 
     unsupported = %DocumentSet{
-      manifest: %Manifest{version: 2, includes: includes()},
+      manifest: %Manifest{version: 2, includes: includes(), llm: llm()},
       documents: valid_documents(context)
     }
 
@@ -142,8 +142,19 @@ defmodule ClusterMurmur.Config.CatalogTest do
     }
   end
 
-  defp manifest, do: %Manifest{version: 1, includes: includes()}
+  defp manifest, do: %Manifest{version: 1, includes: includes(), llm: llm()}
   defp includes, do: %{event_groups: [], personas: [], bindings: [], triggers: [], routing: []}
+
+  defp llm,
+    do: %LLM{
+      provider: :openai_compatible,
+      base_url_env: "LLM_BASE_URL",
+      model_env: "LLM_MODEL",
+      api_key_file_env: "LLM_API_KEY_FILE",
+      timeout_ms: 20_000,
+      max_output_tokens: 300
+    }
+
   defp loaded(path, document), do: %LoadedDocument{path: path, document: document}
 
   defp write(root, relative, contents) do

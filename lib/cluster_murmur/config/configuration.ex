@@ -7,13 +7,13 @@ defmodule ClusterMurmur.Config.Configuration do
   runtime construction boundaries without reopening configuration files.
   """
 
-  alias ClusterMurmur.Config.{Bindings, Catalog, DocumentSet, EventGroups}
+  alias ClusterMurmur.Config.{Bindings, Catalog, DocumentSet, EventGroups, LLM}
   alias ClusterMurmur.Config.{Personas, Routing, Triggers}
   alias ClusterMurmur.Triggers.{EventTrigger, ScheduleTrigger, StochasticTrigger}
 
   @derive {Inspect, only: [:version]}
-  @enforce_keys [:version, :event_groups, :personas, :bindings, :triggers, :routing]
-  defstruct [:version, :event_groups, :personas, :bindings, :triggers, :routing]
+  @enforce_keys [:version, :event_groups, :personas, :bindings, :triggers, :routing, :llm]
+  defstruct [:version, :event_groups, :personas, :bindings, :triggers, :routing, :llm]
 
   @type t :: %__MODULE__{
           version: 1,
@@ -21,7 +21,8 @@ defmodule ClusterMurmur.Config.Configuration do
           personas: Personas.t(),
           bindings: Bindings.t(),
           triggers: Triggers.t(),
-          routing: Routing.t()
+          routing: Routing.t(),
+          llm: LLM.t()
         }
 
   @type error ::
@@ -48,7 +49,8 @@ defmodule ClusterMurmur.Config.Configuration do
          personas: catalog.personas,
          bindings: catalog.bindings,
          triggers: triggers,
-         routing: routing
+         routing: routing,
+         llm: document_set.manifest.llm
        }}
     end
   end

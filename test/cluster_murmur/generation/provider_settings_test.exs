@@ -1,6 +1,7 @@
 defmodule ClusterMurmur.Generation.ProviderSettingsTest do
   use ExUnit.Case, async: true
 
+  alias ClusterMurmur.Config.LLM
   alias ClusterMurmur.Generation.ProviderSettings
 
   setup do
@@ -37,6 +38,25 @@ defmodule ClusterMurmur.Generation.ProviderSettingsTest do
     for hidden <- [settings.base_url, settings.model, settings.api_key] do
       refute inspected =~ hidden
     end
+  end
+
+  test "loads directly from the validated startup LLM configuration", context do
+    assert {:ok, llm} =
+             LLM.parse(%{
+               "provider" => "openai_compatible",
+               "base_url_env" => "LLM_BASE_URL",
+               "model_env" => "LLM_MODEL",
+               "api_key_file_env" => "LLM_API_KEY_FILE",
+               "timeout" => "20s",
+               "max_output_tokens" => 300
+             })
+
+    assert {:ok, %ProviderSettings{} = settings} =
+             ProviderSettings.load(llm, environment(context.api_key_path))
+
+    assert settings.base_url == "https://llm.example.invalid/v1"
+    assert settings.model == "example-model"
+    assert settings.timeout_ms == 20_000
   end
 
   test "allows an operator-approved HTTP base URL", context do
