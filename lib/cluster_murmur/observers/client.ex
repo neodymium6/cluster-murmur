@@ -4,7 +4,8 @@ defmodule ClusterMurmur.Observers.Client do
 
   Concrete adapters map these named operations to their transport internally.
   No transport tool name, arbitrary argument map, or raw response crosses this
-  boundary.
+  boundary. Application code normalizes the returned target maps through the
+  bounded target catalog before calling `observe_target/1`.
   """
 
   alias ClusterMurmur.ExternalError

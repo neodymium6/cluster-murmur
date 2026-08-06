@@ -151,7 +151,9 @@ plan rechecks claimed execution eligibility and assembles only the supplied
 event facts and completion values. External execution and exactly-once delivery
 are not implemented. End-to-end observer polling, event dedupe-window policy,
 trigger execution, LLM generation orchestration, and Discord publication
-orchestration are not implemented yet. Do
+orchestration are not implemented yet. Observer target responses now pass a
+closed 256-entry and 64 KiB identity catalog that rejects duplicates and sorts
+accepted redacted targets before any later polling. Do
 not deploy this revision or connect it to infrastructure, model providers, or
 Discord.
 
