@@ -2,7 +2,7 @@ defmodule ClusterMurmur.RuntimeSettingsTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Config.{Bindings, Configuration, EventGroups, LLM, Personas}
-  alias ClusterMurmur.Config.{Routing, Triggers}
+  alias ClusterMurmur.Config.{Routing, StateTracking, Triggers}
   alias ClusterMurmur.Discord.WebhookSettings
   alias ClusterMurmur.Generation.ProviderSettings
   alias ClusterMurmur.RuntimeSettings
@@ -94,6 +94,7 @@ defmodule ClusterMurmur.RuntimeSettingsTest do
       bindings: %Bindings{bindings: %{}},
       triggers: %Triggers{triggers: %{}},
       routing: %Routing{webhook_secret_file_env: "DISCORD_WEBHOOK_SECRET_FILE"},
+      state_tracking: StateTracking.default(),
       llm: %LLM{
         provider: :openai_compatible,
         base_url_env: "LLM_BASE_URL",

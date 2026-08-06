@@ -2,6 +2,7 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Config.{Configuration, DocumentSet, LLM, LoadedDocument, Manifest}
+  alias ClusterMurmur.Config.StateTracking
   alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   setup do
@@ -25,13 +26,25 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
     assert Map.has_key?(configuration.triggers.triggers, "monitoring-failure")
     assert configuration.routing.webhook_secret_file_env == "DISCORD_WEBHOOK_SECRET_FILE"
     assert configuration.llm == llm()
+    assert configuration.state_tracking == StateTracking.default()
     assert Configuration.validate(configuration) == :ok
+  end
+
+  test "carries explicit state-tracking settings into complete configuration", context do
+    state_tracking = %StateTracking{failures_required: 3, successes_required: 4}
+    manifest = %{manifest() | state_tracking: state_tracking}
+
+    assert {:ok, %Configuration{state_tracking: ^state_tracking}} =
+             Configuration.parse(
+               context.config,
+               %DocumentSet{manifest: manifest, documents: valid_documents(context)}
+             )
   end
 
   test "revalidates exact category values and catalog references", context do
     assert {:ok, configuration} = Configuration.parse(context.config, document_set(context))
 
-    for field <- [:event_groups, :personas, :bindings, :triggers, :routing, :llm] do
+    for field <- [:event_groups, :personas, :bindings, :triggers, :routing, :llm, :state_tracking] do
       assert configuration
              |> Map.put(field, nil)
              |> Configuration.validate() == {:error, :invalid_configuration}
@@ -51,7 +64,11 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
             configuration
             | routing: %{configuration.routing | webhook_secret_file_env: "bad-name"}
           },
-          %{configuration | llm: %{configuration.llm | timeout_ms: 0}}
+          %{configuration | llm: %{configuration.llm | timeout_ms: 0}},
+          %{
+            configuration
+            | state_tracking: %{configuration.state_tracking | failures_required: 0}
+          }
         ] do
       assert Configuration.validate(invalid) == {:error, :invalid_configuration}
     end

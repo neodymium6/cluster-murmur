@@ -1,7 +1,7 @@
 defmodule ClusterMurmur.Config.ManifestTest do
   use ExUnit.Case, async: true
 
-  alias ClusterMurmur.Config.{DocumentDecoder, LLM, Manifest}
+  alias ClusterMurmur.Config.{DocumentDecoder, LLM, Manifest, StateTracking}
 
   test "accepts the bounded decoder output" do
     yaml = """
@@ -23,7 +23,12 @@ defmodule ClusterMurmur.Config.ManifestTest do
 
     assert {:ok, document} = DocumentDecoder.decode(yaml)
 
-    assert {:ok, %Manifest{version: 1, llm: %LLM{timeout_ms: 20_000}}} =
+    assert {:ok,
+            %Manifest{
+              version: 1,
+              llm: %LLM{timeout_ms: 20_000},
+              state_tracking: %StateTracking{failures_required: 2, successes_required: 2}
+            }} =
              Manifest.parse(document)
   end
 
@@ -52,6 +57,10 @@ defmodule ClusterMurmur.Config.ManifestTest do
                   timeout_ms: 20_000,
                   max_output_tokens: 300
                 },
+                state_tracking: %StateTracking{
+                  failures_required: 2,
+                  successes_required: 2
+                },
                 includes: %{
                   event_groups: ["event-groups.yaml"],
                   personas: ["personas/*.yaml"],
@@ -62,13 +71,30 @@ defmodule ClusterMurmur.Config.ManifestTest do
               }}
   end
 
+  test "normalizes optional explicit state-tracking settings" do
+    document =
+      valid_document()
+      |> Map.put("state_tracking", %{
+        "failures_required" => 3,
+        "successes_required" => 4
+      })
+
+    assert {:ok,
+            %Manifest{
+              state_tracking: %StateTracking{
+                failures_required: 3,
+                successes_required: 4
+              }
+            }} = Manifest.parse(document)
+  end
+
   test "allows present categories to have no include patterns" do
     document = valid_document(%{"routing" => []})
 
     assert {:ok, %Manifest{includes: %{routing: []}}} = Manifest.parse(document)
   end
 
-  test "requires a mapping with exactly the versioned top-level fields" do
+  test "requires every fixed field and rejects unknown top-level fields" do
     oversized =
       Map.merge(
         valid_document(),
@@ -165,6 +191,22 @@ defmodule ClusterMurmur.Config.ManifestTest do
     result = Manifest.parse(document)
 
     assert result == {:error, {:llm, :invalid_llm_configuration}}
+    refute inspect(result) =~ "private"
+  end
+
+  test "labels invalid state-tracking configuration without exposing rejected values" do
+    document =
+      valid_document()
+      |> Map.put("state_tracking", %{
+        "failures_required" => 2,
+        "successes_required" => "private-value"
+      })
+
+    result = Manifest.parse(document)
+
+    assert result ==
+             {:error, {:state_tracking, :invalid_state_tracking_configuration}}
+
     refute inspect(result) =~ "private"
   end
 
