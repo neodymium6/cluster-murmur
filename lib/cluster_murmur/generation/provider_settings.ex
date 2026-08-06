@@ -17,8 +17,20 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
     :provider,
     :timeout_ms
   ]
+  @config_key_count length(@config_keys)
+  @settings_keys [
+    :__struct__,
+    :api_key,
+    :base_url,
+    :max_output_tokens,
+    :model,
+    :provider,
+    :timeout_ms
+  ]
+  @settings_key_count length(@settings_keys)
   @max_base_url_bytes 2_048
   @max_model_bytes 256
+  @max_api_key_bytes 16 * 1_024
   @max_timeout_ms 120_000
   @max_output_tokens 4_096
 
@@ -69,15 +81,19 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
              :invalid_provider_model
            ),
          {:ok, api_key} <- read_api_key(config.api_key_file_env, environment_reader) do
-      {:ok,
-       %__MODULE__{
-         provider: :openai_compatible,
-         base_url: base_url,
-         model: model,
-         api_key: api_key,
-         timeout_ms: config.timeout_ms,
-         max_output_tokens: config.max_output_tokens
-       }}
+      settings = %__MODULE__{
+        provider: :openai_compatible,
+        base_url: base_url,
+        model: model,
+        api_key: api_key,
+        timeout_ms: config.timeout_ms,
+        max_output_tokens: config.max_output_tokens
+      }
+
+      case validate(settings) do
+        :ok -> {:ok, settings}
+        {:error, :invalid_provider_settings} -> {:error, :invalid_provider_settings}
+      end
     end
   rescue
     _error -> {:error, :invalid_provider_settings}
@@ -86,6 +102,32 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
   end
 
   def load(_config, _environment_reader), do: {:error, :invalid_provider_settings}
+
+  @doc "Revalidates one exact loaded settings value before external use."
+  @spec validate(term()) :: :ok | {:error, :invalid_provider_settings}
+  def validate(%__MODULE__{} = settings) do
+    with true <- exact_settings?(settings),
+         true <- settings.provider == :openai_compatible,
+         true <- valid_base_url_text?(settings.base_url),
+         {:ok, normalized_url} <- validate_base_url(settings.base_url),
+         true <- normalized_url == settings.base_url,
+         true <- valid_header_value?(settings.model, @max_model_bytes),
+         true <- valid_header_value?(settings.api_key, @max_api_key_bytes),
+         true <- is_integer(settings.timeout_ms) and settings.timeout_ms in 1..@max_timeout_ms,
+         true <-
+           is_integer(settings.max_output_tokens) and
+             settings.max_output_tokens in 1..@max_output_tokens do
+      :ok
+    else
+      _failure -> {:error, :invalid_provider_settings}
+    end
+  rescue
+    _error -> {:error, :invalid_provider_settings}
+  catch
+    _kind, _reason -> {:error, :invalid_provider_settings}
+  end
+
+  def validate(_settings), do: {:error, :invalid_provider_settings}
 
   defp validate_config(config) do
     if exact_keys?(config) and config.provider == :openai_compatible and
@@ -101,7 +143,29 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
     end
   end
 
-  defp exact_keys?(config), do: Map.keys(config) |> Enum.sort() == @config_keys
+  defp exact_keys?(config) do
+    map_size(config) == @config_key_count and
+      Enum.all?(@config_keys, &Map.has_key?(config, &1))
+  end
+
+  defp exact_settings?(settings) do
+    map_size(settings) == @settings_key_count and
+      Enum.all?(@settings_keys, &Map.has_key?(settings, &1))
+  end
+
+  defp valid_header_value?(value, max_bytes)
+       when is_binary(value) and byte_size(value) >= 1 and byte_size(value) <= max_bytes do
+    String.valid?(value) and String.trim(value) == value and
+      not Regex.match?(~r/[\x{0000}-\x{001F}\x{007F}-\x{009F}]/u, value)
+  end
+
+  defp valid_header_value?(_value, _max_bytes), do: false
+
+  defp valid_base_url_text?(value)
+       when is_binary(value) and byte_size(value) in 1..@max_base_url_bytes,
+       do: String.valid?(value)
+
+  defp valid_base_url_text?(_value), do: false
 
   defp valid_environment_name?(value) do
     match?({:ok, _name}, Value.environment_variable_name(value))

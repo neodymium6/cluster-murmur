@@ -60,8 +60,15 @@ defmodule ClusterMurmur.Generation.ProviderSettingsTest do
   end
 
   test "requires an exact normalized public projection", context do
+    oversized_config =
+      Map.merge(
+        valid_config(),
+        Map.new(1..10_000, fn index -> {"forged-#{index}", "value"} end)
+      )
+
     invalid = [
       nil,
+      oversized_config,
       Map.delete(valid_config(), :model_env),
       Map.put(valid_config(), :extra, true),
       Map.put(valid_config(), :provider, :other),

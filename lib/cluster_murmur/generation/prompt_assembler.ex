@@ -20,6 +20,10 @@ defmodule ClusterMurmur.Generation.PromptAssembler do
 
   @type error :: :invalid_generation_context
 
+  @doc false
+  @spec system_instruction() :: String.t()
+  def system_instruction, do: @system_instruction
+
   @doc "Returns one redacted provider-neutral prompt request after validation."
   @spec assemble(term()) :: {:ok, PromptRequest.t()} | {:error, error()}
   def assemble(%Context{} = context) do
