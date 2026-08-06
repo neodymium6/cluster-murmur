@@ -274,6 +274,10 @@ the same bounded positive-integer fields and are resolved by semantic
 validation. The exact override syntax will be added to version 1 before the
 observation adapter is considered complete.
 
+The implemented state-tracking boundary now normalizes the two fixed default
+counts and exact explicit mappings to the runtime debounce policy. Startup
+manifest integration and override precedence remain later configuration work.
+
 Complete LLM payload retention remains disabled by default. Enabling it does
 not permit credentials, private endpoints, or unrelated source data to be
 stored, and deployments must treat retained payloads as sensitive.
