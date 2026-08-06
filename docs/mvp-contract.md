@@ -208,6 +208,16 @@ authorized once in stable trigger-ID order. Per-trigger cooldown, repeated-pair,
 and stable failure outcomes do not stop the remaining bounded batch, while only
 validated durable authorizations for triggers still exactly present in the
 supplied configuration cross into later action orchestration.
+One authorized `start_conversation` action is then revalidated against the
+complete runtime configuration before its exact binding is used. Starter
+candidates are projected from only that binding, the configured persona map,
+the authorization execution instant, and one supplied bounded cooldown
+snapshot. Only the final weighted choice is delegated to injected randomness.
+No eligible starter is an explicit no-action result. A successful choice
+produces one fully redacted plan containing the exact authorization, binding,
+configured starter, and a validated pristine conversation rooted in the same
+event and execution instant. Planning does not persist the conversation,
+finish the trigger execution, generate content, or publish.
 
 `Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
 finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`
