@@ -9,8 +9,20 @@ defmodule ClusterMurmur.Generation.Provider do
   """
 
   alias ClusterMurmur.ExternalError
-  alias ClusterMurmur.Generation.PromptRequest
 
-  @callback generate(PromptRequest.t()) ::
+  alias ClusterMurmur.Generation.{
+    OpenAICompatibleRequest,
+    OpenAICompatibleResponse,
+    PromptRequest,
+    ProviderSettings
+  }
+
+  @type transport_result ::
+          {:ok, OpenAICompatibleResponse.t()}
+          | {:error, :not_sent, :timeout | :unavailable}
+          | {:error, :outcome_unknown}
+  @type transport :: (OpenAICompatibleRequest.t() -> transport_result())
+
+  @callback generate(PromptRequest.t(), ProviderSettings.t(), transport()) ::
               {:ok, String.t()} | {:error, ExternalError.t()}
 end
