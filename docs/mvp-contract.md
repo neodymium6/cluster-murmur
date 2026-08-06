@@ -151,14 +151,32 @@ defmodule ClusterMurmur.Generation.Provider do
 end
 
 defmodule ClusterMurmur.Discord.Publisher do
-  @callback publish(ClusterMurmur.Discord.PublicationPayload.t()) ::
-              {:ok, String.t()} | {:error, ClusterMurmur.ExternalError.t()}
+  @callback publish(
+              ClusterMurmur.Persistence.PublicationAttemptRecord.t(),
+              ClusterMurmur.Discord.PublicationPlanner.Plan.t(),
+              ClusterMurmur.Persistence.MessageRecord.t(),
+              ClusterMurmur.Personas.Persona.t(),
+              ClusterMurmur.Discord.WebhookSettings.t(),
+              (ClusterMurmur.Discord.WebhookRequest.t() -> term())
+            ) ::
+              {:ok, String.t(), ClusterMurmur.Persistence.PublicationAttemptRecord.t()}
+              | {:failed, ClusterMurmur.ExternalError.t(),
+                 ClusterMurmur.Persistence.PublicationAttemptRecord.t()}
+              | {:ambiguous, :interrupted,
+                 ClusterMurmur.Persistence.PublicationAttemptRecord.t()}
+              | {:error, atom()}
 end
 ```
 
 Tests must be able to replace every behaviour with a deterministic fake.
 Persistence must similarly remain behind repository or store boundaries so
 selection and conversation policy do not depend directly on Ecto queries.
+
+Discord publication claims one exact durable `started` attempt immediately
+before invoking the injected transport. Only the compare-and-set winner may
+dispatch. HTTP responses that prove rejection are known failures; malformed
+successes, timeouts after dispatch, 5xx responses, and unknown transport
+outcomes are ambiguous and must not be retried.
 
 The observer adapter exposes only named, bounded, read-only operations. A
 concrete adapter maps those operations to MCP tools internally, validates
