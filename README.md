@@ -119,12 +119,14 @@ and emits only redacted validated plans for unpublished records, while leaving
 ambiguous external outcomes to an explicit later recovery policy. A
 fixed redacted observation entity-state value and SQLite record now preserve
 bounded debounce progress and latest facts behind composite source/subject
-identity constraints; loaded validation and monotonic store access remain the
-next boundary. A
-separate constrained redacted event record, packaged migration, and narrow
-idempotent insert store persist immutable events without exposing generic
-queries or trigger deduplication policy. A primary-key-only restore path decodes
-records through the same bounded domain validator. Standard
+identity constraints; loaded validation and monotonic store access reject stale
+or conflicting updates. A separate constrained redacted event record, packaged
+migration, and narrow idempotent insert store persist immutable events without
+exposing generic queries or trigger deduplication policy. A primary-key-only
+restore path decodes records through the same bounded domain validator. One
+atomic observation-ingestion store now restores prior state, delegates the
+factual debounce and event decision to the pure planner, and commits the next
+state with its optional event or rolls both back. Standard
 five-field schedule-trigger and bounded
 shifted-exponential stochastic-trigger validation use a reviewed, embedded IANA
 timezone snapshot without runtime updates. Pure shifted-exponential next-run
@@ -143,9 +145,9 @@ A pure adapter evaluates each available due projection against active hours and
 the correctly rolled-over local-date count before claiming. A redacted pure
 plan rechecks claimed execution eligibility and assembles only the supplied
 event facts and completion values. External execution and exactly-once delivery
-are not implemented. Observation ingestion, trigger
-execution, LLM generation orchestration, and Discord publication orchestration
-are not implemented yet. Do
+are not implemented. End-to-end observer polling, event dedupe-window policy,
+trigger execution, LLM generation orchestration, and Discord publication
+orchestration are not implemented yet. Do
 not deploy this revision or connect it to infrastructure, model providers, or
 Discord.
 
