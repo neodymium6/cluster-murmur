@@ -64,6 +64,10 @@ defmodule ClusterMurmur.Discord.WebhookRequest do
 
   @type error :: :invalid_publication_plan | :invalid_webhook_request
 
+  @doc "Returns the fixed maximum response bytes an adapter may accept."
+  @spec max_response_bytes() :: pos_integer()
+  def max_response_bytes, do: @max_response_bytes
+
   @doc "Encodes one revalidated publication plan into a fixed webhook request."
   @spec encode(term(), term(), term(), term()) :: {:ok, t()} | {:error, error()}
   def encode(%Plan{} = plan, current_record, current_persona, current_settings) do
