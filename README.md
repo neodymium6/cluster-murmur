@@ -159,7 +159,8 @@ normalized observations through atomic ingestion while collecting validated
 events and stable partial failures. Supervised timing and concrete observer
 transport remain unimplemented. One matched event trigger can now cross its
 pure planner and atomic start store through a redacted authorization boundary;
-bounded batch dispatch and action execution remain unimplemented. Do
+matching triggers can be authorized sequentially in one deterministic bounded
+batch with stable partial outcomes. Action execution remains unimplemented. Do
 not deploy this revision or connect it to infrastructure, model providers, or
 Discord.
 

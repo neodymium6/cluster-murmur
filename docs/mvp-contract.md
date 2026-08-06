@@ -203,6 +203,11 @@ One matched event trigger can then be planned and durably authorized without
 executing its action. Only an exact redacted started capability whose event,
 trigger, execution instant, and cooldown projection still match the plan may
 cross into later action orchestration.
+For one event, matching triggers are selected from a bounded catalog and
+authorized once in stable trigger-ID order. Per-trigger cooldown, repeated-pair,
+and stable failure outcomes do not stop the remaining bounded batch, while only
+validated durable authorizations for triggers still exactly present in the
+supplied configuration cross into later action orchestration.
 
 `Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
 finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`
