@@ -213,7 +213,10 @@ separate bounded event store validates complete events before storage, inserts
 immutable event IDs idempotently, and rejects conflicting reuse without
 replacing committed facts. Its primary-key-only read restores at most one event
 through the shared bounded validator. Event listing, event retention,
-dedupe-window suppression, and trigger bookkeeping remain later stages.
+dedupe-window suppression, and trigger bookkeeping remain later stages. A
+narrow observation-ingestion transaction restores prior entity state, applies
+the pure debounce and event plan, and commits the next state with its optional
+event atomically. It performs no observer call or trigger action.
 
 `ClusterMurmur.Release.migrate!/0`, invoked after every application instance
 using the database has stopped, is the only application migration operation. It
