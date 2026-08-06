@@ -18,8 +18,9 @@ manifest validation, duration and common scalar validation, bounded include
 resolution, composition of those manifest stages into a load plan, and bounded
 decoding of the included YAML documents are implemented. A value-free Draft 7
 validation adapter for application-owned schemas and bounded event-group, persona,
-binding, routing, and event-trigger validation, cross-category character catalog
-assembly, and complete startup configuration assembly are implemented. A fixed
+binding, routing, LLM-provider, and event-trigger validation, cross-category
+character catalog assembly, and complete startup configuration assembly are
+implemented. A fixed
 top-level file includes files by category:
 
 ```text
@@ -47,6 +48,14 @@ The top-level file declares the configuration version and includes:
 ```yaml
 version: 1
 
+llm:
+  provider: openai_compatible
+  base_url_env: CLUSTER_MURMUR_LLM_BASE_URL
+  model_env: CLUSTER_MURMUR_LLM_MODEL
+  api_key_file_env: CLUSTER_MURMUR_LLM_API_KEY_FILE
+  timeout: 20s
+  max_output_tokens: 300
+
 includes:
   event_groups:
     - event-groups.yaml
@@ -60,11 +69,11 @@ includes:
     - routing.yaml
 ```
 
-The version 1 manifest contains exactly `version` and `includes`. All five
-include categories shown above must be present, even when a category has no
-patterns, and unknown fields or categories are invalid. Category values are
-lists of strings. The 64-pattern limit applies to the sum across every category,
-not separately to each resolver call.
+The version 1 manifest contains exactly `version`, `llm`, and `includes`. All
+three fields and all five include categories shown above must be present, even
+when an include category has no patterns. Unknown fields or categories are
+invalid. Category values are lists of strings. The 64-pattern limit applies to
+the sum across every category, not separately to each resolver call.
 
 Relative paths are resolved from the directory containing the top-level file.
 Version 1 include paths use portable ASCII characters and support only
@@ -508,10 +517,13 @@ llm:
 `base_url_env` and `model_env` name environment variables containing deployment
 values. `api_key_file_env` names an environment variable whose value is the
 path to a mounted secret file. The API key itself is never accepted in YAML or
-as a direct environment-variable value. The implemented runtime settings
-boundary accepts a normalized internal projection of these fields, resolves the
+as a direct environment-variable value. The manifest parser requires this exact
+mapping, supports only `openai_compatible`, bounds `timeout` to 1 through
+120,000 milliseconds after duration parsing, and bounds `max_output_tokens` to
+1 through 4,096. The normalized redacted value enters the complete startup
+configuration. The runtime settings boundary accepts it directly, resolves the
 three deployment values with fixed bounds, and does not make a provider
-connection. Parsing this YAML shape into that projection remains future work.
+connection.
 
 ## Discord routing
 

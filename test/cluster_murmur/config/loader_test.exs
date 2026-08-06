@@ -1,7 +1,7 @@
 defmodule ClusterMurmur.Config.LoaderTest do
   use ExUnit.Case, async: true
 
-  alias ClusterMurmur.Config.{Catalog, Configuration, DocumentSet, LoadedDocument}
+  alias ClusterMurmur.Config.{Catalog, Configuration, DocumentSet, LLM, LoadedDocument}
   alias ClusterMurmur.Config.{LoadPlan, Loader, Manifest}
 
   setup do
@@ -27,6 +27,13 @@ defmodule ClusterMurmur.Config.LoaderTest do
 
     write_manifest(context.config_file, """
     version: 1
+    llm:
+      provider: openai_compatible
+      base_url_env: LLM_BASE_URL
+      model_env: LLM_MODEL
+      api_key_file_env: LLM_API_KEY_FILE
+      timeout: 20s
+      max_output_tokens: 300
     includes:
       event_groups: []
       personas:
@@ -43,6 +50,7 @@ defmodule ClusterMurmur.Config.LoaderTest do
               %LoadPlan{
                 manifest: %Manifest{
                   version: 1,
+                  llm: llm(),
                   includes: %{
                     event_groups: [],
                     personas: ["personas/*.yaml", "shared.yaml"],
@@ -71,6 +79,13 @@ defmodule ClusterMurmur.Config.LoaderTest do
   test "labels manifest validation errors before resolving includes", context do
     write_manifest(context.config_file, """
     version: 2
+    llm:
+      provider: openai_compatible
+      base_url_env: LLM_BASE_URL
+      model_env: LLM_MODEL
+      api_key_file_env: LLM_API_KEY_FILE
+      timeout: 20s
+      max_output_tokens: 300
     includes: {}
     """)
 
@@ -81,6 +96,13 @@ defmodule ClusterMurmur.Config.LoaderTest do
   test "labels include resolution errors", context do
     write_manifest(context.config_file, """
     version: 1
+    llm:
+      provider: openai_compatible
+      base_url_env: LLM_BASE_URL
+      model_env: LLM_MODEL
+      api_key_file_env: LLM_API_KEY_FILE
+      timeout: 20s
+      max_output_tokens: 300
     includes:
       event_groups: []
       personas:
@@ -100,6 +122,13 @@ defmodule ClusterMurmur.Config.LoaderTest do
 
     write_manifest(context.config_file, """
     version: 1
+    llm:
+      provider: openai_compatible
+      base_url_env: LLM_BASE_URL
+      model_env: LLM_MODEL
+      api_key_file_env: LLM_API_KEY_FILE
+      timeout: 20s
+      max_output_tokens: 300
     includes:
       event_groups: []
       personas:
@@ -137,6 +166,13 @@ defmodule ClusterMurmur.Config.LoaderTest do
 
     write_manifest(context.config_file, """
     version: 1
+    llm:
+      provider: openai_compatible
+      base_url_env: LLM_BASE_URL
+      model_env: LLM_MODEL
+      api_key_file_env: LLM_API_KEY_FILE
+      timeout: 20s
+      max_output_tokens: 300
     includes:
       event_groups: []
       personas:
@@ -275,6 +311,8 @@ defmodule ClusterMurmur.Config.LoaderTest do
     assert {:ok, %Configuration{version: 1} = configuration} =
              Loader.load_configuration(context.config_file)
 
+    assert configuration.llm == llm()
+
     assert %{action: :emit_event, timezone: "Asia/Tokyo"} =
              configuration.triggers.triggers["daily-summary"]
 
@@ -294,7 +332,12 @@ defmodule ClusterMurmur.Config.LoaderTest do
        context do
     private_path = Path.join(context.config_root, "private-node.yaml")
 
-    manifest = %Manifest{version: 1, includes: valid_includes("private-node.yaml")}
+    manifest = %Manifest{
+      version: 1,
+      includes: valid_includes("private-node.yaml"),
+      llm: llm()
+    }
+
     plan = %LoadPlan{manifest: manifest, files: Map.put(valid_files(), :personas, [private_path])}
 
     loaded = %LoadedDocument{path: private_path, document: %{"private" => "value"}}
@@ -340,9 +383,27 @@ defmodule ClusterMurmur.Config.LoaderTest do
     %{event_groups: [], personas: [], bindings: [], triggers: [], routing: []}
   end
 
+  defp llm do
+    %LLM{
+      provider: :openai_compatible,
+      base_url_env: "LLM_BASE_URL",
+      model_env: "LLM_MODEL",
+      api_key_file_env: "LLM_API_KEY_FILE",
+      timeout_ms: 20_000,
+      max_output_tokens: 300
+    }
+  end
+
   defp catalog_manifest do
     """
     version: 1
+    llm:
+      provider: openai_compatible
+      base_url_env: LLM_BASE_URL
+      model_env: LLM_MODEL
+      api_key_file_env: LLM_API_KEY_FILE
+      timeout: 20s
+      max_output_tokens: 300
     includes:
       event_groups:
         - event-groups.yaml
@@ -358,6 +419,13 @@ defmodule ClusterMurmur.Config.LoaderTest do
   defp configuration_manifest do
     """
     version: 1
+    llm:
+      provider: openai_compatible
+      base_url_env: LLM_BASE_URL
+      model_env: LLM_MODEL
+      api_key_file_env: LLM_API_KEY_FILE
+      timeout: 20s
+      max_output_tokens: 300
     includes:
       event_groups:
         - event-groups.yaml

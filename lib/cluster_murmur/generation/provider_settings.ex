@@ -2,12 +2,13 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
   @moduledoc """
   Loads bounded runtime settings for the OpenAI-compatible provider.
 
-  The input is an exact, normalized public configuration projection containing
-  environment-variable names and numeric limits. Deployment values are read at
-  this boundary. No provider request or network connection is performed.
+  The input is the exact normalized startup LLM configuration, or its public
+  projection containing environment-variable names and numeric limits.
+  Deployment values are read at this boundary. No provider request or network
+  connection is performed.
   """
 
-  alias ClusterMurmur.Config.{MountedSecretReader, Value}
+  alias ClusterMurmur.Config.{LLM, MountedSecretReader, Value}
 
   @config_keys [
     :api_key_file_env,
@@ -59,6 +60,13 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
   @doc "Loads one exact runtime provider-settings projection without connecting."
   @spec load(term(), environment_reader()) :: {:ok, t()} | {:error, error()}
   def load(config, environment_reader \\ &System.fetch_env/1)
+
+  def load(%LLM{} = llm, environment_reader) when is_function(environment_reader, 1) do
+    case LLM.to_provider_settings_projection(llm) do
+      {:ok, config} -> load(config, environment_reader)
+      {:error, :invalid_llm_configuration} -> {:error, :invalid_provider_settings}
+    end
+  end
 
   def load(config, environment_reader)
       when is_map(config) and not is_struct(config) and is_function(environment_reader, 1) do

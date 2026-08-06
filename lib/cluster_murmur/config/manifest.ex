@@ -15,12 +15,12 @@ defmodule ClusterMurmur.Config.Manifest do
     {"routing", :routing}
   ]
   @category_names Enum.map(@categories, &elem(&1, 0))
-  @fields ["includes", "version"]
+  @fields ["includes", "llm", "version"]
   @max_patterns 64
 
   @derive {Inspect, only: [:version]}
-  @enforce_keys [:version, :includes]
-  defstruct [:version, :includes]
+  @enforce_keys [:version, :includes, :llm]
+  defstruct [:version, :includes, :llm]
 
   @type category :: :event_groups | :personas | :bindings | :triggers | :routing
 
@@ -32,7 +32,7 @@ defmodule ClusterMurmur.Config.Manifest do
           required(:routing) => [String.t()]
         }
 
-  @type t :: %__MODULE__{version: 1, includes: includes()}
+  @type t :: %__MODULE__{version: 1, includes: includes(), llm: ClusterMurmur.Config.LLM.t()}
 
   @type error ::
           :invalid_config_version
@@ -45,18 +45,27 @@ defmodule ClusterMurmur.Config.Manifest do
           | :unknown_include_category
           | :unknown_manifest_field
           | :unsupported_config_version
+          | {:llm, ClusterMurmur.Config.LLM.error()}
 
   @doc "Validates a decoded top-level configuration document."
   @spec parse(term()) :: {:ok, t()} | {:error, error()}
   def parse(document) when is_map(document) do
     with :ok <- validate_keys(document, @fields, :manifest),
          {:ok, version} <- validate_version(document["version"]),
-         {:ok, includes} <- validate_includes(document["includes"]) do
-      {:ok, %__MODULE__{version: version, includes: includes}}
+         {:ok, includes} <- validate_includes(document["includes"]),
+         {:ok, llm} <- parse_llm(document["llm"]) do
+      {:ok, %__MODULE__{version: version, includes: includes, llm: llm}}
     end
   end
 
   def parse(_document), do: {:error, :invalid_manifest}
+
+  defp parse_llm(document) do
+    case ClusterMurmur.Config.LLM.parse(document) do
+      {:ok, llm} -> {:ok, llm}
+      {:error, reason} -> {:error, {:llm, reason}}
+    end
+  end
 
   defp validate_version(1), do: {:ok, 1}
 
@@ -74,13 +83,11 @@ defmodule ClusterMurmur.Config.Manifest do
   defp validate_includes(_includes), do: {:error, :invalid_includes}
 
   defp validate_keys(map, required_keys, scope) do
-    keys = Map.keys(map)
-
     cond do
       Enum.any?(required_keys, &(not Map.has_key?(map, &1))) ->
         missing_key_error(scope)
 
-      Enum.any?(keys, &(&1 not in required_keys)) ->
+      map_size(map) != length(required_keys) ->
         unknown_key_error(scope)
 
       true ->
