@@ -153,7 +153,11 @@ are not implemented. End-to-end observer polling, event dedupe-window policy,
 trigger execution, LLM generation orchestration, and Discord publication
 orchestration are not implemented yet. Observer target responses now pass a
 closed 256-entry and 64 KiB identity catalog that rejects duplicates and sorts
-accepted redacted targets before any later polling. Do
+accepted redacted targets before polling. One injected, sequential poll lists
+that catalog once, observes each accepted identity once, and sends only matched
+normalized observations through atomic ingestion while collecting validated
+events and stable partial failures. Supervised timing and concrete observer
+transport remain unimplemented. Do
 not deploy this revision or connect it to infrastructure, model providers, or
 Discord.
 
