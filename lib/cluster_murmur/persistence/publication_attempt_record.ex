@@ -2,9 +2,9 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptRecord do
   @moduledoc """
   Redacted durable lifecycle for one Discord publication attempt.
 
-  One message has at most one attempt. A started attempt is deliberately
-  distinguishable from known success, classified failure, and an ambiguous
-  interrupted outcome.
+  One message has at most one attempt. Prepared and dispatching states are
+  deliberately distinguishable from known success, classified failure, and an
+  ambiguous interrupted outcome.
   """
 
   use Ecto.Schema
@@ -20,7 +20,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptRecord do
 
   schema "publication_attempts" do
     field :message_id, :integer, primary_key: true, redact: true
-    field :status, Ecto.Enum, values: [:started, :succeeded, :failed, :ambiguous]
+    field :status, Ecto.Enum, values: [:started, :dispatching, :succeeded, :failed, :ambiguous]
     field :started_at, :utc_datetime_usec, redact: true
     field :completed_at, :utc_datetime_usec, redact: true
 
@@ -37,7 +37,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptRecord do
       redact: true
   end
 
-  @type status :: :started | :succeeded | :failed | :ambiguous
+  @type status :: :started | :dispatching | :succeeded | :failed | :ambiguous
   @type t :: %__MODULE__{
           message_id: pos_integer() | nil,
           status: status() | nil,

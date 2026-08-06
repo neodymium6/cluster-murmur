@@ -15,6 +15,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
   alias ClusterMurmur.Repo
 
   alias ClusterMurmur.Repo.Migrations.{
+    AddPublicationAttemptDispatching,
     CreateConversations,
     CreateEvents,
     CreateMessages,
@@ -25,13 +26,15 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
   @conversation_version 20_260_805_200_000
   @message_version 20_260_805_220_000
   @attempt_version 20_260_805_230_000
+  @dispatching_version 20_260_805_231_000
 
   setup_all do
     for {version, migration} <- [
           {@event_version, CreateEvents},
           {@conversation_version, CreateConversations},
           {@message_version, CreateMessages},
-          {@attempt_version, CreatePublicationAttempts}
+          {@attempt_version, CreatePublicationAttempts},
+          {@dispatching_version, AddPublicationAttemptDispatching}
         ] do
       assert Ecto.Migrator.up(Repo, version, migration,
                log: false,
@@ -42,6 +45,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
 
     on_exit(fn ->
       for {version, migration} <- [
+            {@dispatching_version, AddPublicationAttemptDispatching},
             {@attempt_version, CreatePublicationAttempts},
             {@message_version, CreateMessages},
             {@conversation_version, CreateConversations},
@@ -162,21 +166,116 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
              {:ok, ambiguous}
   end
 
+  test "grants exactly one durable dispatch claim", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    assert {:ok, dispatching} = PublicationAttemptStore.claim_dispatch(started)
+    assert dispatching.status == :dispatching
+    assert dispatching.started_at == started.started_at
+    assert dispatching.completed_at == nil
+    assert dispatching.error_class == nil
+    assert PublicationAttemptStore.fetch(message.id) == {:ok, dispatching}
+
+    assert PublicationAttemptStore.claim_dispatch(started) ==
+             {:error, :publication_attempt_conflict}
+
+    assert PublicationAttemptStore.claim_dispatch(dispatching) ==
+             {:error, :invalid_publication_attempt_record}
+  end
+
+  test "requires a dispatch claim before recording success", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    Repo.put_dynamic_repo(:missing_publication_attempt_repo)
+
+    assert PublicationAttemptStore.succeed(started, message, "12345", completed_at()) ==
+             {:error, :invalid_publication_attempt_record}
+  end
+
+  test "rolls back a rewritten dispatch claim", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    Ecto.Adapters.SQL.query!(
+      Repo,
+      """
+      CREATE TRIGGER rewrite_dispatch_claim
+      AFTER UPDATE OF status ON publication_attempts
+      BEGIN
+        UPDATE publication_attempts
+        SET started_at = '2026-08-05T12:02:01.000000Z'
+        WHERE message_id = NEW.message_id;
+      END
+      """,
+      [],
+      log: false
+    )
+
+    try do
+      assert PublicationAttemptStore.claim_dispatch(started) ==
+               {:error, :publication_attempt_conflict}
+
+      assert PublicationAttemptStore.fetch(message.id) == {:ok, started}
+    after
+      Ecto.Adapters.SQL.query!(Repo, "DROP TRIGGER rewrite_dispatch_claim", [], log: false)
+    end
+  end
+
+  test "returns a generic dispatch-claim storage failure", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    Repo.put_dynamic_repo(:missing_publication_attempt_repo)
+    assert PublicationAttemptStore.claim_dispatch(started) == {:error, :storage_unavailable}
+  end
+
+  test "closes dispatch claims as known failure or ambiguous interruption", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    for {operation, expected_status, expected_error} <- [
+          {fn attempt -> PublicationAttemptStore.fail(attempt, :timeout, completed_at()) end,
+           :failed, :timeout},
+          {fn attempt -> PublicationAttemptStore.mark_ambiguous(attempt, completed_at()) end,
+           :ambiguous, :interrupted}
+        ] do
+      assert {:ok, started} =
+               PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+      assert {:ok, dispatching} = PublicationAttemptStore.claim_dispatch(started)
+      assert {:ok, terminal} = operation.(dispatching)
+      assert terminal.status == expected_status
+      assert terminal.error_class == expected_error
+      Repo.delete_all(PublicationAttemptRecord)
+    end
+  end
+
   test "atomically records one known publication success idempotently", %{message: message} do
     {plan, persona, settings} = plan(message)
 
     assert {:ok, started} =
              PublicationAttemptStore.start(plan, message, persona, settings, started_at())
 
+    assert {:ok, dispatching} = PublicationAttemptStore.claim_dispatch(started)
+
     assert {:ok, {succeeded, published}} =
-             PublicationAttemptStore.succeed(started, message, "12345", completed_at())
+             PublicationAttemptStore.succeed(dispatching, message, "12345", completed_at())
 
     assert succeeded.status == :succeeded
     assert succeeded.completed_at == completed_at()
     assert succeeded.error_class == nil
     assert published.discord_message_id == "12345"
 
-    assert PublicationAttemptStore.succeed(started, message, "12345", completed_at()) ==
+    assert PublicationAttemptStore.succeed(dispatching, message, "12345", completed_at()) ==
              {:ok, {succeeded, published}}
 
     assert PublicationAttemptStore.fetch(message.id) == {:ok, succeeded}
@@ -189,20 +288,22 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
     assert {:ok, started} =
              PublicationAttemptStore.start(plan, message, persona, settings, started_at())
 
-    assert {:ok, {succeeded, published}} =
-             PublicationAttemptStore.succeed(started, message, "12345", completed_at())
+    assert {:ok, dispatching} = PublicationAttemptStore.claim_dispatch(started)
 
-    assert PublicationAttemptStore.succeed(started, message, "67890", completed_at()) ==
+    assert {:ok, {succeeded, published}} =
+             PublicationAttemptStore.succeed(dispatching, message, "12345", completed_at())
+
+    assert PublicationAttemptStore.succeed(dispatching, message, "67890", completed_at()) ==
              {:error, :publication_attempt_conflict}
 
     assert PublicationAttemptStore.succeed(
-             started,
+             dispatching,
              message,
              "12345",
              DateTime.add(completed_at(), 1, :microsecond)
            ) == {:error, :publication_attempt_conflict}
 
-    assert PublicationAttemptStore.fail(started, :timeout, completed_at()) ==
+    assert PublicationAttemptStore.fail(dispatching, :timeout, completed_at()) ==
              {:error, :publication_attempt_conflict}
 
     assert PublicationAttemptStore.fetch(message.id) == {:ok, succeeded}
@@ -215,8 +316,10 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
     assert {:ok, first_attempt} =
              PublicationAttemptStore.start(plan, message, persona, settings, started_at())
 
+    assert {:ok, first_dispatch} = PublicationAttemptStore.claim_dispatch(first_attempt)
+
     assert {:ok, {_succeeded, _published}} =
-             PublicationAttemptStore.succeed(first_attempt, message, "12345", completed_at())
+             PublicationAttemptStore.succeed(first_dispatch, message, "12345", completed_at())
 
     second =
       Repo.insert!(%MessageRecord{
@@ -238,14 +341,16 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
                ~U[2026-08-05 12:05:00.000000Z]
              )
 
+    assert {:ok, second_dispatch} = PublicationAttemptStore.claim_dispatch(second_attempt)
+
     assert PublicationAttemptStore.succeed(
-             second_attempt,
+             second_dispatch,
              second,
              "12345",
              ~U[2026-08-05 12:06:00.000000Z]
            ) == {:error, :publication_conflict}
 
-    assert PublicationAttemptStore.fetch(second.id) == {:ok, second_attempt}
+    assert PublicationAttemptStore.fetch(second.id) == {:ok, second_dispatch}
     assert Repo.get!(MessageRecord, second.id) == second
   end
 
@@ -255,11 +360,13 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
     assert {:ok, started} =
              PublicationAttemptStore.start(plan, message, persona, settings, started_at())
 
+    assert {:ok, dispatching} = PublicationAttemptStore.claim_dispatch(started)
+
     Repo.put_dynamic_repo(:missing_publication_attempt_repo)
 
     for discord_message_id <- [nil, "", "0", "012345", "message-1"] do
       assert PublicationAttemptStore.succeed(
-               started,
+               dispatching,
                message,
                discord_message_id,
                completed_at()
@@ -267,14 +374,14 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
     end
 
     assert PublicationAttemptStore.succeed(
-             started,
+             dispatching,
              %{message | id: message.id + 1},
              "12345",
              completed_at()
            ) == {:error, :publication_conflict}
 
     assert PublicationAttemptStore.succeed(
-             started,
+             dispatching,
              message,
              "12345",
              DateTime.add(started_at(), -1, :microsecond)
@@ -286,6 +393,8 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
 
     assert {:ok, started} =
              PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    assert {:ok, dispatching} = PublicationAttemptStore.claim_dispatch(started)
 
     Ecto.Adapters.SQL.query!(
       Repo,
@@ -303,10 +412,10 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
     )
 
     try do
-      assert PublicationAttemptStore.succeed(started, message, "12345", completed_at()) ==
+      assert PublicationAttemptStore.succeed(dispatching, message, "12345", completed_at()) ==
                {:error, :publication_attempt_conflict}
 
-      assert PublicationAttemptStore.fetch(message.id) == {:ok, started}
+      assert PublicationAttemptStore.fetch(message.id) == {:ok, dispatching}
       assert Repo.get!(MessageRecord, message.id) == message
     after
       Ecto.Adapters.SQL.query!(Repo, "DROP TRIGGER rewrite_succeeded_attempt", [], log: false)
@@ -318,6 +427,8 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
 
     assert {:ok, started} =
              PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    assert {:ok, dispatching} = PublicationAttemptStore.claim_dispatch(started)
 
     Ecto.Adapters.SQL.query!(
       Repo,
@@ -335,10 +446,10 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
     )
 
     try do
-      assert PublicationAttemptStore.succeed(started, message, "12345", completed_at()) ==
+      assert PublicationAttemptStore.succeed(dispatching, message, "12345", completed_at()) ==
                {:error, :publication_conflict}
 
-      assert PublicationAttemptStore.fetch(message.id) == {:ok, started}
+      assert PublicationAttemptStore.fetch(message.id) == {:ok, dispatching}
       assert Repo.get!(MessageRecord, message.id) == message
     after
       Ecto.Adapters.SQL.query!(Repo, "DROP TRIGGER rewrite_succeeded_message", [], log: false)
@@ -351,9 +462,11 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
     assert {:ok, started} =
              PublicationAttemptStore.start(plan, message, persona, settings, started_at())
 
+    assert {:ok, dispatching} = PublicationAttemptStore.claim_dispatch(started)
+
     Repo.put_dynamic_repo(:missing_publication_attempt_repo)
 
-    assert PublicationAttemptStore.succeed(started, message, "12345", completed_at()) ==
+    assert PublicationAttemptStore.succeed(dispatching, message, "12345", completed_at()) ==
              {:error, :storage_unavailable}
   end
 
@@ -423,6 +536,8 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
 
     assert PublicationAttemptStore.fail(started, :timeout, completed_at()) ==
              {:error, :invalid_publication_attempt_record}
+
+    Repo.delete_all(PublicationAttemptRecord)
   end
 
   test "returns a generic terminal storage failure", %{message: message} do
@@ -502,6 +617,8 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
 
     assert PublicationAttemptStore.start(plan, message, persona, settings, started_at()) ==
              {:error, :invalid_publication_attempt_record}
+
+    Repo.delete_all(PublicationAttemptRecord)
   end
 
   test "rolls back a valid insert-time rewrite", %{message: message} do

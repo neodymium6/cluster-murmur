@@ -17,6 +17,16 @@ defmodule ClusterMurmur.Discord.PublicationAttemptRecoveryTest do
     assert PublicationAttemptRecovery.classify(recent, cutoff()) == {:ok, :no_action}
   end
 
+  test "recovers dispatch claims through the same never-retry boundary" do
+    dispatching = loaded(status: :dispatching)
+
+    assert PublicationAttemptRecovery.classify(dispatching, cutoff()) ==
+             {:ok, :mark_ambiguous}
+
+    recent = %{dispatching | started_at: DateTime.add(cutoff(), 1, :microsecond)}
+    assert PublicationAttemptRecovery.classify(recent, cutoff()) == {:ok, :no_action}
+  end
+
   test "leaves every terminal outcome unchanged" do
     completed_at = ~U[2026-08-05 12:03:00.000000Z]
 

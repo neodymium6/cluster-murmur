@@ -21,6 +21,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptRecordValidatorTest do
 
     valid = [
       loaded([]),
+      loaded(status: :dispatching),
       loaded(status: :succeeded, completed_at: terminal),
       loaded(status: :failed, completed_at: terminal, error_class: :timeout),
       loaded(status: :ambiguous, completed_at: terminal, error_class: :interrupted)
@@ -87,6 +88,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptRecordValidatorTest do
       Map.put(valid, :private, true),
       %{valid | message_id: 0},
       %{valid | status: :started, completed_at: terminal},
+      %{valid | status: :dispatching, completed_at: terminal},
       %{valid | status: :succeeded, completed_at: terminal, error_class: :timeout},
       %{valid | status: :failed, completed_at: terminal, error_class: :interrupted},
       %{valid | status: :ambiguous, completed_at: terminal, error_class: :timeout},

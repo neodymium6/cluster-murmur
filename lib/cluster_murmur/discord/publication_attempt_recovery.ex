@@ -2,8 +2,8 @@ defmodule ClusterMurmur.Discord.PublicationAttemptRecovery do
   @moduledoc """
   Purely classifies loaded publication attempts during restart recovery.
 
-  A durable start may already have reached Discord, so recovery never proposes
-  retrying it. Terminal attempts require no action.
+  An abandoned open attempt may have reached Discord, so recovery never
+  proposes retrying it. Terminal attempts require no action.
   """
 
   alias ClusterMurmur.Persistence.{
@@ -22,8 +22,11 @@ defmodule ClusterMurmur.Discord.PublicationAttemptRecovery do
     with :ok <- PublicationAttemptRecordValidator.validate(attempt),
          :ok <- DateTimeValidator.validate_storage_utc(cutoff) do
       case attempt.status do
-        :started -> classify_started(attempt.started_at, cutoff)
-        status when status in [:succeeded, :failed, :ambiguous] -> {:ok, :no_action}
+        status when status in [:started, :dispatching] ->
+          classify_open(attempt.started_at, cutoff)
+
+        status when status in [:succeeded, :failed, :ambiguous] ->
+          {:ok, :no_action}
       end
     else
       {:error, :invalid_datetime} -> {:error, :invalid_datetime}
@@ -33,7 +36,7 @@ defmodule ClusterMurmur.Discord.PublicationAttemptRecovery do
 
   def classify(_attempt, _cutoff), do: {:error, :invalid_publication_attempt_record}
 
-  defp classify_started(started_at, cutoff) do
+  defp classify_open(started_at, cutoff) do
     if DateTime.compare(started_at, cutoff) in [:lt, :eq],
       do: {:ok, :mark_ambiguous},
       else: {:ok, :no_action}

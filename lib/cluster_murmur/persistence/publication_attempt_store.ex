@@ -3,8 +3,9 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
   Restores and starts durable Discord publication attempts through a narrow API.
 
   Start rechecks the independently loaded current message inside the immediate
-  transaction. Terminal failure transitions compare and set one exact started
-  attempt. This module never calls Discord or stores raw external responses.
+  transaction. A non-idempotent compare-and-set grants one durable dispatch
+  claim, and terminal transitions compare one exact open attempt. This module
+  never calls Discord or stores raw external responses.
   """
 
   import Ecto.Changeset, only: [change: 2, unique_constraint: 2]
@@ -101,23 +102,37 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
     :exit, _reason -> {:error, :storage_unavailable}
   end
 
-  @doc "Closes one exact started attempt with a classified external failure."
+  @doc "Claims one exact started attempt immediately before external dispatch."
+  @spec claim_dispatch(term()) ::
+          {:ok, PublicationAttemptRecord.t()} | {:error, error()}
+  def claim_dispatch(attempt) do
+    with :ok <- validate_started_attempt(attempt) do
+      candidate = %{attempt | status: :dispatching}
+      persist_claim(attempt, candidate)
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  @doc "Closes one exact open attempt with a classified external failure."
   @spec fail(term(), term(), term()) ::
           {:ok, PublicationAttemptRecord.t()} | {:error, error()}
   def fail(attempt, error_class, completed_at),
     do: finish(attempt, :failed, error_class, completed_at)
 
-  @doc "Closes one exact started attempt when publication outcome is unknowable."
+  @doc "Closes one exact open attempt when publication outcome is unknowable."
   @spec mark_ambiguous(term(), term()) ::
           {:ok, PublicationAttemptRecord.t()} | {:error, error()}
   def mark_ambiguous(attempt, completed_at),
     do: finish(attempt, :ambiguous, :interrupted, completed_at)
 
-  @doc "Atomically records one known Discord success for an exact started attempt."
+  @doc "Atomically records one known Discord success for an exact dispatch claim."
   @spec succeed(term(), term(), term(), term()) ::
           {:ok, {PublicationAttemptRecord.t(), MessageRecord.t()}} | {:error, error()}
   def succeed(attempt, message, discord_message_id, completed_at) do
-    with :ok <- validate_started_attempt(attempt),
+    with :ok <- validate_dispatching_attempt(attempt),
          :ok <- validate_success_message(attempt, message),
          :ok <- validate_publication_id(message, discord_message_id),
          {:ok, completed_at} <- validate_completed_at(attempt, completed_at) do
@@ -142,7 +157,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
     do: %{datetime | microsecond: {value, 6}}
 
   defp finish(attempt, status, error_class, completed_at) do
-    with :ok <- validate_started_attempt(attempt),
+    with :ok <- validate_open_attempt(attempt),
          :ok <- validate_terminal_error(status, error_class),
          {:ok, completed_at} <- validate_completed_at(attempt, completed_at) do
       candidate = %{
@@ -164,6 +179,18 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
     do: PublicationAttemptRecordValidator.validate(attempt)
 
   defp validate_started_attempt(_attempt), do: {:error, :invalid_publication_attempt_record}
+
+  defp validate_dispatching_attempt(%PublicationAttemptRecord{status: :dispatching} = attempt),
+    do: PublicationAttemptRecordValidator.validate(attempt)
+
+  defp validate_dispatching_attempt(_attempt),
+    do: {:error, :invalid_publication_attempt_record}
+
+  defp validate_open_attempt(%PublicationAttemptRecord{status: status} = attempt)
+       when status in [:started, :dispatching],
+       do: PublicationAttemptRecordValidator.validate(attempt)
+
+  defp validate_open_attempt(_attempt), do: {:error, :invalid_publication_attempt_record}
 
   defp validate_terminal_error(:failed, error_class) when error_class in @external_errors,
     do: :ok
@@ -232,6 +259,20 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
 
   defp persist_terminal(started, candidate) do
     case Repo.transaction(fn -> terminal_transaction(started, candidate) end) do
+      {:ok, %PublicationAttemptRecord{} = attempt} ->
+        {:ok, attempt}
+
+      {:error, reason}
+      when reason in [:invalid_publication_attempt_record, :publication_attempt_conflict] ->
+        {:error, reason}
+
+      _failure ->
+        {:error, :storage_unavailable}
+    end
+  end
+
+  defp persist_claim(started, candidate) do
+    case Repo.transaction(fn -> claim_transaction(started, candidate) end) do
       {:ok, %PublicationAttemptRecord{} = attempt} ->
         {:ok, attempt}
 
@@ -353,7 +394,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
   end
 
   defp compare_and_set_attempt(started, terminal) do
-    query = started_attempt_query(started)
+    query = open_attempt_query(started)
 
     updates = [
       status: terminal.status,
@@ -368,6 +409,13 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
     end
   end
 
+  defp claim_transaction(started, candidate) do
+    case compare_and_set_attempt(started, candidate) do
+      :ok -> restore_exact_attempt(candidate)
+      {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
   defp terminal_transaction(started, candidate) do
     case compare_and_set_attempt(started, candidate) do
       :ok -> restore_terminal(candidate)
@@ -376,14 +424,27 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
     end
   end
 
-  defp started_attempt_query(started) do
+  defp open_attempt_query(open) do
     from persisted in PublicationAttemptRecord,
       where:
-        persisted.message_id == ^started.message_id and
-          persisted.status == :started and
-          persisted.started_at == ^started.started_at and
+        persisted.message_id == ^open.message_id and
+          persisted.status == ^open.status and
+          persisted.started_at == ^open.started_at and
           is_nil(persisted.completed_at) and
           is_nil(persisted.error_class)
+  end
+
+  defp restore_exact_attempt(candidate) do
+    case Repo.get_by(PublicationAttemptRecord, message_id: candidate.message_id) do
+      %PublicationAttemptRecord{} = persisted ->
+        if PublicationAttemptRecordValidator.validate(persisted) == :ok and
+             same_facts?(persisted, candidate),
+           do: persisted,
+           else: Repo.rollback(classify_attempt_error(persisted))
+
+      nil ->
+        Repo.rollback(:publication_attempt_conflict)
+    end
   end
 
   defp restore_terminal(candidate) do
