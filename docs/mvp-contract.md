@@ -191,6 +191,9 @@ The observer adapter exposes only named, bounded, read-only operations. A
 concrete adapter maps those operations to MCP tools internally, validates
 arguments, and normalizes responses without exposing tool names, arbitrary
 argument maps, or raw responses to application code.
+Application code then rejects target lists above 256 entries or 64 KiB of ID
+text, duplicate or malformed identities, and nondeterministic response order
+before making any per-target observation call.
 
 `Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
 finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`
