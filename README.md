@@ -100,7 +100,10 @@ and mounted API-key values without making a network request or exposing them
 through inspection. A fixed redacted OpenAI-compatible request boundary
 revalidates those settings and the complete structured prompt, then encodes only
 the chat-completions path, headers, JSON shape, and bounded transport options
-without connecting. A Discord settings boundary likewise resolves exactly one
+without connecting. A bounded OpenAI-compatible response decoder extracts only
+one string message from a single choice and maps status families to stable error
+classes without exposing raw provider diagnostics. A Discord settings boundary
+likewise resolves exactly one
 bounded incoming-webhook credential from the validated default route, restricts
 it to Discord's fixed HTTPS URL shape, and performs no publication. A fixed
 Discord payload boundary combines an unpublished message with its exact enabled
