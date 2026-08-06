@@ -157,7 +157,9 @@ accepted redacted targets before polling. One injected, sequential poll lists
 that catalog once, observes each accepted identity once, and sends only matched
 normalized observations through atomic ingestion while collecting validated
 events and stable partial failures. Supervised timing and concrete observer
-transport remain unimplemented. Do
+transport remain unimplemented. One matched event trigger can now cross its
+pure planner and atomic start store through a redacted authorization boundary;
+bounded batch dispatch and action execution remain unimplemented. Do
 not deploy this revision or connect it to infrastructure, model providers, or
 Discord.
 
