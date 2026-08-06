@@ -160,9 +160,12 @@ events and stable partial failures. Supervised timing and concrete observer
 transport remain unimplemented. One matched event trigger can now cross its
 pure planner and atomic start store through a redacted authorization boundary;
 matching triggers can be authorized sequentially in one deterministic bounded
-batch with stable partial outcomes. Action execution remains unimplemented. Do
-not deploy this revision or connect it to infrastructure, model providers, or
-Discord.
+batch with stable partial outcomes. One exact authorization can now resolve
+its trigger and binding against the complete runtime configuration, project a
+supplied bounded cooldown snapshot, select one eligible starter, and produce a
+redacted pristine conversation plan without persistence. Action execution
+remains unimplemented. Do not deploy this revision or connect it to
+infrastructure, model providers, or Discord.
 
 ## Boundary
 
