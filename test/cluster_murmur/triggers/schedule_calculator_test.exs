@@ -70,6 +70,13 @@ defmodule ClusterMurmur.Triggers.ScheduleCalculatorTest do
     assert ScheduleCalculator.next_run(%{valid | cron: forged_cron}, ~U[2026-08-04 00:00:00Z]) ==
              {:error, :invalid_trigger}
 
+    cron_with_extra_key = Map.put(valid.cron, :private, :payload)
+
+    assert ScheduleCalculator.next_run(
+             %{valid | cron: cron_with_extra_key},
+             ~U[2026-08-04 00:00:00Z]
+           ) == {:error, :invalid_trigger}
+
     forged_conditions = %{valid.cron | minute: [99]}
 
     assert ScheduleCalculator.next_run(

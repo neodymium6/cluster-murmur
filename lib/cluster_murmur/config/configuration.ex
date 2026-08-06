@@ -8,7 +8,7 @@ defmodule ClusterMurmur.Config.Configuration do
   """
 
   alias ClusterMurmur.Config.{Bindings, Catalog, DocumentSet, EventGroups, LLM}
-  alias ClusterMurmur.Config.{Personas, Routing, Triggers}
+  alias ClusterMurmur.Config.{ConfigurationValidator, Personas, Routing, Triggers}
   alias ClusterMurmur.Triggers.{EventTrigger, ScheduleTrigger, StochasticTrigger}
 
   @derive {Inspect, only: [:version]}
@@ -56,6 +56,10 @@ defmodule ClusterMurmur.Config.Configuration do
   end
 
   def parse(_config_path, _document_set), do: {:error, :invalid_configuration}
+
+  @doc "Revalidates one exact complete runtime configuration and its references."
+  @spec validate(term()) :: :ok | {:error, error()}
+  def validate(configuration), do: ConfigurationValidator.validate(configuration)
 
   defp validate_trigger_references(triggers, bindings, event_groups) do
     triggers.triggers
