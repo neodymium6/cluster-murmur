@@ -97,7 +97,10 @@ only validated environment-variable names to absolute regular-file targets and
 returns a trimmed non-empty UTF-8 value without exposing sensitive diagnostics. A
 provider-settings boundary resolves bounded OpenAI-compatible endpoint, model,
 and mounted API-key values without making a network request or exposing them
-through inspection. A Discord settings boundary likewise resolves exactly one
+through inspection. A fixed redacted OpenAI-compatible request boundary
+revalidates those settings and the complete structured prompt, then encodes only
+the chat-completions path, headers, JSON shape, and bounded transport options
+without connecting. A Discord settings boundary likewise resolves exactly one
 bounded incoming-webhook credential from the validated default route, restricts
 it to Discord's fixed HTTPS URL shape, and performs no publication. A fixed
 Discord payload boundary combines an unpublished message with its exact enabled
