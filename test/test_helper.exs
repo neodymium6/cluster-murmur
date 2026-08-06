@@ -1,3 +1,5 @@
+Code.require_file(Path.expand("support/private_tmp_dir.exs", __DIR__))
+
 Code.require_file(
   Path.expand(
     "../priv/repo/migrations/20260804130000_create_stochastic_schedules.exs",

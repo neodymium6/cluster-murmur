@@ -2,6 +2,7 @@ defmodule ClusterMurmur.RepoTest do
   use ExUnit.Case, async: false
 
   alias ClusterMurmur.Repo
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   test "starts the supervised repository with an isolated test database" do
     assert Process.whereis(Repo)
@@ -139,11 +140,7 @@ defmodule ClusterMurmur.RepoTest do
   end
 
   defp private_test_root do
-    root =
-      Path.join(System.tmp_dir!(), "cluster-murmur-repo-#{System.unique_integer([:positive])}")
-
-    File.mkdir_p!(root)
-    File.chmod!(root, 0o700)
+    root = PrivateTmpDir.create!("cluster-murmur-repo")
     on_exit(fn -> File.rm_rf!(root) end)
     root
   end

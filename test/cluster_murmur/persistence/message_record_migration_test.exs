@@ -5,6 +5,7 @@ defmodule ClusterMurmur.Persistence.MessageRecordMigrationTest do
 
   alias ClusterMurmur.Persistence.MessageRecord
   alias ClusterMurmur.Repo
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   alias ClusterMurmur.Repo.Migrations.{
     AddPersonaMessageHistoryIndex,
@@ -253,14 +254,7 @@ defmodule ClusterMurmur.Persistence.MessageRecordMigrationTest do
   end
 
   defp private_database_path do
-    root =
-      Path.join(
-        System.tmp_dir!(),
-        "cluster-murmur-message-migration-#{System.unique_integer([:positive])}"
-      )
-
-    File.mkdir_p!(root)
-    File.chmod!(root, 0o700)
+    root = PrivateTmpDir.create!("cluster-murmur-message-migration")
     {root, Path.join(root, "migration.sqlite3")}
   end
 end

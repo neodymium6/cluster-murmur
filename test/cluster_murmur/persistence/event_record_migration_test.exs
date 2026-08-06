@@ -3,6 +3,7 @@ defmodule ClusterMurmur.Persistence.EventRecordMigrationTest do
 
   alias ClusterMurmur.Repo
   alias ClusterMurmur.Repo.Migrations.CreateEvents
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   @migration_version 20_260_804_180_500
 
@@ -143,14 +144,7 @@ defmodule ClusterMurmur.Persistence.EventRecordMigrationTest do
   end
 
   defp private_database_path do
-    root =
-      Path.join(
-        System.tmp_dir!(),
-        "cluster-murmur-event-migration-#{System.unique_integer([:positive])}"
-      )
-
-    File.mkdir_p!(root)
-    File.chmod!(root, 0o700)
+    root = PrivateTmpDir.create!("cluster-murmur-event-migration")
     {root, Path.join(root, "migration.sqlite3")}
   end
 end
