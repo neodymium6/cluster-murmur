@@ -109,12 +109,14 @@ settings boundary likewise resolves exactly one
 bounded incoming-webhook credential from the validated default route, restricts
 it to Discord's fixed HTTPS URL shape, and performs no publication. A fixed
 redacted runtime-settings aggregate loads both provider and webhook deployment
-settings before external startup without making a connection. A fixed
-Discord payload boundary combines an unpublished message with its exact enabled
-persona, enforces API character limits, and always disables mention parsing. A
-pure durable-state publication planner skips known published records and emits
-only redacted validated plans for unpublished records, while leaving ambiguous
-external outcomes to an explicit later recovery policy. A
+settings before external startup without making a connection. A fail-closed
+startup preparation boundary now loads complete public configuration first and
+returns both values only after exact revalidation, without starting workers. A
+fixed Discord payload boundary combines an unpublished message with its exact
+enabled persona, enforces API character limits, and always disables mention
+parsing. A pure durable-state publication planner skips known published records
+and emits only redacted validated plans for unpublished records, while leaving
+ambiguous external outcomes to an explicit later recovery policy. A
 fixed redacted observation entity-state value and SQLite record now preserve
 bounded debounce progress and latest facts behind composite source/subject
 identity constraints; loaded validation and monotonic store access remain the
