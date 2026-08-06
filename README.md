@@ -108,6 +108,8 @@ and returns only decoded content or stable errors without retrying. A Discord
 settings boundary likewise resolves exactly one
 bounded incoming-webhook credential from the validated default route, restricts
 it to Discord's fixed HTTPS URL shape, and performs no publication. A fixed
+redacted runtime-settings aggregate loads both provider and webhook deployment
+settings before external startup without making a connection. A fixed
 Discord payload boundary combines an unpublished message with its exact enabled
 persona, enforces API character limits, and always disables mention parsing. A
 pure durable-state publication planner skips known published records and emits

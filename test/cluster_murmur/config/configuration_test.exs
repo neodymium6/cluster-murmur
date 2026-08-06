@@ -25,6 +25,55 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
     assert Map.has_key?(configuration.triggers.triggers, "monitoring-failure")
     assert configuration.routing.webhook_secret_file_env == "DISCORD_WEBHOOK_SECRET_FILE"
     assert configuration.llm == llm()
+    assert Configuration.validate(configuration) == :ok
+  end
+
+  test "revalidates exact category values and catalog references", context do
+    assert {:ok, configuration} = Configuration.parse(context.config, document_set(context))
+
+    for field <- [:event_groups, :personas, :bindings, :triggers, :routing, :llm] do
+      assert configuration
+             |> Map.put(field, nil)
+             |> Configuration.validate() == {:error, :invalid_configuration}
+    end
+
+    for invalid <- [
+          %{configuration | version: 1.0},
+          Map.put(configuration, :private, true),
+          put_in(
+            configuration.event_groups.groups["operations"].reply_probability,
+            2
+          ),
+          put_in(configuration.personas.personas["observer"].display_name, ""),
+          put_in(configuration.bindings.bindings["monitoring"].candidates, []),
+          put_in(configuration.triggers.triggers["monitoring-failure"].cooldown_ms, -1),
+          %{
+            configuration
+            | routing: %{configuration.routing | webhook_secret_file_env: "bad-name"}
+          },
+          %{configuration | llm: %{configuration.llm | timeout_ms: 0}}
+        ] do
+      assert Configuration.validate(invalid) == {:error, :invalid_configuration}
+    end
+
+    unknown_group = put_in(configuration.bindings.bindings["monitoring"].group, "missing")
+
+    assert Configuration.validate(unknown_group) ==
+             {:error, {:catalog, :unknown_binding_group}}
+
+    unknown_persona =
+      put_in(configuration.bindings.bindings["monitoring"].candidates, [
+        %{persona: "missing", weight: 1}
+      ])
+
+    assert Configuration.validate(unknown_persona) ==
+             {:error, {:catalog, :unknown_binding_persona}}
+
+    unknown_trigger_binding =
+      put_in(configuration.triggers.triggers["monitoring-failure"].binding, "missing")
+
+    assert Configuration.validate(unknown_trigger_binding) ==
+             {:error, :unknown_trigger_binding}
   end
 
   test "rejects event triggers that reference unknown bindings", context do
@@ -50,6 +99,21 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
 
     assert %{action: :emit_event, event: %{group: "operations"}} =
              configuration.triggers.triggers["daily-summary"]
+
+    assert Configuration.validate(configuration) == :ok
+
+    invalid_timezone =
+      put_in(configuration.triggers.triggers["daily-summary"].timezone, "Missing/Zone")
+
+    assert Configuration.validate(invalid_timezone) == {:error, :invalid_configuration}
+
+    forged_cron =
+      Map.put(configuration.triggers.triggers["daily-summary"].cron, :private, :payload)
+
+    forged_configuration =
+      put_in(configuration.triggers.triggers["daily-summary"].cron, forged_cron)
+
+    assert Configuration.validate(forged_configuration) == {:error, :invalid_configuration}
   end
 
   test "rejects schedule triggers that emit into unknown groups", context do
@@ -80,6 +144,16 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
 
     assert %{distribution: :shifted_exponential, event: %{group: "operations"}} =
              configuration.triggers.triggers["ambient"]
+
+    assert Configuration.validate(configuration) == :ok
+
+    equal_intervals =
+      put_in(
+        configuration.triggers.triggers["ambient"].mean_interval_ms,
+        configuration.triggers.triggers["ambient"].minimum_interval_ms
+      )
+
+    assert Configuration.validate(equal_intervals) == {:error, :invalid_configuration}
   end
 
   test "rejects stochastic triggers that emit into unknown groups", context do
