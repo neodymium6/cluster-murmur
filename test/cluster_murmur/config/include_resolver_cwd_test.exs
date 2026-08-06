@@ -2,15 +2,12 @@ defmodule ClusterMurmur.Config.IncludeResolverCwdTest do
   use ExUnit.Case, async: false
 
   alias ClusterMurmur.Config.IncludeResolver
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   test "normalizes an unavailable current directory for relative config paths" do
     original_cwd = File.cwd!()
 
-    test_root =
-      Path.join(
-        System.tmp_dir!(),
-        "cluster-murmur-cwd-test-#{System.unique_integer([:positive])}"
-      )
+    test_root = PrivateTmpDir.create!("cluster-murmur-cwd-test")
 
     vanished_cwd = Path.join(test_root, "vanished")
     File.mkdir_p!(vanished_cwd)

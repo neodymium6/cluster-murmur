@@ -3,15 +3,10 @@ defmodule ClusterMurmur.Discord.WebhookSettingsTest do
 
   alias ClusterMurmur.Config.Routing
   alias ClusterMurmur.Discord.WebhookSettings
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   setup do
-    test_root =
-      Path.join(
-        System.tmp_dir!(),
-        "cluster-murmur-webhook-settings-test-#{System.unique_integer([:positive])}"
-      )
-
-    File.mkdir_p!(test_root)
+    test_root = PrivateTmpDir.create!("cluster-murmur-webhook-settings-test")
     on_exit(fn -> File.rm_rf!(test_root) end)
     %{test_root: test_root}
   end

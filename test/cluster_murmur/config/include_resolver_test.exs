@@ -2,13 +2,10 @@ defmodule ClusterMurmur.Config.IncludeResolverTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Config.IncludeResolver
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   setup do
-    test_root =
-      Path.join(
-        System.tmp_dir!(),
-        "cluster-murmur-include-test-#{System.unique_integer([:positive])}"
-      )
+    test_root = PrivateTmpDir.create!("cluster-murmur-include-test")
 
     config_root = Path.join(test_root, "config")
     config_file = Path.join(config_root, "cluster-murmur.yaml")

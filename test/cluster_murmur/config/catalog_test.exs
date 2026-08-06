@@ -2,10 +2,10 @@ defmodule ClusterMurmur.Config.CatalogTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Config.{Catalog, DocumentSet, LLM, LoadedDocument, Manifest}
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   setup do
-    root =
-      Path.join(System.tmp_dir!(), "cluster-murmur-catalog-#{System.unique_integer([:positive])}")
+    root = PrivateTmpDir.create!("cluster-murmur-catalog")
 
     config = write(root, "cluster-murmur.yaml", "version: 1\n")
     persona_source = write(root, "personas/observer.yaml", "personas: []\n")

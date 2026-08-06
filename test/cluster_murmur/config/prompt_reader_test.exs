@@ -2,13 +2,10 @@ defmodule ClusterMurmur.Config.PromptReaderTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Config.PromptReader
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   setup do
-    test_root =
-      Path.join(
-        System.tmp_dir!(),
-        "cluster-murmur-prompt-test-#{System.unique_integer([:positive])}"
-      )
+    test_root = PrivateTmpDir.create!("cluster-murmur-prompt-test")
 
     config_root = Path.join(test_root, "config")
     config_file = write_fixture(config_root, "cluster-murmur.yaml", "version: 1\n")

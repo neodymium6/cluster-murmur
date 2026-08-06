@@ -3,13 +3,10 @@ defmodule ClusterMurmur.Config.PersonasTest do
 
   alias ClusterMurmur.Config.{LoadedDocument, Personas}
   alias ClusterMurmur.Personas.Persona
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   setup do
-    root =
-      Path.join(
-        System.tmp_dir!(),
-        "cluster-murmur-personas-#{System.unique_integer([:positive])}"
-      )
+    root = PrivateTmpDir.create!("cluster-murmur-personas")
 
     config = write(root, "cluster-murmur.yaml", "version: 1\n")
     first = write(root, "personas/first.yaml", "personas: []\n")
