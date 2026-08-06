@@ -146,7 +146,11 @@ defmodule ClusterMurmur.Observers.Client do
 end
 
 defmodule ClusterMurmur.Generation.Provider do
-  @callback generate(ClusterMurmur.Generation.PromptRequest.t()) ::
+  @callback generate(
+              ClusterMurmur.Generation.PromptRequest.t(),
+              ClusterMurmur.Generation.ProviderSettings.t(),
+              (ClusterMurmur.Generation.OpenAICompatibleRequest.t() -> term())
+            ) ::
               {:ok, String.t()} | {:error, ClusterMurmur.ExternalError.t()}
 end
 
@@ -171,6 +175,11 @@ end
 Tests must be able to replace every behaviour with a deterministic fake.
 Persistence must similarly remain behind repository or store boundaries so
 selection and conversation policy do not depend directly on Ecto queries.
+
+The OpenAI-compatible provider adapter revalidates one fixed request before one
+injected transport call. It performs no retry and returns only decoded content
+or stable external error classes; raw provider responses and diagnostics remain
+inside the adapter boundary.
 
 Discord publication claims one exact durable `started` attempt immediately
 before invoking the injected transport. Only the compare-and-set winner may

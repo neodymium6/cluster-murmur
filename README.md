@@ -102,8 +102,10 @@ revalidates those settings and the complete structured prompt, then encodes only
 the chat-completions path, headers, JSON shape, and bounded transport options
 without connecting. A bounded OpenAI-compatible response decoder extracts only
 one string message from a single choice and maps status families to stable error
-classes without exposing raw provider diagnostics. A Discord settings boundary
-likewise resolves exactly one
+classes without exposing raw provider diagnostics. A narrow provider adapter
+revalidates that fixed request, invokes one injected transport exactly once,
+and returns only decoded content or stable errors without retrying. A Discord
+settings boundary likewise resolves exactly one
 bounded incoming-webhook credential from the validated default route, restricts
 it to Discord's fixed HTTPS URL shape, and performs no publication. A fixed
 Discord payload boundary combines an unpublished message with its exact enabled
@@ -138,7 +140,8 @@ the correctly rolled-over local-date count before claiming. A redacted pure
 plan rechecks claimed execution eligibility and assembles only the supplied
 event facts and completion values. External execution and exactly-once delivery
 are not implemented. Observation ingestion, trigger
-execution, LLM generation, and Discord publication are not implemented yet. Do
+execution, LLM generation orchestration, and Discord publication orchestration
+are not implemented yet. Do
 not deploy this revision or connect it to infrastructure, model providers, or
 Discord.
 
