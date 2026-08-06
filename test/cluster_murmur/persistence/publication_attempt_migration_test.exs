@@ -11,6 +11,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptMigrationTest do
   alias ClusterMurmur.Repo
 
   alias ClusterMurmur.Repo.Migrations.{
+    AddPublicationAttemptDispatching,
     CreateConversations,
     CreateEvents,
     CreateMessages,
@@ -21,13 +22,15 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptMigrationTest do
   @conversation_version 20_260_805_200_000
   @message_version 20_260_805_220_000
   @attempt_version 20_260_805_230_000
+  @dispatching_version 20_260_805_231_000
 
   setup_all do
     for {version, migration} <- [
           {@event_version, CreateEvents},
           {@conversation_version, CreateConversations},
           {@message_version, CreateMessages},
-          {@attempt_version, CreatePublicationAttempts}
+          {@attempt_version, CreatePublicationAttempts},
+          {@dispatching_version, AddPublicationAttemptDispatching}
         ] do
       assert Ecto.Migrator.up(Repo, version, migration,
                log: false,
@@ -38,6 +41,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptMigrationTest do
 
     on_exit(fn ->
       for {version, migration} <- [
+            {@dispatching_version, AddPublicationAttemptDispatching},
             {@attempt_version, CreatePublicationAttempts},
             {@message_version, CreateMessages},
             {@conversation_version, CreateConversations},
@@ -118,6 +122,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptMigrationTest do
     terminal = ~U[2026-08-05 12:03:00.000000Z]
 
     valid = [
+      %{started(message.id) | status: :dispatching},
       %{started(message.id) | status: :succeeded, completed_at: terminal},
       %{started(message.id) | status: :failed, completed_at: terminal, error_class: :timeout},
       %{
@@ -135,6 +140,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptMigrationTest do
 
     invalid = [
       %{started(message.id) | status: :started, completed_at: terminal},
+      %{started(message.id) | status: :dispatching, completed_at: terminal},
       %{started(message.id) | status: :succeeded, completed_at: terminal, error_class: :timeout},
       %{started(message.id) | status: :failed, completed_at: terminal},
       %{
@@ -155,6 +161,36 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptMigrationTest do
     for attempt <- invalid do
       assert_raise Ecto.ConstraintError, fn -> Repo.insert!(attempt) end
     end
+  end
+
+  test "downgrade conservatively converts a dispatch claim to ambiguous", %{message: message} do
+    assert {:ok, dispatching} = Repo.insert(%{started(message.id) | status: :dispatching})
+
+    assert Ecto.Migrator.down(Repo, @dispatching_version, AddPublicationAttemptDispatching,
+             log: false,
+             log_migrations_sql: false,
+             log_migrator_sql: false
+           ) == :ok
+
+    try do
+      assert %{rows: [["ambiguous", completed_at, "interrupted"]]} =
+               Ecto.Adapters.SQL.query!(
+                 Repo,
+                 "SELECT status, completed_at, error_class FROM publication_attempts",
+                 [],
+                 log: false
+               )
+
+      assert completed_at == DateTime.to_iso8601(dispatching.started_at)
+    after
+      assert Ecto.Migrator.up(Repo, @dispatching_version, AddPublicationAttemptDispatching,
+               log: false,
+               log_migrations_sql: false,
+               log_migrator_sql: false
+             ) == :ok
+    end
+
+    assert Repo.get!(PublicationAttemptRecord, message.id).status == :ambiguous
   end
 
   defp started(message_id) do

@@ -75,4 +75,11 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand(
+    "../priv/repo/migrations/20260805231000_add_publication_attempt_dispatching.exs",
+    __DIR__
+  )
+)
+
 ExUnit.start()

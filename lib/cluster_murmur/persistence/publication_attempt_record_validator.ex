@@ -47,10 +47,11 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptRecordValidator do
   defp valid_message_id?(id), do: is_integer(id) and id in 1..@max_sqlite_integer
 
   defp valid_lifecycle?(%PublicationAttemptRecord{
-         status: :started,
+         status: status,
          completed_at: nil,
          error_class: nil
-       }),
+       })
+       when status in [:started, :dispatching],
        do: true
 
   defp valid_lifecycle?(
