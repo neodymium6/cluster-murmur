@@ -199,6 +199,10 @@ stable order, requires normalized observation identity to match that target,
 and delegates each accepted value to atomic ingestion. Per-target failures are
 classified without stopping the remaining bounded batch or exposing target
 data; catalog and startup-input failures stop before observation calls.
+One matched event trigger can then be planned and durably authorized without
+executing its action. Only an exact redacted started capability whose event,
+trigger, execution instant, and cooldown projection still match the plan may
+cross into later action orchestration.
 
 `Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
 finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`
