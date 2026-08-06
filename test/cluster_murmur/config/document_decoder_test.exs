@@ -2,6 +2,7 @@ defmodule ClusterMurmur.Config.DocumentDecoderTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Config.DocumentDecoder
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   @max_document_bytes 256 * 1_024
   @max_scalar_bytes 16 * 1_024
@@ -133,13 +134,7 @@ defmodule ClusterMurmur.Config.DocumentDecoderTest do
   end
 
   defp temporary_path(name) do
-    directory =
-      Path.join(
-        System.tmp_dir!(),
-        "cluster-murmur-document-decoder-#{System.unique_integer([:positive])}"
-      )
-
-    File.mkdir_p!(directory)
+    directory = PrivateTmpDir.create!("cluster-murmur-document-decoder")
     on_exit(fn -> File.rm_rf!(directory) end)
     Path.join(directory, name)
   end

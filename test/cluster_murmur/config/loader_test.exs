@@ -3,13 +3,10 @@ defmodule ClusterMurmur.Config.LoaderTest do
 
   alias ClusterMurmur.Config.{Catalog, Configuration, DocumentSet, LLM, LoadedDocument}
   alias ClusterMurmur.Config.{LoadPlan, Loader, Manifest}
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   setup do
-    test_root =
-      Path.join(
-        System.tmp_dir!(),
-        "cluster-murmur-loader-test-#{System.unique_integer([:positive])}"
-      )
+    test_root = PrivateTmpDir.create!("cluster-murmur-loader-test")
 
     config_root = Path.join(test_root, "config")
     config_file = Path.join(config_root, "cluster-murmur.yaml")

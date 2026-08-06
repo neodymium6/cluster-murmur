@@ -2,13 +2,10 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Config.{Configuration, DocumentSet, LLM, LoadedDocument, Manifest}
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   setup do
-    root =
-      Path.join(
-        System.tmp_dir!(),
-        "cluster-murmur-configuration-#{System.unique_integer([:positive])}"
-      )
+    root = PrivateTmpDir.create!("cluster-murmur-configuration")
 
     config = write(root, "cluster-murmur.yaml", "version: 1\n")
     persona_source = write(root, "personas/observer.yaml", "personas: []\n")

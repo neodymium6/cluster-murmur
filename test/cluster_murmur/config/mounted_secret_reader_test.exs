@@ -2,15 +2,10 @@ defmodule ClusterMurmur.Config.MountedSecretReaderTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Config.MountedSecretReader
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   setup do
-    test_root =
-      Path.join(
-        System.tmp_dir!(),
-        "cluster-murmur-secret-test-#{System.unique_integer([:positive])}"
-      )
-
-    File.mkdir_p!(test_root)
+    test_root = PrivateTmpDir.create!("cluster-murmur-secret-test")
     on_exit(fn -> File.rm_rf!(test_root) end)
 
     %{test_root: test_root}

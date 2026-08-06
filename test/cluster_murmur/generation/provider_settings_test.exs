@@ -3,15 +3,10 @@ defmodule ClusterMurmur.Generation.ProviderSettingsTest do
 
   alias ClusterMurmur.Config.LLM
   alias ClusterMurmur.Generation.ProviderSettings
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   setup do
-    test_root =
-      Path.join(
-        System.tmp_dir!(),
-        "cluster-murmur-provider-settings-test-#{System.unique_integer([:positive])}"
-      )
-
-    File.mkdir_p!(test_root)
+    test_root = PrivateTmpDir.create!("cluster-murmur-provider-settings-test")
     api_key_path = Path.join(test_root, "api-key")
     File.write!(api_key_path, "clearly-fake-api-key-value\n")
     on_exit(fn -> File.rm_rf!(test_root) end)
