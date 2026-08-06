@@ -5,6 +5,7 @@ defmodule ClusterMurmur.ReleaseTest do
   import ExUnit.CaptureLog
 
   alias ClusterMurmur.{Release, Repo}
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   @migration_versions [
     20_260_804_130_000,
@@ -160,12 +161,7 @@ defmodule ClusterMurmur.ReleaseTest do
   end
 
   defp private_database_root do
-    root =
-      Path.join(System.tmp_dir!(), "cluster-murmur-release-#{System.unique_integer([:positive])}")
-
-    File.mkdir_p!(root)
-    File.chmod!(root, 0o700)
-    root
+    PrivateTmpDir.create!("cluster-murmur-release")
   end
 
   defp application_started?(application) do

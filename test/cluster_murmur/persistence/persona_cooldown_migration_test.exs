@@ -3,6 +3,7 @@ defmodule ClusterMurmur.Persistence.PersonaCooldownMigrationTest do
 
   alias ClusterMurmur.Repo
   alias ClusterMurmur.Repo.Migrations.CreatePersonaCooldowns
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   @migration_version 20_260_805_224_000
 
@@ -110,14 +111,7 @@ defmodule ClusterMurmur.Persistence.PersonaCooldownMigrationTest do
   end
 
   defp private_database_path do
-    root =
-      Path.join(
-        System.tmp_dir!(),
-        "cluster-murmur-persona-cooldown-migration-#{System.unique_integer([:positive])}"
-      )
-
-    File.mkdir_p!(root)
-    File.chmod!(root, 0o700)
+    root = PrivateTmpDir.create!("cluster-murmur-persona-cooldown-migration")
     {root, Path.join(root, "migration.sqlite3")}
   end
 end

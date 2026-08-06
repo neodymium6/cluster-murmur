@@ -2,6 +2,7 @@ defmodule ClusterMurmur.Persistence.ConversationRecordMigrationTest do
   use ExUnit.Case, async: false
 
   alias ClusterMurmur.Repo
+  alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   alias ClusterMurmur.Repo.Migrations.{
     AddIncompleteConversationIndex,
@@ -212,14 +213,7 @@ defmodule ClusterMurmur.Persistence.ConversationRecordMigrationTest do
   end
 
   defp private_database_path do
-    root =
-      Path.join(
-        System.tmp_dir!(),
-        "cluster-murmur-conversation-migration-#{System.unique_integer([:positive])}"
-      )
-
-    File.mkdir_p!(root)
-    File.chmod!(root, 0o700)
+    root = PrivateTmpDir.create!("cluster-murmur-conversation-migration")
     {root, Path.join(root, "migration.sqlite3")}
   end
 end
