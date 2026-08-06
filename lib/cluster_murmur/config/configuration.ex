@@ -8,12 +8,30 @@ defmodule ClusterMurmur.Config.Configuration do
   """
 
   alias ClusterMurmur.Config.{Bindings, Catalog, DocumentSet, EventGroups, LLM}
-  alias ClusterMurmur.Config.{ConfigurationValidator, Personas, Routing, Triggers}
+  alias ClusterMurmur.Config.{ConfigurationValidator, Personas, Routing, StateTracking, Triggers}
   alias ClusterMurmur.Triggers.{EventTrigger, ScheduleTrigger, StochasticTrigger}
 
   @derive {Inspect, only: [:version]}
-  @enforce_keys [:version, :event_groups, :personas, :bindings, :triggers, :routing, :llm]
-  defstruct [:version, :event_groups, :personas, :bindings, :triggers, :routing, :llm]
+  @enforce_keys [
+    :version,
+    :event_groups,
+    :personas,
+    :bindings,
+    :triggers,
+    :routing,
+    :llm,
+    :state_tracking
+  ]
+  defstruct [
+    :version,
+    :event_groups,
+    :personas,
+    :bindings,
+    :triggers,
+    :routing,
+    :llm,
+    :state_tracking
+  ]
 
   @type t :: %__MODULE__{
           version: 1,
@@ -22,7 +40,8 @@ defmodule ClusterMurmur.Config.Configuration do
           bindings: Bindings.t(),
           triggers: Triggers.t(),
           routing: Routing.t(),
-          llm: LLM.t()
+          llm: LLM.t(),
+          state_tracking: StateTracking.t()
         }
 
   @type error ::
@@ -50,7 +69,8 @@ defmodule ClusterMurmur.Config.Configuration do
          bindings: catalog.bindings,
          triggers: triggers,
          routing: routing,
-         llm: document_set.manifest.llm
+         llm: document_set.manifest.llm,
+         state_tracking: document_set.manifest.state_tracking
        }}
     end
   end

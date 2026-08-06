@@ -20,7 +20,8 @@ decoding of the included YAML documents are implemented. A value-free Draft 7
 validation adapter for application-owned schemas and bounded event-group, persona,
 binding, routing, LLM-provider, and event-trigger validation, cross-category
 character catalog assembly, and complete startup configuration assembly are
-implemented. A fixed
+implemented. The top-level startup value also normalizes fixed state-tracking
+defaults or one exact explicit mapping. A fixed
 top-level file includes files by category:
 
 ```text
@@ -48,6 +49,10 @@ The top-level file declares the configuration version and includes:
 ```yaml
 version: 1
 
+state_tracking:
+  failures_required: 2
+  successes_required: 2
+
 llm:
   provider: openai_compatible
   base_url_env: CLUSTER_MURMUR_LLM_BASE_URL
@@ -69,11 +74,12 @@ includes:
     - routing.yaml
 ```
 
-The version 1 manifest contains exactly `version`, `llm`, and `includes`. All
-three fields and all five include categories shown above must be present, even
-when an include category has no patterns. Unknown fields or categories are
-invalid. Category values are lists of strings. The 64-pattern limit applies to
-the sum across every category, not separately to each resolver call.
+The version 1 manifest requires exactly `version`, `llm`, and `includes`, and
+optionally accepts the `state_tracking` mapping shown above. Omitting it uses
+the fixed two-failure and two-success defaults. All five include categories
+must be present, even when a category has no patterns. Every other field or
+category is invalid. Category values are lists of strings. The 64-pattern limit
+applies to the sum across every category, not separately to each resolver call.
 
 Relative paths are resolved from the directory containing the top-level file.
 Version 1 include paths use portable ASCII characters and support only
@@ -274,9 +280,9 @@ the same bounded positive-integer fields and are resolved by semantic
 validation. The exact override syntax will be added to version 1 before the
 observation adapter is considered complete.
 
-The implemented state-tracking boundary now normalizes the two fixed default
-counts and exact explicit mappings to the runtime debounce policy. Startup
-manifest integration and override precedence remain later configuration work.
+The startup manifest and complete configuration normalize the two fixed default
+counts or an exact explicit mapping to the runtime debounce policy. Override
+precedence remains later configuration work.
 
 Complete LLM payload retention remains disabled by default. Enabling it does
 not permit credentials, private endpoints, or unrelated source data to be

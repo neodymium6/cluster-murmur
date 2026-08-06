@@ -2,7 +2,7 @@ defmodule ClusterMurmur.Config.LoaderTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Config.{Catalog, Configuration, DocumentSet, LLM, LoadedDocument}
-  alias ClusterMurmur.Config.{LoadPlan, Loader, Manifest}
+  alias ClusterMurmur.Config.{LoadPlan, Loader, Manifest, StateTracking}
   alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   setup do
@@ -310,6 +310,9 @@ defmodule ClusterMurmur.Config.LoaderTest do
 
     assert configuration.llm == llm()
 
+    assert configuration.state_tracking ==
+             %StateTracking{failures_required: 3, successes_required: 4}
+
     assert %{action: :emit_event, timezone: "Asia/Tokyo"} =
              configuration.triggers.triggers["daily-summary"]
 
@@ -394,6 +397,9 @@ defmodule ClusterMurmur.Config.LoaderTest do
   defp catalog_manifest do
     """
     version: 1
+    state_tracking:
+      failures_required: 3
+      successes_required: 4
     llm:
       provider: openai_compatible
       base_url_env: LLM_BASE_URL
@@ -416,6 +422,9 @@ defmodule ClusterMurmur.Config.LoaderTest do
   defp configuration_manifest do
     """
     version: 1
+    state_tracking:
+      failures_required: 3
+      successes_required: 4
     llm:
       provider: openai_compatible
       base_url_env: LLM_BASE_URL

@@ -2,6 +2,7 @@ defmodule ClusterMurmur.StartupTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Config.Configuration
+  alias ClusterMurmur.Config.StateTracking
   alias ClusterMurmur.RuntimeSettings
   alias ClusterMurmur.Startup
   alias ClusterMurmur.Startup.Prepared
@@ -37,6 +38,10 @@ defmodule ClusterMurmur.StartupTest do
              Startup.prepare(context.config_path, environment(context))
 
     assert %Configuration{version: 1} = prepared.configuration
+
+    assert prepared.configuration.state_tracking ==
+             %StateTracking{failures_required: 3, successes_required: 4}
+
     assert %RuntimeSettings{} = prepared.runtime_settings
     assert Startup.validate(prepared) == :ok
     assert inspect(prepared) == "#ClusterMurmur.Startup.Prepared<...>"
@@ -113,6 +118,9 @@ defmodule ClusterMurmur.StartupTest do
   defp manifest do
     """
     version: 1
+    state_tracking:
+      failures_required: 3
+      successes_required: 4
     llm:
       provider: openai_compatible
       base_url_env: LLM_BASE_URL

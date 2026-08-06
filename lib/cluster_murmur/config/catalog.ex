@@ -14,7 +14,8 @@ defmodule ClusterMurmur.Config.Catalog do
     LLM,
     LoadedDocument,
     Manifest,
-    Personas
+    Personas,
+    StateTracking
   }
 
   @categories [:event_groups, :personas, :bindings, :triggers, :routing]
@@ -74,18 +75,27 @@ defmodule ClusterMurmur.Config.Catalog do
 
   defp validate_document_set(_document_set), do: {:error, :invalid_catalog}
 
-  defp validate_manifest(%Manifest{version: 1, includes: includes, llm: llm} = manifest)
+  defp validate_manifest(
+         %Manifest{
+           version: 1,
+           includes: includes,
+           llm: llm,
+           state_tracking: state_tracking
+         } = manifest
+       )
        when is_map(includes) do
     if map_size(includes) == length(@categories) and
          Enum.sort(Map.keys(includes)) == Enum.sort(@categories) do
       decoded_includes = Map.new(@categories, &{Atom.to_string(&1), Map.fetch!(includes, &1)})
 
       with {:ok, llm_document} <- LLM.to_document(llm),
+           {:ok, state_tracking_document} <- StateTracking.to_document(state_tracking),
            {:ok, ^manifest} <-
              Manifest.parse(%{
                "version" => 1,
                "includes" => decoded_includes,
-               "llm" => llm_document
+               "llm" => llm_document,
+               "state_tracking" => state_tracking_document
              }) do
         :ok
       else

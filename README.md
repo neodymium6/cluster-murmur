@@ -128,7 +128,9 @@ atomic observation-ingestion store now restores prior state, delegates the
 factual debounce and event decision to the pure planner, and commits the next
 state with its optional event or rolls both back. A closed state-tracking
 configuration value now validates the fixed failure and success counts and
-projects them to the only runtime debounce policy shape. Standard
+projects them to the only runtime debounce policy shape. The startup manifest
+and complete public configuration carry either those defaults or one exact
+explicit mapping before any worker construction. Standard
 five-field schedule-trigger and bounded
 shifted-exponential stochastic-trigger validation use a reviewed, embedded IANA
 timezone snapshot without runtime updates. Pure shifted-exponential next-run

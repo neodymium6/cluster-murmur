@@ -2,7 +2,7 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
   @moduledoc false
 
   alias ClusterMurmur.Config.{Bindings, Configuration, EventGroups, LLM, Personas}
-  alias ClusterMurmur.Config.{Routing, Triggers, Value}
+  alias ClusterMurmur.Config.{Routing, StateTracking, Triggers, Value}
   alias ClusterMurmur.DomainLimits
   alias ClusterMurmur.Personas.{BindingValidator, Validator, Persona}
   alias ClusterMurmur.Triggers.{ActiveHours, CronValidator, EmittedEvent, EventTrigger}
@@ -28,6 +28,7 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
   def validate(%Configuration{} = configuration) do
     with true <- exact_keys?(configuration, @configuration_keys),
          true <- configuration.version === 1,
+         :ok <- validate_state_tracking(configuration.state_tracking),
          :ok <- validate_event_groups(configuration.event_groups),
          :ok <- validate_personas(configuration.personas),
          :ok <- validate_bindings(configuration.bindings),
@@ -49,6 +50,13 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
   end
 
   def validate(_configuration), do: {:error, :invalid_configuration}
+
+  defp validate_state_tracking(state_tracking) do
+    case StateTracking.validate(state_tracking) do
+      :ok -> :ok
+      {:error, :invalid_state_tracking_configuration} -> {:error, :invalid_configuration}
+    end
+  end
 
   defp validate_event_groups(%EventGroups{groups: groups} = event_groups) do
     if exact_keys?(event_groups, @event_groups_keys) and bounded_map?(groups) and
