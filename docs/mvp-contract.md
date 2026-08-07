@@ -253,6 +253,13 @@ Before an external request, the complete publication plan is revalidated and an
 exact durable `started` attempt is recorded for the committed message. Only a
 loaded attempt correlated with that message and an injected start instant at or
 after message insertion may cross into dispatch claiming.
+Publication execution revalidates that complete capability and delegates one
+durable dispatch claim plus one transport call to the fixed publisher boundary.
+Only its exact correlated `dispatching` projection may be closed. A proven
+success atomically records both the terminal attempt and Discord message ID; a
+known rejection records a classified failure; and an unknowable effect records
+an ambiguous terminal result that this boundary never retries. Returned
+capabilities exclude request, response, diagnostic, and credential values.
 
 `Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
 finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`

@@ -179,7 +179,11 @@ planner now resolves the exact selected persona from current configuration and
 builds a fixed mention-disabled Discord payload from the committed message and
 current webhook settings. A narrow boundary now records an exact durable
 publication attempt for that plan before any external request. Dispatch claim,
-publication transport execution, and terminal outcome recording remain
+publication transport execution, and terminal outcome recording now cross one
+narrow boundary: it revalidates the started capability, delegates one durable
+claim and injected publisher call, and atomically records exact success,
+classified failure, or an ambiguous effect without retrying. Cooldown updates,
+conversation advancement, and end-to-end runtime orchestration remain
 unimplemented. Do not deploy this revision or connect it to
 infrastructure, model providers, or Discord.
 
