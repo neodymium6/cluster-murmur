@@ -244,6 +244,11 @@ loaded conversation plus unpublished message are passed to one atomic append.
 Only an exact loaded message equal to the generated facts and an exact active
 conversation with both turn and LLM-call counters advanced by one may cross
 into publication planning.
+Publication planning revalidates that complete capability, resolves the exact
+selected starter from current configuration, and combines it with current exact
+webhook settings. Only the committed unpublished message, that persona's
+bounded display identity, and a mention-disabled fixed payload cross into later
+publication execution.
 
 `Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
 finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`
