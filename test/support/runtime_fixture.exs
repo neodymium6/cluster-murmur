@@ -6,8 +6,17 @@ defmodule ClusterMurmur.TestSupport.RuntimeFixture do
   alias ClusterMurmur.Config.Personas, as: PersonaCatalog
   alias ClusterMurmur.Events.{Event, Matcher}
   alias ClusterMurmur.Events.Matcher.Predicate
-  alias ClusterMurmur.Generation.{ProviderSettings, StarterGenerationPlanner}
-  alias ClusterMurmur.Persistence.{ConversationRecord, TriggerExecution}
+  alias ClusterMurmur.Discord.WebhookSettings
+
+  alias ClusterMurmur.Generation.{
+    ProviderSettings,
+    StarterGenerationPlanner,
+    StarterGenerator,
+    StarterMessagePersister
+  }
+
+  alias ClusterMurmur.Generation.StarterMessagePersister.Persisted
+  alias ClusterMurmur.Persistence.{ConversationRecord, MessageRecord, TriggerExecution}
   alias ClusterMurmur.Personas.{Binding, Persona}
 
   alias ClusterMurmur.Triggers.{
@@ -163,6 +172,57 @@ defmodule ClusterMurmur.TestSupport.RuntimeFixture do
       timeout_ms: 20_000,
       max_output_tokens: 300
     }
+  end
+
+  def webhook_settings do
+    %WebhookSettings{url: Enum.join(["https://", "discord", ".com/api/webhooks/1/fake-token"])}
+  end
+
+  def generated(configuration \\ configuration(), event \\ event()) do
+    {:ok, generated} =
+      StarterGenerator.generate(
+        generation_plan(configuration, event),
+        configuration,
+        %{},
+        provider_settings(),
+        ~U[2026-08-07 02:00:01.000000Z],
+        __MODULE__.FakeProvider,
+        fn :request -> {:ok, "A bounded fact."} end
+      )
+
+    generated
+  end
+
+  def persisted(configuration \\ configuration(), event \\ event()) do
+    generated = generated(configuration, event)
+    original = generated.plan.started.conversation
+
+    message =
+      %MessageRecord{
+        id: 1,
+        conversation_id: generated.message.conversation_id,
+        persona_id: generated.message.persona_id,
+        origin: generated.message.origin,
+        content: generated.message.content,
+        discord_message_id: nil,
+        inserted_at: generated.message.inserted_at
+      }
+      |> Ecto.put_meta(state: :loaded)
+
+    conversation = %ConversationRecord{
+      original
+      | turn_count: original.turn_count + 1,
+        llm_call_count: original.llm_call_count + 1
+    }
+
+    result = %Persisted{generated: generated, message: message, conversation: conversation}
+    :ok = StarterMessagePersister.validate(result, configuration, %{})
+    result
+  end
+
+  defmodule FakeProvider do
+    @moduledoc false
+    def generate(_request, _settings, transport), do: transport.(:request)
   end
 
   defmodule FirstRandom do

@@ -174,8 +174,11 @@ provider exactly once, normalizes accepted output, and resolves every provider
 or output failure to the fixed deterministic fallback before returning a typed
 unpublished message. A narrow persistence boundary now atomically appends that
 message and advances the durable conversation turn and LLM-call counters once,
-returning only exact correlated loaded capabilities. Publication action
-execution remains unimplemented. Do not deploy this revision or connect it to
+returning only exact correlated loaded capabilities. A pure starter-publication
+planner now resolves the exact selected persona from current configuration and
+builds a fixed mention-disabled Discord payload from the committed message and
+current webhook settings. Publication action execution remains unimplemented.
+Do not deploy this revision or connect it to
 infrastructure, model providers, or Discord.
 
 ## Boundary
