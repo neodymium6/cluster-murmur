@@ -266,6 +266,11 @@ adding the exact current persona's bounded configured cooldown, with an omitted
 optional cooldown treated as zero. Only those three exact facts cross into the
 monotonic persona-cooldown store. Failed and ambiguous publication outcomes do
 not record a confirmed spoken fact.
+After cooldown recording, the exact binding group crosses the existing reply
+gate. An explicit reply leaves the conversation active for bounded responder
+orchestration. An explicit no reply closes the exact conversation advanced by
+the starter append at the durable publication completion instant; only its
+unchanged counters and exact loaded terminal projection may cross the boundary.
 
 `Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
 finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`
