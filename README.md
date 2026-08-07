@@ -166,8 +166,11 @@ supplied bounded cooldown snapshot, select one eligible starter, and produce a
 redacted pristine conversation plan. A narrow action boundary now revalidates
 that exact plan, then atomically persists its pristine conversation and
 compare-and-set completes the durable trigger execution. It returns only a
-correlated redacted one-use start capability. Generation and publication action
-execution remain unimplemented. Do not deploy this revision or connect it to
+correlated redacted one-use start capability. A pure starter-generation planner
+now projects that capability into separated persona instructions, allowlisted
+event facts, fixed creative framing, empty first-turn history, and one exact
+provider-neutral request. Generation and publication action execution remain
+unimplemented. Do not deploy this revision or connect it to
 infrastructure, model providers, or Discord.
 
 ## Boundary

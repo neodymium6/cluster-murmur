@@ -225,6 +225,12 @@ execution, so an authorization can create at most one conversation even when a
 later caller supplies another conversation ID. Only exact loaded conversation
 and completed-execution records correlated with the authorized event and
 planned start instant may cross into later generation orchestration.
+For the first turn, that capability is projected into one exact redacted
+generation plan containing only the selected persona's display identity and
+instructions, allowlisted confirmed event facts, fixed application-owned
+creative framing derived from the validated binding group, and empty
+conversation history. The plan contains a
+provider-neutral structured request and performs no external call.
 
 `Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
 finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`
