@@ -239,6 +239,11 @@ output under Discord's content limit. Accepted output becomes an unpublished
 failure or rejected output becomes the fixed deterministic fallback message.
 The returned redacted capability retains neither credentials nor transport
 values and performs no persistence or publication.
+Before publication, the generated capability is revalidated and its original
+loaded conversation plus unpublished message are passed to one atomic append.
+Only an exact loaded message equal to the generated facts and an exact active
+conversation with both turn and LLM-call counters advanced by one may cross
+into publication planning.
 
 `Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
 finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`
