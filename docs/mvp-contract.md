@@ -231,6 +231,14 @@ instructions, allowlisted confirmed event facts, fixed application-owned
 creative framing derived from the validated binding group, and empty
 conversation history. The plan contains a
 provider-neutral structured request and performs no external call.
+Generation execution revalidates that plan and exact provider settings,
+including exact provider, timeout, and output-token correlation with current
+public configuration. It calls one injected provider exactly once and resolves
+output under Discord's content limit. Accepted output becomes an unpublished
+`llm` message; every provider
+failure or rejected output becomes the fixed deterministic fallback message.
+The returned redacted capability retains neither credentials nor transport
+values and performs no persistence or publication.
 
 `Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
 finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`

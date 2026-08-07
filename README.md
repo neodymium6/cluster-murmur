@@ -169,8 +169,11 @@ compare-and-set completes the durable trigger execution. It returns only a
 correlated redacted one-use start capability. A pure starter-generation planner
 now projects that capability into separated persona instructions, allowlisted
 event facts, fixed creative framing, empty first-turn history, and one exact
-provider-neutral request. Generation and publication action execution remain
-unimplemented. Do not deploy this revision or connect it to
+provider-neutral request. A narrow starter executor now calls one injected
+provider exactly once, normalizes accepted output, and resolves every provider
+or output failure to the fixed deterministic fallback before returning a typed
+unpublished message. Message persistence and publication action execution
+remain unimplemented. Do not deploy this revision or connect it to
 infrastructure, model providers, or Discord.
 
 ## Boundary
