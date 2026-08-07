@@ -182,9 +182,11 @@ publication attempt for that plan before any external request. Dispatch claim,
 publication transport execution, and terminal outcome recording now cross one
 narrow boundary: it revalidates the started capability, delegates one durable
 claim and injected publisher call, and atomically records exact success,
-classified failure, or an ambiguous effect without retrying. Cooldown updates,
-conversation advancement, and end-to-end runtime orchestration remain
-unimplemented. Do not deploy this revision or connect it to
+classified failure, or an ambiguous effect without retrying. A successful
+terminal capability now records the exact selected persona's restart-safe
+cooldown from publication completion and current bounded policy; failed or
+ambiguous outcomes cannot update it. Conversation advancement and end-to-end
+runtime orchestration remain unimplemented. Do not deploy this revision or connect it to
 infrastructure, model providers, or Discord.
 
 ## Boundary

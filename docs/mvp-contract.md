@@ -260,6 +260,12 @@ success atomically records both the terminal attempt and Discord message ID; a
 known rejection records a classified failure; and an unknowable effect records
 an ambiguous terminal result that this boundary never retries. Returned
 capabilities exclude request, response, diagnostic, and credential values.
+After proven publication success, the durable completion instant is the
+persona's authoritative spoken time. Its cooldown deadline is derived only by
+adding the exact current persona's bounded configured cooldown, with an omitted
+optional cooldown treated as zero. Only those three exact facts cross into the
+monotonic persona-cooldown store. Failed and ambiguous publication outcomes do
+not record a confirmed spoken fact.
 
 `Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
 finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`
