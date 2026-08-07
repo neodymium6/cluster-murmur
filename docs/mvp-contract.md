@@ -271,6 +271,13 @@ gate. An explicit reply leaves the conversation active for bounded responder
 orchestration. An explicit no reply closes the exact conversation advanced by
 the starter append at the durable publication completion instant; only its
 unchanged counters and exact loaded terminal projection may cross the boundary.
+The authorized-starter coordinator preflights its complete fixed input and
+adapter contracts before its first mutation, then composes these capability
+boundaries without retry. A SQLite integration test injects fake generation and
+Discord transports and demonstrates exactly one external call at each boundary,
+one published message, a succeeded attempt, a durable persona cooldown, trigger
+authorization consumption, deterministic no reply, and terminal conversation.
+Reusing the consumed input must stop before another external call.
 
 `Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
 finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`
