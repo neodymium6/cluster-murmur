@@ -218,6 +218,13 @@ produces one fully redacted plan containing the exact authorization, binding,
 configured starter, and a validated pristine conversation rooted in the same
 event and execution instant. Planning does not persist the conversation,
 finish the trigger execution, generate content, or publish.
+Immediately before persistence, that complete plan is revalidated against the
+same bounded configuration and cooldown inputs. One transaction inserts the
+pristine conversation and compare-and-set completes the exact started trigger
+execution, so an authorization can create at most one conversation even when a
+later caller supplies another conversation ID. Only exact loaded conversation
+and completed-execution records correlated with the authorized event and
+planned start instant may cross into later generation orchestration.
 
 `Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
 finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`
