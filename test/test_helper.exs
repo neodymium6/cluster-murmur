@@ -1,4 +1,5 @@
 Code.require_file(Path.expand("support/private_tmp_dir.exs", __DIR__))
+Code.require_file(Path.expand("support/runtime_fixture.exs", __DIR__))
 
 Code.require_file(
   Path.expand(
