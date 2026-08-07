@@ -172,8 +172,10 @@ event facts, fixed creative framing, empty first-turn history, and one exact
 provider-neutral request. A narrow starter executor now calls one injected
 provider exactly once, normalizes accepted output, and resolves every provider
 or output failure to the fixed deterministic fallback before returning a typed
-unpublished message. Message persistence and publication action execution
-remain unimplemented. Do not deploy this revision or connect it to
+unpublished message. A narrow persistence boundary now atomically appends that
+message and advances the durable conversation turn and LLM-call counters once,
+returning only exact correlated loaded capabilities. Publication action
+execution remains unimplemented. Do not deploy this revision or connect it to
 infrastructure, model providers, or Discord.
 
 ## Boundary
