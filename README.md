@@ -177,8 +177,10 @@ message and advances the durable conversation turn and LLM-call counters once,
 returning only exact correlated loaded capabilities. A pure starter-publication
 planner now resolves the exact selected persona from current configuration and
 builds a fixed mention-disabled Discord payload from the committed message and
-current webhook settings. Publication action execution remains unimplemented.
-Do not deploy this revision or connect it to
+current webhook settings. A narrow boundary now records an exact durable
+publication attempt for that plan before any external request. Dispatch claim,
+publication transport execution, and terminal outcome recording remain
+unimplemented. Do not deploy this revision or connect it to
 infrastructure, model providers, or Discord.
 
 ## Boundary

@@ -249,6 +249,10 @@ selected starter from current configuration, and combines it with current exact
 webhook settings. Only the committed unpublished message, that persona's
 bounded display identity, and a mention-disabled fixed payload cross into later
 publication execution.
+Before an external request, the complete publication plan is revalidated and an
+exact durable `started` attempt is recorded for the committed message. Only a
+loaded attempt correlated with that message and an injected start instant at or
+after message insertion may cross into dispatch claiming.
 
 `Clock.monotonic_time_ms/0` uses milliseconds. `Random.uniform/0` returns a
 finite value in `[0.0, 1.0)`, and `Random.weighted_choice/1` returns `:empty`
