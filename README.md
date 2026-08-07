@@ -188,7 +188,12 @@ cooldown from publication completion and current bounded policy; failed or
 ambiguous outcomes cannot update it. Conversation advancement and end-to-end
 runtime orchestration remain unimplemented. The existing reply gate now closes
 the exact starter conversation on explicit no reply, while an explicit reply
-remains nonterminal for later responder orchestration. Do not deploy this
+remains nonterminal for later responder orchestration. One narrow coordinator
+now composes an already authorized event through those boundaries. Its
+integration test uses real SQLite stores with fake generation and Discord
+transports, proves the deterministic no-reply conversation terminates, and
+rejects capability reuse before another external call. Observation scheduling,
+recovery, and responder continuation remain unimplemented. Do not deploy this
 revision or connect it to infrastructure, model providers, or Discord.
 
 ## Boundary
