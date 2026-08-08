@@ -152,9 +152,11 @@ event facts and completion values. Configured schedule and stochastic event
 templates now project to bounded immutable events whose identity and occurrence
 time remain identical across retries of one scheduled version and exact
 template; template drift preserves the ID so persistence can fail closed rather
-than accept a duplicate. External stochastic execution and exactly-once
-delivery are not implemented. Event retention and dedupe-window policy also
-remain future work. Observer target responses now pass a
+than accept a duplicate. A narrow SQLite transaction now commits one exact
+projected stochastic event together with its claimed next-run state, rolling
+back either side on conflict. External stochastic worker timing and
+event-trigger dispatch are not implemented. Event retention and dedupe-window
+policy also remain future work. Observer target responses now pass a
 closed 256-entry and 64 KiB identity catalog that rejects duplicates and sorts
 accepted redacted targets before polling. One injected, sequential poll lists
 that catalog once, observes each accepted identity once, and sends only matched
