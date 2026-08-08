@@ -120,6 +120,24 @@ defmodule ClusterMurmur.Triggers.EventDispatchPlanner do
   def validate(_plan, _candidates, _events, _configuration),
     do: {:error, :invalid_event_dispatch_plan}
 
+  @doc "Rebuilds one self-contained plan against the current configuration."
+  @spec validate(term(), term()) :: :ok | {:error, :invalid_event_dispatch_plan}
+  def validate(%Plan{} = plan, configuration) do
+    with true <- exact_plan?(plan),
+         {:ok, candidates, events} <- collect_facts(plan.entries, [], [], 0),
+         :ok <- validate(plan, candidates, events, configuration) do
+      :ok
+    else
+      _failure -> {:error, :invalid_event_dispatch_plan}
+    end
+  rescue
+    _error -> {:error, :invalid_event_dispatch_plan}
+  catch
+    _kind, _reason -> {:error, :invalid_event_dispatch_plan}
+  end
+
+  def validate(_plan, _configuration), do: {:error, :invalid_event_dispatch_plan}
+
   defp build_entries(
          [],
          [],
@@ -192,6 +210,22 @@ defmodule ClusterMurmur.Triggers.EventDispatchPlanner do
          _matches
        ),
        do: {:error, :invalid_event_dispatch_plan}
+
+  defp collect_facts([], candidates, events, _count),
+    do: {:ok, Enum.reverse(candidates), Enum.reverse(events)}
+
+  defp collect_facts(
+         [%Entry{candidate: candidate, event: event} | entries],
+         candidates,
+         events,
+         count
+       )
+       when count < @max_candidates do
+    collect_facts(entries, [candidate | candidates], [event | events], count + 1)
+  end
+
+  defp collect_facts(_entries, _candidates, _events, _count),
+    do: {:error, :invalid_event_dispatch_plan}
 
   defp validate_pair(candidate, event, executed_at, previous) do
     with true <- exact_candidate?(candidate),

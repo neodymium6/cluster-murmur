@@ -19,6 +19,7 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
     AuthorizedConversationPipelineConsumer,
     AuthorizedStarterPipeline,
     AuthorizedStarterPipelineConsumer,
+    EventConversationIdentity,
     PollEventTriggerDispatcher,
     PollEventTriggerPlanner
   }
@@ -28,12 +29,16 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
   alias ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer.Context,
     as: ConversationConsumerContext
 
-  alias ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer.Entry
+  alias ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer.Entry,
+    as: ConversationConsumerEntry
 
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.{Input, SharedInput}
 
   alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.Context,
     as: StarterConsumerContext
+
+  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.Entry,
+    as: StarterConsumerEntry
 
   defmodule ConversationRuntime do
     @moduledoc false
@@ -215,27 +220,58 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
   defp later(left, right), do: if(DateTime.compare(left, right) == :lt, do: right, else: left)
 
   defp build_consumer_context(plan, context, executed_at) do
-    inputs =
-      Enum.flat_map(plan.entries, fn entry ->
-        Enum.map(entry.triggers, fn trigger ->
-          build_input(
-            context.shared_input,
-            conversation_id(entry.event.id, trigger.id, executed_at),
-            executed_at
-          )
+    with {:ok, inputs} <- build_inputs(plan.entries, context.shared_input, executed_at) do
+      case context.conversation_runtime do
+        nil ->
+          build_starter_consumer_context(plan, inputs, context.adapters, executed_at)
+
+        %ConversationRuntime{} = runtime ->
+          build_conversation_consumer_context(plan, inputs, runtime, executed_at)
+
+        _invalid ->
+          {:error, :invalid_poll_starter_cycle}
+      end
+    end
+  end
+
+  defp build_inputs(entries, shared, executed_at) do
+    entries
+    |> expected_matches()
+    |> Enum.reduce_while({:ok, []}, fn {event, trigger}, {:ok, inputs} ->
+      case EventConversationIdentity.derive(event, trigger, executed_at) do
+        {:ok, conversation_id} ->
+          {:cont, {:ok, [build_input(shared, conversation_id, executed_at) | inputs]}}
+
+        {:error, :invalid_event_conversation_identity} ->
+          {:halt, {:error, :invalid_poll_starter_cycle}}
+      end
+    end)
+    |> case do
+      {:ok, inputs} -> {:ok, Enum.reverse(inputs)}
+      {:error, :invalid_poll_starter_cycle} = error -> error
+    end
+  end
+
+  defp build_starter_consumer_context(plan, inputs, adapters, executed_at) do
+    matches = expected_matches(plan.entries)
+
+    if length(inputs) == length(matches) do
+      entries =
+        inputs
+        |> Enum.zip(matches)
+        |> Enum.map(fn {input, {event, trigger}} ->
+          %StarterConsumerEntry{
+            input: input,
+            event: event,
+            trigger: trigger,
+            executed_at: executed_at
+          }
         end)
-      end)
 
-    case context.conversation_runtime do
-      nil ->
-        {:ok, AuthorizedStarterPipelineConsumer,
-         %StarterConsumerContext{inputs: inputs, adapters: context.adapters}}
-
-      %ConversationRuntime{} = runtime ->
-        build_conversation_consumer_context(plan, inputs, runtime, executed_at)
-
-      _invalid ->
-        {:error, :invalid_poll_starter_cycle}
+      {:ok, AuthorizedStarterPipelineConsumer,
+       %StarterConsumerContext{entries: entries, adapters: adapters}}
+    else
+      {:error, :invalid_poll_starter_cycle}
     end
   end
 
@@ -247,7 +283,7 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
         inputs
         |> Enum.zip(matches)
         |> Enum.map(fn {starter, {event, trigger}} ->
-          %Entry{
+          %ConversationConsumerEntry{
             input: %ConversationInput{starter: starter, responder_turns: turns},
             event: event,
             trigger: trigger,
@@ -282,14 +318,6 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
       generation_transport: shared.generation_transport,
       publication_transport: shared.publication_transport
     }
-  end
-
-  defp conversation_id(event_id, trigger_id, executed_at) do
-    digest =
-      :crypto.hash(:sha256, [event_id, <<0>>, trigger_id, <<0>>, DateTime.to_iso8601(executed_at)])
-      |> Base.encode16(case: :lower)
-
-    "conversation-" <> digest
   end
 
   defp summarize(poll_result, dispatch_result) do

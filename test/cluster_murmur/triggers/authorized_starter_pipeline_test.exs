@@ -42,6 +42,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
   alias ClusterMurmur.Triggers.{
     AuthorizedStarterPipeline,
     AuthorizedStarterPipelineConsumer,
+    EventConversationIdentity,
     EventTriggerAuthorizer,
     PollEventTriggerPlanner
   }
@@ -51,7 +52,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
   alias ClusterMurmur.Triggers.AuthorizedConversationPipeline.Adapters,
     as: ConversationAdapters
 
-  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.Context
+  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.{Context, Entry}
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.SharedInput
   alias ClusterMurmur.Runtime.PollStarterCycle.Context, as: CycleContext
 
@@ -279,7 +280,22 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
     assert {:ok, plan} =
              PollEventTriggerPlanner.plan(poll_result, input.configuration, @executed_at)
 
-    context = %Context{inputs: [%{input | authorization: nil}], adapters: adapters()}
+    trigger = input.authorization.plan.trigger
+
+    assert {:ok, conversation_id} =
+             EventConversationIdentity.derive(event, trigger, @executed_at)
+
+    context = %Context{
+      entries: [
+        %Entry{
+          input: %{input | authorization: nil, conversation_id: conversation_id},
+          event: event,
+          trigger: trigger,
+          executed_at: @executed_at
+        }
+      ],
+      adapters: adapters()
+    }
 
     assert AuthorizedStarterPipelineConsumer.preflight(
              plan,
@@ -289,7 +305,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
            ) == :ok
 
     assert AuthorizedStarterPipelineConsumer.consume(input.authorization, 0, context) == :ok
-    assert Repo.get!(ConversationRecord, input.conversation_id).status == :completed
+    assert Repo.get!(ConversationRecord, conversation_id).status == :completed
     assert_receive {:generation, _request}
     assert_receive {:publication, %WebhookRequest{}}
     refute_receive {:generation, _request}

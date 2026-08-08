@@ -1,6 +1,7 @@
 defmodule ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer do
   @moduledoc """
-  Consumes poll authorizations through preflighted bounded conversations.
+  Consumes poll or durable-dispatch authorizations through preflighted bounded
+  conversations.
 
   The context contains one authorization-free conversation input per planned
   match. The complete batch is validated before the dispatcher authorizes its
@@ -15,6 +16,8 @@ defmodule ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer do
 
   alias ClusterMurmur.Triggers.{
     AuthorizedConversationPipeline,
+    EventConversationIdentity,
+    EventDispatchPlanner,
     EventTriggerAuthorizer,
     PollEventTriggerPlanner
   }
@@ -22,6 +25,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer do
   alias ClusterMurmur.Triggers.AuthorizedConversationPipeline.{Adapters, Input}
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.Input, as: StarterInput
   alias ClusterMurmur.Triggers.EventTriggerAuthorizer.Authorization
+  alias ClusterMurmur.Triggers.EventDispatchPlanner.Plan, as: EventDispatchPlan
   alias ClusterMurmur.Triggers.PollEventTriggerPlanner.Plan
 
   defmodule Entry do
@@ -87,6 +91,37 @@ defmodule ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer do
   def preflight(_plan, _poll_result, _configuration, _context),
     do: {:error, :invalid_conversation_context}
 
+  @doc "Preflights durable event-dispatch matches through bounded conversations."
+  @spec preflight(term(), term(), term()) :: :ok | {:error, :invalid_conversation_context}
+  def preflight(
+        %EventDispatchPlan{} = plan,
+        %Configuration{} = configuration,
+        %Context{} = context
+      ) do
+    with :ok <- EventDispatchPlanner.validate(plan, configuration),
+         true <- exact_context?(context),
+         :ok <-
+           validate_inputs(
+             context.entries,
+             expected_matches(plan.entries),
+             plan.executed_at,
+             context.adapters,
+             configuration,
+             MapSet.new()
+           ) do
+      :ok
+    else
+      _failure -> {:error, :invalid_conversation_context}
+    end
+  rescue
+    _error -> {:error, :invalid_conversation_context}
+  catch
+    _kind, _reason -> {:error, :invalid_conversation_context}
+  end
+
+  def preflight(_plan, _configuration, _context),
+    do: {:error, :invalid_conversation_context}
+
   @impl true
   def consume(%Authorization{} = authorization, index, %Context{} = context)
       when is_integer(index) and index >= 0 and index <= @max_index do
@@ -98,6 +133,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer do
           } = entry} <- Enum.fetch(context.entries, index),
          true <- exact_entry?(entry),
          true <- correlated_authorization?(authorization, entry),
+         true <- correlated_input?(input, entry),
          :ok <-
            AuthorizedConversationPipeline.validate_shared_runtime(
              input,
@@ -140,6 +176,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer do
          true <- entry.event === event,
          true <- entry.trigger === trigger,
          true <- entry.executed_at === executed_at,
+         true <- correlated_input?(input, entry),
          true <- starter.configuration === configuration,
          false <- MapSet.member?(conversation_ids, starter.conversation_id),
          true <- not_before_match?(starter.generated_at, event, executed_at),
@@ -172,6 +209,13 @@ defmodule ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer do
 
     plan.event === entry.event and plan.trigger === entry.trigger and
       plan.executed_at === entry.executed_at
+  end
+
+  defp correlated_input?(input, entry) do
+    case EventConversationIdentity.derive(entry.event, entry.trigger, entry.executed_at) do
+      {:ok, conversation_id} -> input.starter.conversation_id === conversation_id
+      {:error, :invalid_event_conversation_identity} -> false
+    end
   end
 
   defp not_before_match?(generated_at, event, executed_at) do
