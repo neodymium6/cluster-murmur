@@ -541,6 +541,17 @@ drift or schedule conflict fails closed without advancing the claim. Worker
 timing, due enumeration, and later event-trigger dispatch remain explicit
 runtime assembly work.
 
+The explicit stochastic cycle performs that due enumeration. It traverses
+cursor pages of at most 100 and validates and correlates no more than the
+configuration maximum of 256 schedules before the first claim. This prevents
+an ineligible first page from hiding eligible later work. It rejects duplicate
+or out-of-order durable projections, leaves inactive or daily-limited entries
+unclaimed, and continues a prevalidated batch after individual claim or commit
+conflicts. Returned claims and typed commit results must correlate exactly with
+their calls before execution is counted. Its result contains aggregate counts
+only. No stochastic timer is installed in the public application tree, and
+committed-event dispatch remains a separate runtime step.
+
 Active windows include their start minute and exclude their end minute. A
 crossing-midnight window is active from its start through local midnight and
 from midnight up to its end. Both instants in a repeated DST wall-clock minute
