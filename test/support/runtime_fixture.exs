@@ -9,6 +9,7 @@ defmodule ClusterMurmur.TestSupport.RuntimeFixture do
   alias ClusterMurmur.Discord.WebhookSettings
 
   alias ClusterMurmur.Discord.{
+    ResponderPublicationPlanner,
     StarterPublicationExecutor,
     StarterPublicationPlanner
   }
@@ -24,6 +25,10 @@ defmodule ClusterMurmur.TestSupport.RuntimeFixture do
 
   alias ClusterMurmur.Conversations.ResponderContinuationPlanner.Input,
     as: ResponderContinuationInput
+
+  alias ClusterMurmur.Conversations.ResponderContinuationConsumer
+  alias ClusterMurmur.Conversations.ResponderContinuationConsumer.Delivery
+  alias ClusterMurmur.Conversations.ResponderContinuationPlanner.Plan, as: ResponderPlan
 
   alias ClusterMurmur.Generation.{
     ProviderSettings,
@@ -350,6 +355,60 @@ defmodule ClusterMurmur.TestSupport.RuntimeFixture do
       },
       no_reply_weight: 1
     }
+  end
+
+  def responder_delivery(configuration \\ responder_configuration()) do
+    input = responder_input(configuration)
+    waiting = input.continuation.conversation
+
+    plan = %ResponderPlan{
+      input: input,
+      binding: configuration.bindings.bindings["characters"],
+      outcome: :reply,
+      responder: configuration.personas.personas["responder"],
+      conversation: %{
+        waiting
+        | status: :generating,
+          llm_call_count: waiting.llm_call_count + 1
+      },
+      planned_at: input.planned_at
+    }
+
+    message =
+      %MessageRecord{
+        id: 2,
+        conversation_id: plan.conversation.id,
+        persona_id: plan.responder.id,
+        origin: :llm,
+        content: "A factual response.",
+        discord_message_id: nil,
+        inserted_at: ~U[2026-08-07 02:00:04.000000Z]
+      }
+      |> Ecto.put_meta(state: :loaded)
+
+    conversation = %ConversationRecord{
+      plan.conversation
+      | turn_count: plan.conversation.turn_count + 1
+    }
+
+    delivery = %Delivery{plan: plan, message: message, conversation: conversation}
+    :ok = ResponderContinuationConsumer.validate_delivery(delivery, plan)
+    delivery
+  end
+
+  def responder_publication_plan(configuration \\ responder_configuration()) do
+    input = responder_input(configuration)
+    delivery = responder_delivery(configuration)
+
+    {:ok, plan} =
+      ResponderPublicationPlanner.plan(
+        delivery,
+        configuration,
+        input.current_cooldowns,
+        input.webhook_settings
+      )
+
+    plan
   end
 
   defp responder_conversation(continuation, recorded) do
