@@ -78,16 +78,29 @@ defmodule ClusterMurmur.Runtime.Recovery do
   @doc "Recovers abandoned work through the fixed durable stores."
   @spec run(term(), term()) :: {:ok, Result.t()} | {:error, :invalid_runtime_recovery}
   def run(cutoff, recovered_at) do
-    run(
-      cutoff,
-      recovered_at,
-      %Stores{
-        executions: TriggerExecutionStore,
-        conversations: ConversationStore,
-        publications: PublicationAttemptStore
-      }
-    )
+    run(cutoff, recovered_at, default_stores())
   end
+
+  @doc "Validates exact recovery stores without reading time or persistence."
+  @spec validate_stores(term()) :: :ok | {:error, :invalid_runtime_recovery}
+  def validate_stores(stores \\ default_stores())
+
+  def validate_stores(%Stores{} = stores) do
+    with true <- exact_stores?(stores),
+         :ok <- validate_store(stores.executions, list_started_before: 1, fail_abandoned: 2),
+         :ok <- validate_store(stores.conversations, list_active_before: 1, fail: 2),
+         :ok <- validate_store(stores.publications, list_open_before: 1, mark_ambiguous: 2) do
+      :ok
+    else
+      _failure -> {:error, :invalid_runtime_recovery}
+    end
+  rescue
+    _error -> {:error, :invalid_runtime_recovery}
+  catch
+    _kind, _reason -> {:error, :invalid_runtime_recovery}
+  end
+
+  def validate_stores(_stores), do: {:error, :invalid_runtime_recovery}
 
   @doc false
   @spec run(term(), term(), term()) :: {:ok, Result.t()} | {:error, :invalid_runtime_recovery}
@@ -128,13 +141,10 @@ defmodule ClusterMurmur.Runtime.Recovery do
   def run(_cutoff, _recovered_at, _stores), do: {:error, :invalid_runtime_recovery}
 
   defp preflight(cutoff, recovered_at, stores) do
-    with true <- exact_stores?(stores),
+    with :ok <- validate_stores(stores),
          :ok <- DateTimeValidator.validate_storage_utc(cutoff),
          :ok <- DateTimeValidator.validate_storage_utc(recovered_at),
-         true <- DateTime.compare(recovered_at, cutoff) in [:eq, :gt],
-         :ok <- validate_store(stores.executions, list_started_before: 1, fail_abandoned: 2),
-         :ok <- validate_store(stores.conversations, list_active_before: 1, fail: 2),
-         :ok <- validate_store(stores.publications, list_open_before: 1, mark_ambiguous: 2) do
+         true <- DateTime.compare(recovered_at, cutoff) in [:eq, :gt] do
       :ok
     else
       _failure -> {:error, :invalid_runtime_recovery}
@@ -218,6 +228,14 @@ defmodule ClusterMurmur.Runtime.Recovery do
 
   defp exact_stores?(stores) do
     map_size(stores) == @store_key_count and Enum.all?(@store_keys, &Map.has_key?(stores, &1))
+  end
+
+  defp default_stores do
+    %Stores{
+      executions: TriggerExecutionStore,
+      conversations: ConversationStore,
+      publications: PublicationAttemptStore
+    }
   end
 
   defp saturated?(collections),

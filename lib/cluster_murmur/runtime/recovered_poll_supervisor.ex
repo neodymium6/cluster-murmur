@@ -81,12 +81,16 @@ defmodule ClusterMurmur.Runtime.RecoveredPollSupervisor do
          :ok <- PollScheduler.validate(options.scheduler),
          :ok <- validate_clock(options.clock),
          true <- options.scheduler.clock == options.clock,
-         true <- is_nil(stores) or match?(%Stores{}, stores) do
+         :ok <- validate_stores(stores) do
       :ok
     else
       _failure -> {:error, :invalid_recovered_poll_supervisor}
     end
   end
+
+  defp validate_stores(nil), do: Recovery.validate_stores()
+  defp validate_stores(%Stores{} = stores), do: Recovery.validate_stores(stores)
+  defp validate_stores(_stores), do: {:error, :invalid_recovered_poll_supervisor}
 
   defp validate_clock(clock) do
     if is_atom(clock) and Code.ensure_loaded?(clock) and function_exported?(clock, :utc_now, 0),

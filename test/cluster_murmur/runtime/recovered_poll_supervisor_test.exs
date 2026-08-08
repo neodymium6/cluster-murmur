@@ -253,14 +253,17 @@ defmodule ClusterMurmur.Runtime.RecoveredPollSupervisorTest do
 
   test "rejects invalid runtime dependencies before reading the clock or recovery stores" do
     valid = options()
+    valid_stores = stores()
 
-    for invalid <- [
-          %{valid | scheduler: %{valid.scheduler | interval_ms: 0}},
-          %{valid | clock: String},
-          %{valid | clock: OtherClock},
-          Map.put(valid, :private, true)
+    for {invalid, invalid_stores} <- [
+          {%{valid | scheduler: %{valid.scheduler | interval_ms: 0}}, valid_stores},
+          {%{valid | clock: String}, valid_stores},
+          {%{valid | clock: OtherClock}, valid_stores},
+          {Map.put(valid, :private, true), valid_stores},
+          {valid, %{valid_stores | executions: String}},
+          {valid, Map.put(valid_stores, :private, true)}
         ] do
-      assert RecoveredPollSupervisor.start_link(invalid, stores()) ==
+      assert RecoveredPollSupervisor.start_link(invalid, invalid_stores) ==
                {:error, :invalid_recovered_poll_supervisor}
     end
 
