@@ -2,7 +2,14 @@ defmodule ClusterMurmur.Runtime.StochasticCycleTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Config.{EventGroups, Triggers}
-  alias ClusterMurmur.Persistence.{EventRecord, StochasticSchedule, StochasticScheduleClaim}
+
+  alias ClusterMurmur.Persistence.{
+    EventDispatchReceipt,
+    EventRecord,
+    StochasticSchedule,
+    StochasticScheduleClaim
+  }
+
   alias ClusterMurmur.Persistence.StochasticEventCommitStore.Result, as: CommitResult
   alias ClusterMurmur.Runtime.StochasticCycle
   alias ClusterMurmur.Runtime.StochasticCycle.{Adapters, Result}
@@ -112,6 +119,23 @@ defmodule ClusterMurmur.Runtime.StochasticCycleTest do
     end
   end
 
+  defmodule WrongDispatchCommits do
+    alias ClusterMurmur.Runtime.StochasticCycleTest, as: Test
+
+    def commit(plan, event, _recorded_at) do
+      result = Test.commit_result(plan, event)
+      {:ok, %{result | dispatch: %{result.dispatch | event_id: "wrong-event"}}}
+    end
+  end
+
+  defmodule PrivateCommitResult do
+    alias ClusterMurmur.Runtime.StochasticCycleTest, as: Test
+
+    def commit(plan, event, _recorded_at) do
+      {:ok, plan |> Test.commit_result(event) |> Map.put(:private, true)}
+    end
+  end
+
   setup do
     Process.put({__MODULE__, :trace}, [])
     Process.put({__MODULE__, :claim_failures}, %{})
@@ -192,7 +216,9 @@ defmodule ClusterMurmur.Runtime.StochasticCycleTest do
     for adapters <- [
           %Adapters{schedules: StaleClaims, commits: Commits},
           %Adapters{schedules: Schedules, commits: FalseCommits},
-          %Adapters{schedules: Schedules, commits: WrongCommits}
+          %Adapters{schedules: Schedules, commits: WrongCommits},
+          %Adapters{schedules: Schedules, commits: WrongDispatchCommits},
+          %Adapters{schedules: Schedules, commits: PrivateCommitResult}
         ] do
       Process.put({__MODULE__, :trace}, [])
 
@@ -335,6 +361,12 @@ defmodule ClusterMurmur.Runtime.StochasticCycleTest do
       claim_expires_at: nil
     }
 
-    %CommitResult{event: event_record, schedule: schedule}
+    dispatch = %EventDispatchReceipt{
+      event_id: event.id,
+      status: :pending,
+      enqueued_at: plan.executed_at
+    }
+
+    %CommitResult{event: event_record, dispatch: dispatch, schedule: schedule}
   end
 end

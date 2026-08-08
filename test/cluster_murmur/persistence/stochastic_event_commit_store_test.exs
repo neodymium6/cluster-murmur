@@ -2,6 +2,8 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStoreTest do
   use ExUnit.Case, async: false
 
   alias ClusterMurmur.Persistence.{
+    EventDispatch,
+    EventDispatchStore,
     EventRecord,
     EventStore,
     StochasticEventCommitStore,
@@ -15,6 +17,7 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStoreTest do
 
   alias ClusterMurmur.Repo.Migrations.{
     AddStochasticScheduleClaims,
+    CreateEventDispatches,
     CreateEvents,
     CreateStochasticSchedules
   }
@@ -22,6 +25,7 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStoreTest do
   @schedule_version 20_260_804_130_000
   @claim_version 20_260_804_160_000
   @event_version 20_260_804_180_500
+  @dispatch_version 20_260_808_150_000
   @scheduled_at ~U[2026-08-08 13:00:00.000000Z]
   @executed_at ~U[2026-08-08 13:00:01.000000Z]
   @recorded_at ~U[2026-08-08 13:00:02.000000Z]
@@ -31,7 +35,8 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStoreTest do
     migrations = [
       {@schedule_version, CreateStochasticSchedules},
       {@claim_version, AddStochasticScheduleClaims},
-      {@event_version, CreateEvents}
+      {@event_version, CreateEvents},
+      {@dispatch_version, CreateEventDispatches}
     ]
 
     for {version, migration} <- migrations do
@@ -56,6 +61,7 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStoreTest do
   end
 
   setup do
+    Ecto.Adapters.SQL.query!(Repo, "DELETE FROM event_dispatches", [], log: false)
     Ecto.Adapters.SQL.query!(Repo, "DELETE FROM events", [], log: false)
     Ecto.Adapters.SQL.query!(Repo, "DELETE FROM stochastic_schedules", [], log: false)
     :ok
@@ -66,22 +72,30 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStoreTest do
 
     assert {:ok, result} = StochasticEventCommitStore.commit(plan, event, @recorded_at)
     assert result.event.id == event.id
+    assert result.dispatch.event_id == event.id
+    assert result.dispatch.status == :pending
+    assert result.dispatch.enqueued_at == @recorded_at
+    refute Map.has_key?(result.dispatch, :claim_token)
     assert result.schedule.next_run_at == @next_run_at
     assert result.schedule.last_run_at == @executed_at
     assert result.schedule.claim_token == nil
     assert Repo.aggregate(EventRecord, :count) == 1
+    assert Repo.aggregate(EventDispatch, :count) == 1
     refute inspect(result) =~ "ambient"
     refute inspect(result) =~ "2026"
   end
 
-  test "restores an identical precommitted event before advancing the schedule" do
+  test "restores an identical precommitted event and dispatch before advancing" do
     {plan, event} = claimed_plan(template())
     assert {:ok, existing} = EventStore.insert(event)
+    assert {:ok, existing_dispatch} = EventDispatchStore.enqueue(event, @recorded_at)
 
     assert {:ok, result} = StochasticEventCommitStore.commit(plan, event, @recorded_at)
     assert result.event == existing
+    assert result.dispatch == existing_dispatch
     assert result.schedule.next_run_at == @next_run_at
     assert Repo.aggregate(EventRecord, :count) == 1
+    assert Repo.aggregate(EventDispatch, :count) == 1
   end
 
   test "rolls back event insertion when schedule advancement conflicts" do
@@ -93,6 +107,26 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStoreTest do
              {:error, :stochastic_event_conflict}
 
     assert Repo.aggregate(EventRecord, :count) == 0
+    assert Repo.aggregate(EventDispatch, :count) == 0
+
+    persisted = Repo.get!(StochasticSchedule, "ambient")
+    assert persisted.next_run_at == @scheduled_at
+    assert persisted.claim_token == plan.claim.token
+  end
+
+  test "does not advance a claim when an existing dispatch has a different enqueue time" do
+    {plan, event} = claimed_plan(template())
+    later = DateTime.add(@recorded_at, 1, :second)
+
+    assert {:ok, _record} = EventStore.insert(event)
+    assert {:ok, _receipt} = EventDispatchStore.enqueue(event, later)
+
+    assert StochasticEventCommitStore.commit(plan, event, @recorded_at) ==
+             {:error, :stochastic_event_conflict}
+
+    assert Repo.aggregate(EventRecord, :count) == 1
+    assert Repo.aggregate(EventDispatch, :count) == 1
+    assert Repo.get!(EventDispatch, event.id).enqueued_at == later
 
     persisted = Repo.get!(StochasticSchedule, "ambient")
     assert persisted.next_run_at == @scheduled_at
@@ -116,6 +150,7 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStoreTest do
     end
 
     assert Repo.aggregate(EventRecord, :count) == 0
+    assert Repo.aggregate(EventDispatch, :count) == 0
   end
 
   test "does not advance a claim when template drift conflicts with an existing event" do

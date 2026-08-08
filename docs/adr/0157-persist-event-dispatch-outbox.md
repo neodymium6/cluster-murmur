@@ -37,6 +37,6 @@ A later bounded worker can safely retry after a crash or expired lease without
 letting old completed entries block new work. Concurrent workers cannot both
 complete the same claim, and listing never exposes opaque claim material.
 
-Enqueuing stochastic events in the same transaction as event and schedule
-commit, plus consuming claimed entries through the existing event-trigger
-pipeline, remain separate reviewed changes.
+Stochastic commits can enqueue through this boundary in the same transaction
+as event insertion and schedule advancement. Consuming claimed entries through
+the existing event-trigger pipeline remains a separate reviewed change.

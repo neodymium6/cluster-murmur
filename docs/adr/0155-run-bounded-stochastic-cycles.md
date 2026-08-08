@@ -9,7 +9,8 @@ Accepted
 ## Context
 
 Stochastic timing, durable due schedules, opaque claims, pure execution plans,
-deterministic events, and atomic event/schedule commits exist independently.
+deterministic events, and atomic event/outbox/schedule commits exist
+independently.
 Runtime assembly still needs one bounded operation that connects those fixed
 boundaries without introducing external effects or generic callbacks.
 
@@ -26,11 +27,12 @@ Paging prevents an ineligible first page from starving eligible work behind it.
 Leave inactive and daily-limit decisions unclaimed and count them as skips. For
 each eligible entry in durable order, claim the exact schedule version, require
 the returned lease to start at the injected instant, build one plan using
-injected randomness, project its deterministic event, and commit the event with
-its next schedule state atomically. Count execution only when the typed commit
-result exactly correlates with that event, plan, and prior schedule. Use the
-same injected UTC instant for claim, execution, and recording so every effect
-remains within the fixed lease.
+injected randomness, project its deterministic event, and commit the event,
+claim-free outbox handoff, and next schedule state atomically. Count execution
+only when the typed commit result exactly correlates with that event, outbox
+receipt, plan, and prior schedule. Use the same injected UTC instant for claim,
+execution, recording, and enqueue so every effect remains within the fixed
+lease.
 
 Treat an individual claim, planning, or commit failure as one stable aggregate
 failure and continue the remaining prevalidated batch. Return counts only; do
@@ -46,5 +48,5 @@ configuration fails before mutation. Ineligible work remains due and can be
 re-evaluated when its active window or daily bucket changes. Temporary failures
 remain protected by the opaque claim lease and are retried only after expiry.
 
-Worker timing and dispatch of newly committed events into the existing event
-trigger conversation path remain separate reviewed work.
+Dispatch of newly committed events into the existing event-trigger
+conversation path remains separate reviewed work.
