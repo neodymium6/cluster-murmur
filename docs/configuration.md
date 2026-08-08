@@ -570,8 +570,10 @@ handoff, and advances the claimed schedule in one transaction. The outbox does
 not perform external I/O. A pure planner can correlate its ordered batch
 with restored immutable events and cap current trigger matches before any
 claim. Existing fixed starter and bounded-conversation consumers can preflight
-the resulting durable plan without authorizing work. Runtime consumption
-remains a subsequent assembly step.
+the resulting durable plan without authorizing work. An explicit bounded cycle
+then claims entries in order, immediately consumes matching fixed pipelines,
+and completes only unmatched or fully terminal handoffs. It is not installed
+in the public application supervision tree automatically.
 
 Active windows include their start minute and exclude their end minute. A
 crossing-midnight window is active from its start through local midnight and

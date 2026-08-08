@@ -31,7 +31,7 @@ defmodule ClusterMurmur.Triggers.EventTriggerAuthorizer do
   @plan_keys Plan.__struct__() |> Map.keys()
   @plan_key_count length(@plan_keys)
 
-  @type skip_reason :: :already_started | :cooldown | :not_matched
+  @type skip_reason :: :already_terminal | :cooldown | :execution_in_progress | :not_matched
   @type error ::
           :event_conflict
           | :event_not_found
@@ -102,11 +102,9 @@ defmodule ClusterMurmur.Triggers.EventTriggerAuthorizer do
       {:ok, %TriggerExecution{} = execution} ->
         build_authorization(plan, execution)
 
-      {:skip, :cooldown} = skip ->
+      {:skip, reason} = skip
+      when reason in [:already_terminal, :cooldown, :execution_in_progress] ->
         skip
-
-      {:error, :execution_conflict} ->
-        {:skip, :already_started}
 
       {:error, reason} when reason in [:event_conflict, :event_not_found, :invalid_execution] ->
         {:error, reason}

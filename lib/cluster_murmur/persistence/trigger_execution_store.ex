@@ -43,9 +43,11 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
           | :invalid_execution
           | :storage_unavailable
 
+  @type skip_reason :: :already_terminal | :cooldown | :execution_in_progress
+
   @doc "Starts one plan when its event, deduplication key, and durable cooldown permit it."
   @spec start(term()) ::
-          {:ok, TriggerExecution.t()} | {:skip, :cooldown} | {:error, error()}
+          {:ok, TriggerExecution.t()} | {:skip, skip_reason()} | {:error, error()}
   def start(plan) do
     changeset = TriggerExecution.start_changeset(%TriggerExecution{}, plan)
 
@@ -130,8 +132,9 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
       {:ok, %TriggerExecution{} = execution} ->
         {:ok, execution}
 
-      {:error, {:skip, :cooldown}} ->
-        {:skip, :cooldown}
+      {:error, {:skip, reason}}
+      when reason in [:already_terminal, :cooldown, :execution_in_progress] ->
+        {:skip, reason}
 
       {:error, reason}
       when reason in [:event_conflict, :event_not_found, :execution_conflict] ->
@@ -185,9 +188,24 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
            trigger_id: candidate.trigger_id,
            event_id: candidate.event_id
          ) do
-      nil -> :ok
-      %TriggerExecution{} -> {:error, :execution_conflict}
+      nil ->
+        :ok
+
+      %TriggerExecution{status: :started} = execution ->
+        classify_existing_execution(execution, :execution_in_progress)
+
+      %TriggerExecution{status: status} = execution when status in [:completed, :failed] ->
+        classify_existing_execution(execution, :already_terminal)
+
+      %TriggerExecution{} ->
+        {:error, :invalid_execution}
     end
+  end
+
+  defp classify_existing_execution(execution, reason) do
+    if TriggerExecutionValidator.validate(execution) == :ok,
+      do: {:error, {:skip, reason}},
+      else: {:error, :invalid_execution}
   end
 
   defp require_expired_cooldown(candidate) do

@@ -3,10 +3,13 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
 
   alias ClusterMurmur.Conversations.StarterReplyFinisher
   alias ClusterMurmur.Discord.{WebhookPublisher, WebhookRequest, WebhookResponse}
+  alias ClusterMurmur.Events.Matcher.Predicate
 
   alias ClusterMurmur.Persistence.{
     ConversationRecord,
     ConversationStore,
+    EventDispatch,
+    EventDispatchStore,
     EventStore,
     EventTriggerConversationActionStore,
     MessageRecord,
@@ -21,6 +24,8 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
   alias ClusterMurmur.Observers.Client
   alias ClusterMurmur.Runtime.PollStarterCycle
   alias ClusterMurmur.Runtime.PollStarterCycle.ConversationRuntime
+  alias ClusterMurmur.Runtime.EventDispatchCycle
+  alias ClusterMurmur.Runtime.EventDispatchCycle.Context, as: DispatchCycleContext
   alias ClusterMurmur.Runtime.ResponderTurnSchedule
   alias ClusterMurmur.Runtime.ResponderTurnSchedule.Step
   alias ClusterMurmur.Runtime.ResponderTurnCycle.Adapters, as: ResponderAdapters
@@ -28,6 +33,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
   alias ClusterMurmur.Repo.Migrations.{
     AddPublicationAttemptDispatching,
     CreateConversations,
+    CreateEventDispatches,
     CreateEvents,
     CreateMessages,
     CreatePersonaCooldowns,
@@ -64,6 +70,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
   @attempts_version 20_260_805_230_000
   @dispatching_version 20_260_805_231_000
   @responder_claims_version 20_260_808_060_000
+  @dispatches_version 20_260_808_150_000
   @executed_at ~U[2026-08-07 02:00:00.000000Z]
   @generated_at ~U[2026-08-07 02:00:01.000000Z]
   @publication_started_at ~U[2026-08-07 02:00:02.000000Z]
@@ -107,6 +114,18 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
     end
   end
 
+  defmodule FirstClaimConflictDispatches do
+    alias ClusterMurmur.Persistence.EventDispatchStore
+
+    def list_available(now), do: EventDispatchStore.list_available(now)
+
+    def claim(%{event_id: "dispatch-event-a"}, _now),
+      do: {:error, :dispatch_conflict}
+
+    def claim(candidate, now), do: EventDispatchStore.claim(candidate, now)
+    def complete(claim, now), do: EventDispatchStore.complete(claim, now)
+  end
+
   setup_all do
     migrations = [
       {@events_version, CreateEvents},
@@ -116,7 +135,8 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
       {@cooldowns_version, CreatePersonaCooldowns},
       {@attempts_version, CreatePublicationAttempts},
       {@dispatching_version, AddPublicationAttemptDispatching},
-      {@responder_claims_version, CreateResponderGenerationClaims}
+      {@responder_claims_version, CreateResponderGenerationClaims},
+      {@dispatches_version, CreateEventDispatches}
     ]
 
     for {version, migration} <- migrations do
@@ -148,6 +168,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
           "messages",
           "conversations",
           "trigger_executions",
+          "event_dispatches",
           "events"
         ] do
       Ecto.Adapters.SQL.query!(Repo, "DELETE FROM #{table}", [], log: false)
@@ -219,6 +240,105 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
     refute inspected =~ "clearly-fake-api-key"
     refute inspected =~ "fake-token"
     refute inspected =~ message.content
+  end
+
+  test "keeps global consumer indices after a claim conflict across real outbox rows" do
+    parent = self()
+    configuration = configuration_with_two_matching_triggers()
+    Process.put({__MODULE__, :dispatch_publication_count}, 0)
+
+    events = [
+      RuntimeFixture.event(
+        id: "dispatch-event-a",
+        subject: "first-target",
+        occurred_at: DateTime.add(@executed_at, -1, :second)
+      ),
+      RuntimeFixture.event(
+        id: "dispatch-event-b",
+        subject: "second-target",
+        occurred_at: DateTime.add(@executed_at, -1, :second)
+      )
+    ]
+
+    for event <- events do
+      assert {:ok, _record} = EventStore.insert(event)
+      assert {:ok, _receipt} = EventDispatchStore.enqueue(event, @executed_at)
+    end
+
+    context = %DispatchCycleContext{
+      shared_input: %SharedInput{
+        configuration: configuration,
+        cooldowns: %{},
+        provider_settings: RuntimeFixture.provider_settings(),
+        webhook_settings: RuntimeFixture.webhook_settings(),
+        generation_transport: fn request ->
+          send(parent, {:dispatch_generation, request})
+          {:ok, "A bounded confirmed fact."}
+        end,
+        publication_transport: fn request ->
+          count = Process.get({__MODULE__, :dispatch_publication_count}) + 1
+          Process.put({__MODULE__, :dispatch_publication_count}, count)
+          send(parent, {:dispatch_publication, request})
+          {:ok, %WebhookResponse{status: 200, body: ~s({"id":"1234#{count}"})}}
+        end
+      },
+      adapters: adapters()
+    }
+
+    dispatch_adapters = %EventDispatchCycle.Adapters{
+      dispatches: FirstClaimConflictDispatches,
+      events: EventStore,
+      authorizer: EventTriggerAuthorizer
+    }
+
+    assert {:ok, first_result} =
+             EventDispatchCycle.run(configuration, @executed_at, context, dispatch_adapters)
+
+    assert first_result == %EventDispatchCycle.Result{
+             candidate_count: 2,
+             claimed_count: 1,
+             completed_count: 1,
+             candidate_failure_count: 1,
+             planned_match_count: 2,
+             attempted_match_count: 1,
+             dispatched_count: 1,
+             skipped_count: 0,
+             dispatch_failure_count: 0
+           }
+
+    assert Repo.get!(EventDispatch, "dispatch-event-a").status == :pending
+    assert Repo.get!(EventDispatch, "dispatch-event-b").status == :completed
+
+    assert {:ok, retry_result} =
+             EventDispatchCycle.run(configuration, @executed_at, context)
+
+    assert retry_result == %EventDispatchCycle.Result{
+             candidate_count: 1,
+             claimed_count: 1,
+             completed_count: 1,
+             candidate_failure_count: 0,
+             planned_match_count: 1,
+             attempted_match_count: 1,
+             dispatched_count: 1,
+             skipped_count: 0,
+             dispatch_failure_count: 0
+           }
+
+    assert Enum.all?(Repo.all(EventDispatch), &(&1.status == :completed))
+    assert Repo.aggregate(TriggerExecution, :count) == 2
+    assert Enum.all?(Repo.all(TriggerExecution), &(&1.status == :completed))
+    assert Repo.aggregate(ConversationRecord, :count) == 2
+    assert Enum.all?(Repo.all(ConversationRecord), &(&1.status == :completed))
+    assert Repo.aggregate(MessageRecord, :count) == 2
+
+    assert_receive {:dispatch_generation, _request}
+    assert_receive {:dispatch_generation, _request}
+    assert_receive {:dispatch_publication, %WebhookRequest{}}
+    assert_receive {:dispatch_publication, %WebhookRequest{}}
+    refute_receive {:dispatch_generation, _request}
+    refute_receive {:dispatch_publication, _request}
+    refute inspect(first_result) =~ "dispatch-event"
+    refute inspect(retry_result) =~ "dispatch-event"
   end
 
   test "rejects invalid late inputs before the first conversation mutation" do
@@ -478,6 +598,59 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
       publication_completed_at: @publication_completed_at,
       generation_transport: generation_transport,
       publication_transport: publication_transport
+    }
+  end
+
+  defp configuration_with_two_matching_triggers do
+    configuration = RuntimeFixture.configuration()
+    persona = configuration.personas.personas["caretaker"]
+    second_persona = %{persona | id: "second-caretaker", display_name: "Second Caretaker"}
+    binding = configuration.bindings.bindings["characters"]
+
+    second_binding = %{
+      binding
+      | id: "second-characters",
+        candidates: [%{persona: second_persona.id, weight: 1}]
+    }
+
+    trigger = configuration.triggers.triggers["failure-conversation"]
+
+    first = %{
+      trigger
+      | matcher: %{
+          trigger.matcher
+          | predicates:
+              trigger.matcher.predicates ++
+                [%Predicate{field: "subject", operator: :equals, value: "first-target"}]
+        }
+    }
+
+    second = %{
+      trigger
+      | id: "second-failure-conversation",
+        binding: second_binding.id,
+        matcher: %{
+          trigger.matcher
+          | predicates:
+              trigger.matcher.predicates ++
+                [%Predicate{field: "subject", operator: :equals, value: "second-target"}]
+        }
+    }
+
+    %{
+      configuration
+      | personas: %{
+          configuration.personas
+          | personas: Map.put(configuration.personas.personas, second_persona.id, second_persona)
+        },
+        bindings: %{
+          configuration.bindings
+          | bindings: Map.put(configuration.bindings.bindings, second_binding.id, second_binding)
+        },
+        triggers: %{
+          configuration.triggers
+          | triggers: %{first.id => first, second.id => second}
+        }
     }
   end
 

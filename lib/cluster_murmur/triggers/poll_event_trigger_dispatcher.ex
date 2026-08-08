@@ -27,12 +27,13 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcher do
     defstruct [:status, :reason]
 
     @type reason ::
-            :already_started
+            :already_terminal
             | :authorization_failed
             | :cooldown
             | :dispatch_failed
             | :event_conflict
             | :event_not_found
+            | :execution_in_progress
             | :invalid_execution
             | :storage_unavailable
             | nil
@@ -74,7 +75,7 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcher do
           }
   end
 
-  @skip_reasons [:already_started, :cooldown]
+  @skip_reasons [:already_terminal, :cooldown, :execution_in_progress]
   @failure_reasons [
     :authorization_failed,
     :event_conflict,

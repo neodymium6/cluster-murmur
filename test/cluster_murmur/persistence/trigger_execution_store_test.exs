@@ -98,12 +98,25 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStoreTest do
     assert Repo.aggregate(TriggerExecution, :count) == 0
   end
 
-  test "rejects a repeated trigger and event pair" do
+  test "classifies a repeated trigger and event pair by durable lifecycle" do
     plan = plan!(event(), ~U[2026-08-04 12:00:00.000000Z])
     assert {:ok, _event_record} = EventStore.insert(plan.event)
-    assert {:ok, _execution} = TriggerExecutionStore.start(plan)
+    assert {:ok, started} = TriggerExecutionStore.start(plan)
 
-    assert TriggerExecutionStore.start(plan) == {:error, :execution_conflict}
+    assert TriggerExecutionStore.start(plan) == {:skip, :execution_in_progress}
+
+    assert {:ok, _completed} = TriggerExecutionStore.complete(started)
+    assert TriggerExecutionStore.start(plan) == {:skip, :already_terminal}
+    assert Repo.aggregate(TriggerExecution, :count) == 1
+  end
+
+  test "classifies a failed repeated pair as terminal" do
+    plan = plan!(event(), ~U[2026-08-04 12:00:00.000000Z])
+    assert {:ok, _event_record} = EventStore.insert(plan.event)
+    assert {:ok, started} = TriggerExecutionStore.start(plan)
+
+    assert {:ok, _failed} = TriggerExecutionStore.fail(started, "runtime.interrupted")
+    assert TriggerExecutionStore.start(plan) == {:skip, :already_terminal}
     assert Repo.aggregate(TriggerExecution, :count) == 1
   end
 
