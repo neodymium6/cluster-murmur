@@ -16,6 +16,15 @@ defmodule ClusterMurmur.TestSupport.RuntimeFixture do
   alias ClusterMurmur.Discord.StarterPublicationExecutor.Outcome
   alias ClusterMurmur.Discord.StarterPublicationStarter.Started, as: PublicationStarted
 
+  alias ClusterMurmur.Conversations.{
+    Budget,
+    Conversation,
+    StarterReplyFinisher
+  }
+
+  alias ClusterMurmur.Conversations.ResponderContinuationPlanner.Input,
+    as: ResponderContinuationInput
+
   alias ClusterMurmur.Generation.{
     ProviderSettings,
     StarterGenerationPlanner,
@@ -24,6 +33,7 @@ defmodule ClusterMurmur.TestSupport.RuntimeFixture do
   }
 
   alias ClusterMurmur.Generation.StarterMessagePersister.Persisted
+  alias ClusterMurmur.Messages.Message
 
   alias ClusterMurmur.Persistence.{
     ConversationRecord,
@@ -33,7 +43,7 @@ defmodule ClusterMurmur.TestSupport.RuntimeFixture do
     TriggerExecution
   }
 
-  alias ClusterMurmur.Personas.{Binding, Persona}
+  alias ClusterMurmur.Personas.{Binding, Persona, ResponderPolicy}
   alias ClusterMurmur.Personas.StarterCooldownRecorder.Recorded
 
   alias ClusterMurmur.Triggers.{
@@ -280,6 +290,94 @@ defmodule ClusterMurmur.TestSupport.RuntimeFixture do
     %Recorded{published: published, cooldown: cooldown}
   end
 
+  def responder_configuration do
+    configuration = configuration()
+    caretaker = configuration.personas.personas["caretaker"]
+
+    responder = %{
+      caretaker
+      | id: "responder",
+        display_name: "Responder",
+        prompt: "Reply using only supplied facts and conversation history.",
+        behavior: %{"reply_weight" => 2, "cooldown_ms" => 60_000}
+    }
+
+    binding = configuration.bindings.bindings["characters"]
+    binding = %{binding | candidates: binding.candidates ++ [%{persona: responder.id, weight: 1}]}
+
+    configuration
+    |> put_in(
+      [Access.key(:event_groups), Access.key(:groups), "operations", :reply_probability],
+      1
+    )
+    |> Map.put(:personas, %PersonaCatalog{
+      personas: %{caretaker.id => caretaker, responder.id => responder}
+    })
+    |> Map.put(:bindings, %BindingCatalog{bindings: %{binding.id => binding}})
+  end
+
+  def responder_input(configuration \\ responder_configuration()) do
+    recorded = recorded(configuration)
+    settings = webhook_settings()
+
+    {:continue, :reply, continuation} =
+      StarterReplyFinisher.finish(
+        recorded,
+        configuration,
+        %{},
+        settings,
+        __MODULE__.EndpointRandom,
+        __MODULE__.ResponderConversationStore
+      )
+
+    %ResponderContinuationInput{
+      continuation: continuation,
+      configuration: configuration,
+      starter_cooldowns: %{},
+      current_cooldowns: %{recorded.cooldown.persona_id => recorded.cooldown},
+      webhook_settings: settings,
+      conversation: responder_conversation(continuation, recorded),
+      budget: %Budget{
+        max_turns: 3,
+        max_participants: 2,
+        max_duration_ms: 300_000,
+        max_llm_calls: 3
+      },
+      planned_at: ~U[2026-08-07 02:00:03.000000Z],
+      policy: %ResponderPolicy{
+        allow_same_persona_consecutively: false,
+        allow_persona_reentry: false
+      },
+      no_reply_weight: 1
+    }
+  end
+
+  defp responder_conversation(continuation, recorded) do
+    waiting = continuation.conversation
+    published = recorded.published.message
+
+    message = %Message{
+      conversation_id: published.conversation_id,
+      persona_id: published.persona_id,
+      origin: published.origin,
+      content: published.content,
+      discord_message_id: published.discord_message_id,
+      inserted_at: published.inserted_at
+    }
+
+    %Conversation{
+      id: waiting.id,
+      root_event_id: waiting.root_event_id,
+      status: waiting.status,
+      started_at: waiting.started_at,
+      last_message_at: message.inserted_at,
+      turn_count: waiting.turn_count,
+      llm_call_count: waiting.llm_call_count,
+      participants: [message.persona_id],
+      messages: [message]
+    }
+  end
+
   defmodule FakeProvider do
     @moduledoc false
     def generate(_request, _settings, transport), do: transport.(:request)
@@ -288,5 +386,23 @@ defmodule ClusterMurmur.TestSupport.RuntimeFixture do
   defmodule FirstRandom do
     @moduledoc false
     def weighted_choice([{id, _weight} | _rest]), do: {:ok, id}
+  end
+
+  defmodule EndpointRandom do
+    @moduledoc false
+    def uniform, do: raise("endpoint probability must not sample")
+  end
+
+  defmodule ResponderRandom do
+    @moduledoc false
+    def weighted_choice(_choices), do: {:ok, {:reply, "responder"}}
+  end
+
+  defmodule ResponderConversationStore do
+    @moduledoc false
+    def wait(conversation), do: {:ok, %{conversation | status: :waiting}}
+
+    def complete(conversation, completed_at),
+      do: {:ok, %{conversation | status: :completed, completed_at: completed_at}}
   end
 end

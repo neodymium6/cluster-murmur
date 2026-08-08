@@ -12,7 +12,8 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
     ConversationStore,
     EventStore,
     MessageRecord,
-    MessageStore
+    MessageStore,
+    ResponderGenerationClaim
   }
 
   alias ClusterMurmur.Repo
@@ -21,13 +22,15 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
     AddIncompleteConversationIndex,
     CreateConversations,
     CreateEvents,
-    CreateMessages
+    CreateMessages,
+    CreateResponderGenerationClaims
   }
 
   @events_version 20_260_804_180_500
   @conversations_version 20_260_805_200_000
   @incomplete_index_version 20_260_805_210_000
   @messages_version 20_260_805_220_000
+  @responder_claims_version 20_260_808_060_000
 
   setup_all do
     assert Ecto.Migrator.up(Repo, @events_version, CreateEvents,
@@ -54,7 +57,19 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
              log_migrator_sql: false
            ) == :ok
 
+    assert Ecto.Migrator.up(Repo, @responder_claims_version, CreateResponderGenerationClaims,
+             log: false,
+             log_migrations_sql: false,
+             log_migrator_sql: false
+           ) == :ok
+
     on_exit(fn ->
+      Ecto.Migrator.down(Repo, @responder_claims_version, CreateResponderGenerationClaims,
+        log: false,
+        log_migrations_sql: false,
+        log_migrator_sql: false
+      )
+
       Ecto.Migrator.down(Repo, @messages_version, CreateMessages,
         log: false,
         log_migrations_sql: false,
@@ -193,6 +208,11 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
 
     assert ConversationStore.fail(completed, completed_at) ==
              {:error, :invalid_conversation_record}
+
+    assert ConversationStore.confirm_completed(completed) == :ok
+
+    assert ConversationStore.confirm_completed(%{completed | turn_count: 1}) ==
+             {:error, :conversation_conflict}
   end
 
   test "atomically moves an exact conversation into waiting only once" do
@@ -207,30 +227,177 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
     assert Repo.get!(ConversationRecord, started.id) === waiting
   end
 
-  test "moves an exact generating conversation into waiting without changing counters" do
+  test "moves a persisted reserved turn into waiting without changing counters" do
     started = start_conversation!("generating-conversation")
+    assert {:ok, waiting} = ConversationStore.wait(started)
+    assert {:ok, generating} = ConversationStore.claim_generation(waiting, "responder")
+    assert ConversationStore.consume_generation(generating, "responder") == :ok
+
+    assert {:ok, {_message, advanced}} =
+             MessageStore.append_reserved(
+               generating,
+               message(conversation_id: generating.id)
+             )
+
+    assert {:ok, waiting_again} = ConversationStore.wait(advanced)
+    assert waiting_again === %{advanced | status: :waiting}
+  end
+
+  test "preserves invalid reserved history errors while returning to waiting" do
+    started = start_conversation!("invalid-reserved-history")
+    assert {:ok, waiting} = ConversationStore.wait(started)
+    assert {:ok, generating} = ConversationStore.claim_generation(waiting, "responder")
+    assert ConversationStore.consume_generation(generating, "responder") == :ok
+
+    assert {:ok, {_message, advanced}} =
+             MessageStore.append_reserved(
+               generating,
+               message(conversation_id: generating.id)
+             )
 
     assert {1, nil} =
              Repo.update_all(
-               from(record in ConversationRecord, where: record.id == ^started.id),
-               set: [status: :generating, turn_count: 1, llm_call_count: 1]
+               from(record in MessageRecord, where: record.conversation_id == ^advanced.id),
+               set: [content: "https://example.com"]
              )
 
-    generating = Repo.get!(ConversationRecord, started.id)
-    assert {:ok, waiting} = ConversationStore.wait(generating)
-    assert waiting === %{generating | status: :waiting}
+    assert ConversationStore.wait(advanced) == {:error, :invalid_message_record}
+    assert Repo.get!(ConversationRecord, advanced.id) === advanced
   end
 
   test "claims one exact waiting conversation for generation only once" do
     started = start_conversation!("generation-claim")
     assert {:ok, waiting} = ConversationStore.wait(started)
 
-    assert {:ok, generating} = ConversationStore.claim_generation(waiting)
-    assert generating === %{waiting | status: :generating}
+    assert {:ok, generating} = ConversationStore.claim_generation(waiting, "responder")
+
+    assert generating === %{
+             waiting
+             | status: :generating,
+               llm_call_count: waiting.llm_call_count + 1
+           }
+
     assert Repo.get!(ConversationRecord, started.id) === generating
 
-    assert ConversationStore.claim_generation(waiting) == {:error, :conversation_conflict}
-    assert ConversationStore.claim_generation(generating) == {:error, :conversation_conflict}
+    assert ConversationStore.claim_generation(waiting, "responder") ==
+             {:error, :conversation_conflict}
+
+    assert ConversationStore.claim_generation(generating, "responder") ==
+             {:error, :conversation_conflict}
+
+    assert ConversationStore.consume_generation(generating, "other") ==
+             {:error, :conversation_conflict}
+
+    assert ConversationStore.consume_generation(generating, "responder") == :ok
+
+    assert ConversationStore.consume_generation(generating, "responder") ==
+             {:error, :conversation_conflict}
+  end
+
+  test "keeps outstanding claims out of waiting and removes them on terminal recovery" do
+    started = start_conversation!("generation-claim-lifecycle")
+    assert {:ok, waiting} = ConversationStore.wait(started)
+    assert {:ok, generating} = ConversationStore.claim_generation(waiting, "responder")
+
+    assert ConversationStore.wait(generating) == {:error, :conversation_conflict}
+    assert Repo.get!(ConversationRecord, started.id) === generating
+    assert Repo.aggregate(ResponderGenerationClaim, :count) == 1
+
+    completed_at = ~U[2026-08-05 12:01:00.000000Z]
+    assert {:ok, failed} = ConversationStore.fail(generating, completed_at)
+    assert failed.status == :failed
+    assert Repo.aggregate(ResponderGenerationClaim, :count) == 0
+
+    assert ConversationStore.consume_generation(generating, "responder") ==
+             {:error, :conversation_conflict}
+  end
+
+  test "accepts a persona ID at the shared portable-ID byte limit" do
+    started = start_conversation!("generation-claim-id-boundary")
+    assert {:ok, waiting} = ConversationStore.wait(started)
+    persona_id = String.duplicate("a", 16 * 1_024)
+
+    assert {:ok, generating} = ConversationStore.claim_generation(waiting, persona_id)
+    assert ConversationStore.consume_generation(generating, persona_id) == :ok
+  end
+
+  test "rejects invalid generation persona IDs before accessing storage" do
+    started = start_conversation!("invalid-generation-persona")
+    assert {:ok, waiting} = ConversationStore.wait(started)
+    Repo.put_dynamic_repo(:missing_conversation_repo)
+
+    for persona_id <- [nil, "", ".invalid", String.duplicate("a", 16 * 1_024 + 1)] do
+      assert ConversationStore.claim_generation(waiting, persona_id) ==
+               {:error, :invalid_persona_id}
+
+      assert ConversationStore.consume_generation(waiting, persona_id) ==
+               {:error, :invalid_persona_id}
+    end
+  end
+
+  test "rolls back a valid trigger rewrite of a generation claim" do
+    started = start_conversation!("rewritten-generation-claim")
+    assert {:ok, waiting} = ConversationStore.wait(started)
+
+    Ecto.Adapters.SQL.query!(
+      Repo,
+      """
+      CREATE TRIGGER rewrite_responder_generation_claim
+      AFTER INSERT ON responder_generation_claims
+      BEGIN
+        UPDATE responder_generation_claims
+        SET persona_id = 'altered-responder'
+        WHERE conversation_id = NEW.conversation_id;
+      END
+      """,
+      [],
+      log: false
+    )
+
+    try do
+      assert ConversationStore.claim_generation(waiting, "responder") ==
+               {:error, :conversation_conflict}
+
+      assert Repo.get!(ConversationRecord, waiting.id) === waiting
+      assert Repo.aggregate(ResponderGenerationClaim, :count) == 0
+    after
+      Ecto.Adapters.SQL.query!(
+        Repo,
+        "DROP TRIGGER rewrite_responder_generation_claim",
+        [],
+        log: false
+      )
+    end
+  end
+
+  test "enforces portable persona IDs and integer claim counters in storage" do
+    started = start_conversation!("generation-claim-constraints")
+
+    invalid_rows = [
+      [nil, "responder", 0, 1],
+      [started.id, ".invalid", 0, 1],
+      [started.id, "invalid\0id", 0, 1],
+      [started.id, String.duplicate("a", 16 * 1_024 + 1), 0, 1],
+      [started.id, "responder", 0.5, 1],
+      [started.id, "responder", 0, 1.5]
+    ]
+
+    for values <- invalid_rows do
+      assert_raise Exqlite.Error, fn ->
+        Ecto.Adapters.SQL.query!(
+          Repo,
+          """
+          INSERT INTO responder_generation_claims
+            (conversation_id, persona_id, turn_count, llm_call_count)
+          VALUES (?, ?, ?, ?)
+          """,
+          values,
+          log: false
+        )
+      end
+    end
+
+    assert Repo.aggregate(ResponderGenerationClaim, :count) == 0
   end
 
   test "requires the exact loaded active capability" do

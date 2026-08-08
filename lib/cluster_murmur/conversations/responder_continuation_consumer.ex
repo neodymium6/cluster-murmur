@@ -3,8 +3,8 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationConsumer do
   Narrow synchronous boundary for one responder continuation selection.
 
   Implementations preflight all context before randomness is consumed, then
-  consume exactly one selected reply or no-reply plan after the dispatcher has
-  authoritatively claimed its waiting conversation for generation.
+  atomically consume the plan's durable responder claim before any effect. The
+  dispatcher creates that exact persona-bound claim before handoff.
   """
 
   alias ClusterMurmur.Conversations.ResponderContinuationPlanner.{Input, Plan}

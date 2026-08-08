@@ -70,7 +70,7 @@ defmodule ClusterMurmur.Persistence.MessageStore do
     with :ok <- ConversationRecordValidator.validate_active(conversation),
          {:ok, changeset} <- validate_message(conversation, message),
          :ok <- validate_capacity(conversation) do
-      persist(conversation, changeset)
+      persist(conversation, changeset, :generated)
     else
       {:error, reason}
       when reason in [
@@ -78,6 +78,29 @@ defmodule ClusterMurmur.Persistence.MessageStore do
              :invalid_message,
              :conversation_limit
            ] ->
+        {:error, reason}
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  @doc "Appends one message after an LLM call was durably reserved, advancing only its turn."
+  @spec append_reserved(term(), term()) ::
+          {:ok, {MessageRecord.t(), ConversationRecord.t()}} | {:error, error()}
+  def append_reserved(conversation, message) do
+    with :ok <- ConversationRecordValidator.validate_active(conversation),
+         true <- conversation.status == :generating,
+         {:ok, changeset} <- validate_message(conversation, message),
+         :ok <- validate_reserved_capacity(conversation) do
+      persist(conversation, changeset, :reserved)
+    else
+      false ->
+        {:error, :invalid_conversation_record}
+
+      {:error, reason}
+      when reason in [:invalid_conversation_record, :invalid_message, :conversation_limit] ->
         {:error, reason}
     end
   rescue
@@ -212,8 +235,17 @@ defmodule ClusterMurmur.Persistence.MessageStore do
 
   defp validate_capacity(_conversation), do: {:error, :conversation_limit}
 
-  defp persist(conversation, changeset) do
-    case Repo.transaction(fn -> append_transaction(conversation, changeset) end) do
+  defp validate_reserved_capacity(%ConversationRecord{
+         turn_count: turn_count,
+         llm_call_count: llm_call_count
+       })
+       when turn_count < @max_safe_integer and llm_call_count == turn_count + 1,
+       do: :ok
+
+  defp validate_reserved_capacity(_conversation), do: {:error, :conversation_limit}
+
+  defp persist(conversation, changeset, mode) do
+    case Repo.transaction(fn -> append_transaction(conversation, changeset, mode) end) do
       {:ok, {%MessageRecord{}, %ConversationRecord{}} = result} ->
         {:ok, result}
 
@@ -231,11 +263,11 @@ defmodule ClusterMurmur.Persistence.MessageStore do
     end
   end
 
-  defp append_transaction(conversation, changeset) do
+  defp append_transaction(conversation, changeset, mode) do
     with :ok <- require_ordered_history(conversation.id, changeset),
-         :ok <- advance_conversation(conversation),
+         :ok <- advance_conversation(conversation, mode),
          {:ok, message_record} <- insert_message(changeset),
-         {:ok, conversation_record} <- restore_advanced_conversation(conversation) do
+         {:ok, conversation_record} <- restore_advanced_conversation(conversation, mode) do
       {message_record, conversation_record}
     else
       {:error, reason} -> Repo.rollback(reason)
@@ -271,7 +303,7 @@ defmodule ClusterMurmur.Persistence.MessageStore do
       limit: 1
   end
 
-  defp advance_conversation(conversation) do
+  defp advance_conversation(conversation, mode) do
     query =
       from persisted in ConversationRecord,
         where:
@@ -283,12 +315,19 @@ defmodule ClusterMurmur.Persistence.MessageStore do
             persisted.started_at == ^conversation.started_at and
             is_nil(persisted.completed_at)
 
-    case Repo.update_all(query,
-           set: [
-             turn_count: conversation.turn_count + 1,
-             llm_call_count: conversation.llm_call_count + 1
-           ]
-         ) do
+    updates =
+      case mode do
+        :generated ->
+          [
+            turn_count: conversation.turn_count + 1,
+            llm_call_count: conversation.llm_call_count + 1
+          ]
+
+        :reserved ->
+          [turn_count: conversation.turn_count + 1]
+      end
+
+    case Repo.update_all(query, set: updates) do
       {1, nil} -> :ok
       {0, nil} -> {:error, :conversation_conflict}
       _failure -> {:error, :storage_unavailable}
@@ -320,14 +359,19 @@ defmodule ClusterMurmur.Persistence.MessageStore do
     end
   end
 
-  defp restore_advanced_conversation(previous) do
+  defp restore_advanced_conversation(previous, mode) do
+    expected_llm_calls =
+      if mode == :generated,
+        do: previous.llm_call_count + 1,
+        else: previous.llm_call_count
+
     case Repo.get(ConversationRecord, previous.id) do
       %ConversationRecord{} = record ->
         if record.id == previous.id and
              record.root_event_id == previous.root_event_id and
              record.status == previous.status and
              record.turn_count == previous.turn_count + 1 and
-             record.llm_call_count == previous.llm_call_count + 1 and
+             record.llm_call_count == expected_llm_calls and
              record.started_at == previous.started_at and
              record.completed_at == previous.completed_at and
              ConversationRecordValidator.validate_active(record) == :ok,
