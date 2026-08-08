@@ -63,7 +63,7 @@ defmodule ClusterMurmur.Triggers.EventTriggerAuthorizerTest do
     refute inspected =~ "2026"
   end
 
-  test "returns stable skips for nonmatches, cooldowns, and repeated pairs" do
+  test "returns stable skips for nonmatches, cooldowns, and existing pairs" do
     nonmatching = %{event() | type: "observation.recovered"}
 
     assert EventTriggerAuthorizer.authorize(trigger(), nonmatching, @executed_at, FakeStore) ==
@@ -73,7 +73,8 @@ defmodule ClusterMurmur.Triggers.EventTriggerAuthorizerTest do
 
     for {response, expected} <- [
           {{:skip, :cooldown}, {:skip, :cooldown}},
-          {{:error, :execution_conflict}, {:skip, :already_started}}
+          {{:skip, :execution_in_progress}, {:skip, :execution_in_progress}},
+          {{:skip, :already_terminal}, {:skip, :already_terminal}}
         ] do
       Process.put({FakeStore, :response}, response)
 

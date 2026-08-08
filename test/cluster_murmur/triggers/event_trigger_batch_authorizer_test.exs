@@ -91,7 +91,7 @@ defmodule ClusterMurmur.Triggers.EventTriggerBatchAuthorizerTest do
       {FakeAuthorizer, :responses},
       %{
         "a" => {:skip, :cooldown},
-        "b" => {:skip, :already_started},
+        "b" => {:skip, :execution_in_progress},
         "c" => {:error, :event_not_found},
         "d" => {:error, {:private, "diagnostic"}}
       }
@@ -110,7 +110,7 @@ defmodule ClusterMurmur.Triggers.EventTriggerBatchAuthorizerTest do
     assert result.skipped_count == 2
     assert result.failure_count == 2
     assert Enum.map(result.authorizations, & &1.plan.trigger.id) == ["e"]
-    assert result.skips == [:cooldown, :already_started]
+    assert result.skips == [:cooldown, :execution_in_progress]
     assert result.failures == [:event_not_found, :authorization_failed]
     assert Process.get({FakeAuthorizer, :calls}) == ~w(a b c d e)
   end

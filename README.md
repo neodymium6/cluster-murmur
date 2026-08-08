@@ -168,7 +168,10 @@ transaction. A pure planner now correlates up to 100 available handoffs with
 their restored immutable events and caps current event-trigger matches at 256
 before any claim. The fixed starter-only and bounded-conversation consumers can
 preflight that durable plan without changing their authorization-free input
-checks. Claimed outbox consumption remains future assembly work.
+checks. One explicit cycle can now preflight a complete batch, claim each entry,
+run matching fixed consumers in stable order, and complete only unmatched or
+fully terminal handoffs while retaining failed claims for lease-based retry.
+No event-dispatch scheduler is installed automatically.
 Event retention and dedupe-window policy also remain future work. Observer
 target responses now pass a closed 256-entry and 64 KiB
 identity catalog that rejects duplicates and sorts accepted redacted targets
