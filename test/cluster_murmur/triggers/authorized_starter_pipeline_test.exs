@@ -29,13 +29,17 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
   }
 
   alias ClusterMurmur.TestSupport.RuntimeFixture
+  alias ClusterMurmur.Observers.Poller.Result, as: PollResult
 
   alias ClusterMurmur.Triggers.{
     AuthorizedStarterPipeline,
-    EventTriggerAuthorizer
+    AuthorizedStarterPipelineConsumer,
+    EventTriggerAuthorizer,
+    PollEventTriggerPlanner
   }
 
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.{Adapters, Input}
+  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.Context
 
   @events_version 20_260_804_180_500
   @executions_version 20_260_804_200_000
@@ -198,6 +202,52 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
     assert Repo.aggregate(MessageRecord, :count) == 0
     refute_receive :generation_called
     refute_receive :publication_called
+  end
+
+  test "consumes one preflighted poll authorization through the concrete pipeline" do
+    parent = self()
+
+    input =
+      input(
+        fn request ->
+          send(parent, {:generation, request})
+          {:ok, "A bounded confirmed fact."}
+        end,
+        fn request ->
+          send(parent, {:publication, request})
+          {:ok, %WebhookResponse{status: 200, body: ~s({"id":"12345"})}}
+        end
+      )
+
+    event = input.authorization.plan.event
+
+    poll_result = %PollResult{
+      target_count: 1,
+      ingested_count: 1,
+      event_count: 1,
+      failure_count: 0,
+      events: [event],
+      failures: []
+    }
+
+    assert {:ok, plan} =
+             PollEventTriggerPlanner.plan(poll_result, input.configuration, @executed_at)
+
+    context = %Context{inputs: [%{input | authorization: nil}], adapters: adapters()}
+
+    assert AuthorizedStarterPipelineConsumer.preflight(
+             plan,
+             poll_result,
+             input.configuration,
+             context
+           ) == :ok
+
+    assert AuthorizedStarterPipelineConsumer.consume(input.authorization, 0, context) == :ok
+    assert Repo.get!(ConversationRecord, input.conversation_id).status == :completed
+    assert_receive {:generation, _request}
+    assert_receive {:publication, %WebhookRequest{}}
+    refute_receive {:generation, _request}
+    refute_receive {:publication, _request}
   end
 
   defp input(generation_transport, publication_transport) do
