@@ -243,11 +243,14 @@ Discord publication. Operators choose the UTC abandonment cutoff and completion
 instant. The opt-in recovered poll supervisor reads one injected storage-UTC
 instant, uses it for both values, and starts its fixed scheduler child only when
 every bounded recovery mutation succeeds and no collection fills its 100-record
-page. A full page requires another startup pass to prove that no residual work
-remains. Scheduler termination closes this supervisor so a parent-managed
-replacement must pass through recovery again. The boundary remains outside the
-public application tree, so private deployment assembly must construct and
-supervise it explicitly.
+page. When poll and event dispatch are both enabled, the recovered runtime
+supervisor validates both schedulers and exact recovery stores before reading
+that shared clock, recovers once, then starts both. Termination of either worker
+closes the shared supervisor and stops its sibling, so a parent-managed
+replacement cannot run global recovery against live work. A full page requires
+another startup pass to prove that no residual work remains. These boundaries
+remain outside the public application tree, so private deployment assembly must
+construct and supervise them explicitly.
 
 `ClusterMurmur.Release.migrate!/0`, invoked after every application instance
 using the database has stopped, is the only application migration operation. It

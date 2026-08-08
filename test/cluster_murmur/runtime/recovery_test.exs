@@ -121,6 +121,24 @@ defmodule ClusterMurmur.Runtime.RecoveryTest do
     assert result.saturated?
   end
 
+  test "validates exact recovery store callbacks without loading a collection" do
+    valid = stores()
+
+    assert Recovery.validate_stores(valid) == :ok
+
+    for invalid <- [
+          %{valid | executions: String},
+          %{valid | conversations: String},
+          %{valid | publications: String},
+          Map.put(valid, :private, true),
+          nil
+        ] do
+      assert Recovery.validate_stores(invalid) == {:error, :invalid_runtime_recovery}
+    end
+
+    assert Process.get({__MODULE__, :trace}) == []
+  end
+
   test "rejects invalid time, stores, and oversized loads before mutation" do
     invalid_stores = Map.put(stores(), :private, true)
 
