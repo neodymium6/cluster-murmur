@@ -92,4 +92,11 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand(
+    "../priv/repo/migrations/20260808150000_create_event_dispatches.exs",
+    __DIR__
+  )
+)
+
 ExUnit.start()

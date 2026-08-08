@@ -560,6 +560,14 @@ and only an exact bounded, correlated aggregate result is retained. Status
 inspection excludes configuration and event details. The worker is not
 installed in the public application supervision tree automatically.
 
+The persistence layer also provides a dedicated event-dispatch outbox for the
+crash-safe handoff that follows event commit. It accepts only exact immutable
+events already in the event store and returns a claim-free enqueue receipt. It
+lists at most 100 pending or expired entries without claim data, grants one
+opaque fixed 60-second lease, and completes only that exact live claim. The
+outbox does not select triggers or perform external I/O. Atomic stochastic
+enqueue and runtime consumption remain subsequent assembly steps.
+
 Active windows include their start minute and exclude their end minute. A
 crossing-midnight window is active from its start through local midnight and
 from midnight up to its end. Both instants in a repeated DST wall-clock minute
