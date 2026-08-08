@@ -153,17 +153,20 @@ templates now project to bounded immutable events whose identity and occurrence
 time remain identical across retries of one scheduled version and exact
 template; template drift preserves the ID so persistence can fail closed rather
 than accept a duplicate. A narrow SQLite transaction now commits one exact
-projected stochastic event together with its claimed next-run state, rolling
-back either side on conflict. One explicit bounded cycle now traverses
+projected stochastic event, its durable dispatch handoff, and its claimed
+next-run state, rolling back the attempt on conflict. One explicit bounded
+cycle now traverses
 100-record cursor pages up to the 256-trigger configuration bound, skips
 ineligible policies without claiming, and runs each eligible schedule through
 claim, planning, projection, and atomic commit in durable order. Scheduling and
 event-trigger dispatch remain separate: an opt-in worker can now schedule those
 cycles without overlap but is not installed in the public application tree,
 while a dedicated 100-entry, opaque-lease outbox now provides the durable
-event-dispatch handoff. Atomic stochastic enqueue and outbox consumption remain
-future assembly work. Event retention and dedupe-window policy also remain
-future work. Observer target responses now pass a closed 256-entry and 64 KiB
+event-dispatch handoff. Each successful stochastic commit now inserts the
+event, enqueues that handoff, and advances its claimed schedule in one SQLite
+transaction. Bounded outbox consumption remains future assembly work. Event
+retention and dedupe-window policy also remain future work. Observer target
+responses now pass a closed 256-entry and 64 KiB
 identity catalog that rejects duplicates and sorts accepted redacted targets
 before polling. One injected, sequential poll lists that catalog once, observes
 each accepted identity once, and sends only matched normalized observations

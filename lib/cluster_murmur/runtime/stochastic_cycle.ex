@@ -13,6 +13,7 @@ defmodule ClusterMurmur.Runtime.StochasticCycle do
   alias ClusterMurmur.DateTimeValidator
 
   alias ClusterMurmur.Persistence.{
+    EventDispatchReceipt,
     EventRecord,
     StochasticEventCommitStore,
     StochasticSchedule,
@@ -59,6 +60,10 @@ defmodule ClusterMurmur.Runtime.StochasticCycle do
     :claim_started_at,
     :claim_expires_at
   ]
+  @dispatch_receipt_keys EventDispatchReceipt.__struct__() |> Map.keys()
+  @dispatch_receipt_key_count length(@dispatch_receipt_keys)
+  @commit_result_keys CommitResult.__struct__() |> Map.keys()
+  @commit_result_key_count length(@commit_result_keys)
 
   defmodule Adapters do
     @moduledoc false
@@ -321,17 +326,20 @@ defmodule ClusterMurmur.Runtime.StochasticCycle do
 
   defp validate_commit_correlation(
          %CommitResult{
+           dispatch: %EventDispatchReceipt{} = dispatch,
            event: %EventRecord{} = record,
-           schedule: %StochasticSchedule{} = committed
-         },
+           schedule: %StochasticSchedule{} = committed_schedule
+         } = result,
          event,
          plan,
          original
        ) do
-    with true <- event_record_matches?(record, event),
+    with true <- exact_commit_result?(result),
+         true <- event_record_matches?(record, event),
+         true <- dispatch_matches?(dispatch, event, plan.executed_at),
          {:ok, daily_count, daily_count_date} <- expected_daily_state(original, plan.local_date),
          true <-
-           Map.take(committed, @schedule_fields) == %{
+           Map.take(committed_schedule, @schedule_fields) == %{
              trigger_id: plan.claim.trigger_id,
              next_run_at: plan.next_run_at,
              last_run_at: plan.executed_at,
@@ -350,12 +358,24 @@ defmodule ClusterMurmur.Runtime.StochasticCycle do
   defp validate_commit_correlation(_committed, _event, _plan, _original),
     do: {:error, :invalid_stochastic_cycle}
 
+  defp exact_commit_result?(result) do
+    map_size(result) == @commit_result_key_count and
+      Enum.all?(@commit_result_keys, &Map.has_key?(result, &1))
+  end
+
   defp event_record_matches?(record, event) do
     changeset = EventRecord.changeset(%EventRecord{}, event)
 
     changeset.valid? and
       Map.take(record, @event_record_fields) ==
         changeset |> Ecto.Changeset.apply_changes() |> Map.take(@event_record_fields)
+  end
+
+  defp dispatch_matches?(dispatch, event, recorded_at) do
+    dispatch.event_id == event.id and dispatch.status == :pending and
+      dispatch.enqueued_at == recorded_at and
+      map_size(dispatch) == @dispatch_receipt_key_count and
+      Enum.all?(@dispatch_receipt_keys, &Map.has_key?(dispatch, &1))
   end
 
   defp expected_daily_state(_original, nil), do: {:ok, 0, nil}

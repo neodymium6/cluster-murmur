@@ -1,16 +1,19 @@
 defmodule ClusterMurmur.Persistence.StochasticEventCommitStore do
   @moduledoc """
-  Atomically commits one claimed stochastic event and its next schedule state.
+  Atomically commits one claimed stochastic event, its dispatch handoff, and
+  its next schedule state.
 
-  Event insertion and schedule advancement share one repository transaction.
-  No observer, provider, publication transport, or generic repository operation
-  crosses this boundary.
+  Event insertion, outbox enqueue, and schedule advancement share one
+  repository transaction. No observer, provider, publication transport, or
+  generic repository operation crosses this boundary.
   """
 
   alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.Events.Event
 
   alias ClusterMurmur.Persistence.{
+    EventDispatchReceipt,
+    EventDispatchStore,
     EventRecord,
     EventStore,
     StochasticSchedule,
@@ -26,11 +29,12 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStore do
     @moduledoc false
 
     @derive {Inspect, only: []}
-    @enforce_keys [:event, :schedule]
-    defstruct [:event, :schedule]
+    @enforce_keys [:event, :dispatch, :schedule]
+    defstruct [:event, :dispatch, :schedule]
 
     @type t :: %__MODULE__{
             event: ClusterMurmur.Persistence.EventRecord.t(),
+            dispatch: ClusterMurmur.Persistence.EventDispatchReceipt.t(),
             schedule: ClusterMurmur.Persistence.StochasticSchedule.t()
           }
   end
@@ -47,7 +51,7 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStore do
           | :stochastic_event_conflict
           | :storage_unavailable
 
-  @doc "Commits one exact projected event and advances its claimed schedule atomically."
+  @doc "Commits one exact event, dispatch handoff, and claimed schedule atomically."
   @spec commit(term(), term(), term()) :: {:ok, Result.t()} | {:error, error()}
   def commit(%Plan{} = plan, %Event{} = event, %DateTime{} = recorded_at) do
     with :ok <- validate(plan, event, recorded_at) do
@@ -130,8 +134,10 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStore do
 
   defp persist(plan, event, recorded_at) do
     case Repo.transaction(fn -> persist_transaction(plan, event, recorded_at) end) do
-      {:ok, {%EventRecord{} = event_record, %StochasticSchedule{} = schedule}} ->
-        {:ok, %Result{event: event_record, schedule: schedule}}
+      {:ok,
+       {%EventRecord{} = event_record, %EventDispatchReceipt{} = dispatch,
+        %StochasticSchedule{} = schedule}} ->
+        {:ok, %Result{event: event_record, dispatch: dispatch, schedule: schedule}}
 
       {:error, reason}
       when reason in [:invalid_stochastic_event_commit, :stochastic_event_conflict] ->
@@ -144,10 +150,31 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStore do
 
   defp persist_transaction(plan, event, recorded_at) do
     with {:ok, %EventRecord{} = event_record} <- insert_event(event),
+         {:ok, %EventDispatchReceipt{status: :pending} = dispatch} <-
+           enqueue_event(event, recorded_at),
          {:ok, %StochasticSchedule{} = schedule} <- advance_schedule(plan, recorded_at) do
-      {event_record, schedule}
+      {event_record, dispatch, schedule}
     else
       {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp enqueue_event(event, recorded_at) do
+    case EventDispatchStore.enqueue(event, recorded_at) do
+      {:ok, %EventDispatchReceipt{status: :pending} = receipt} ->
+        {:ok, receipt}
+
+      {:ok, %EventDispatchReceipt{}} ->
+        {:error, :stochastic_event_conflict}
+
+      {:error, reason} when reason in [:dispatch_conflict, :event_conflict] ->
+        {:error, :stochastic_event_conflict}
+
+      {:error, reason} when reason in [:invalid_datetime, :invalid_dispatch, :invalid_event] ->
+        {:error, :invalid_stochastic_event_commit}
+
+      _failure ->
+        {:error, :storage_unavailable}
     end
   end
 
