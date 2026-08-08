@@ -174,7 +174,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
   @doc "Runs one exact authorization through starter completion or reply continuation."
   @spec run(term(), term()) :: result()
   def run(%Input{} = input, %Adapters{} = adapters) do
-    with :ok <- preflight(input, adapters),
+    with :ok <- validate_runtime(input, adapters),
          {:ok, conversation_plan} <-
            EventTriggerConversationPlanner.plan(
              input.authorization,
@@ -307,6 +307,24 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
   def validate_shared_runtime(_shared_input, _adapters),
     do: {:error, :invalid_starter_pipeline}
 
+  @doc "Validates one complete starter runtime without mutating persistence."
+  @spec validate_runtime(term(), term()) :: :ok | {:error, :invalid_starter_pipeline}
+  def validate_runtime(%Input{} = input, %Adapters{} = adapters) do
+    with :ok <- validate_shared_input(input, adapters),
+         :ok <- EventTriggerAuthorizer.validate(input.authorization),
+         :ok <- validate_authorization_times(input) do
+      :ok
+    else
+      _failure -> {:error, :invalid_starter_pipeline}
+    end
+  rescue
+    _error -> {:error, :invalid_starter_pipeline}
+  catch
+    _kind, _reason -> {:error, :invalid_starter_pipeline}
+  end
+
+  def validate_runtime(_input, _adapters), do: {:error, :invalid_starter_pipeline}
+
   defp finish(recorded, input, adapters) do
     case StarterReplyFinisher.finish(
            recorded,
@@ -319,16 +337,6 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
       {:ok, completed} -> {:ok, completed}
       {:continue, :reply, continuation} -> {:continue, :reply, continuation}
       {:error, reason} when is_atom(reason) -> {:error, reason}
-      _failure -> {:error, :invalid_starter_pipeline}
-    end
-  end
-
-  defp preflight(input, adapters) do
-    with :ok <- validate_shared_input(input, adapters),
-         :ok <- EventTriggerAuthorizer.validate(input.authorization),
-         :ok <- validate_authorization_times(input) do
-      :ok
-    else
       _failure -> {:error, :invalid_starter_pipeline}
     end
   end
