@@ -224,6 +224,22 @@ narrow observation-ingestion transaction restores prior entity state, applies
 the pure debounce and event plan, and commits the next state with its optional
 event atomically. It performs no observer call or trigger action.
 
+The implemented no-reply starter runtime composes one fixed read-only observer
+poll, atomic ingestion, deterministic event-trigger matching, durable
+authorization, bounded starter generation, and one claimed Discord publication.
+Its periodic scheduler is opt-in: the public application supervision tree does
+not construct an observer, external transports, secrets, or an interval by
+default. A deployment must build validated scheduler options in its private
+assembly and explicitly supervise the child. The scheduler completes one cycle
+before creating the next timer and rejects stale or injected timer messages.
+
+Restart recovery is also explicit. It loads at most 100 abandoned trigger
+executions, active conversations, and open publication attempts per collection;
+validates every record before the first mutation; then fails internal work and
+marks uncertain publications ambiguous. It never retries a provider call or
+Discord publication. Operators choose the UTC abandonment cutoff and completion
+instant and should run recovery before enabling the poll scheduler.
+
 `ClusterMurmur.Release.migrate!/0`, invoked after every application instance
 using the database has stopped, is the only application migration operation. It
 applies packaged migrations to the fixed configured repository, is safe to

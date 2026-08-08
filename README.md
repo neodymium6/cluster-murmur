@@ -148,16 +148,16 @@ successful execution while atomically advancing the next run and daily bucket.
 A pure adapter evaluates each available due projection against active hours and
 the correctly rolled-over local-date count before claiming. A redacted pure
 plan rechecks claimed execution eligibility and assembles only the supplied
-event facts and completion values. External execution and exactly-once delivery
-are not implemented. End-to-end observer polling, event dedupe-window policy,
-trigger execution, LLM generation orchestration, and Discord publication
-orchestration are not implemented yet. Observer target responses now pass a
+event facts and completion values. External stochastic execution and
+exactly-once delivery are not implemented. Event retention and dedupe-window
+policy also remain future work. Observer target responses now pass a
 closed 256-entry and 64 KiB identity catalog that rejects duplicates and sorts
 accepted redacted targets before polling. One injected, sequential poll lists
 that catalog once, observes each accepted identity once, and sends only matched
 normalized observations through atomic ingestion while collecting validated
-events and stable partial failures. Supervised timing and concrete observer
-transport remain unimplemented. One matched event trigger can now cross its
+events and stable partial failures. A fixed MCP observer client exposes only
+target-list and cluster-health operations through a bounded redacted transport.
+One matched event trigger can now cross its
 pure planner and atomic start store through a redacted authorization boundary;
 matching triggers can be authorized sequentially in one deterministic bounded
 batch with stable partial outcomes. One exact authorization can now resolve
@@ -185,16 +185,23 @@ claim and injected publisher call, and atomically records exact success,
 classified failure, or an ambiguous effect without retrying. A successful
 terminal capability now records the exact selected persona's restart-safe
 cooldown from publication completion and current bounded policy; failed or
-ambiguous outcomes cannot update it. Conversation advancement and end-to-end
-runtime orchestration remain unimplemented. The existing reply gate now closes
+ambiguous outcomes cannot update it. The existing reply gate now closes
 the exact starter conversation on explicit no reply, while an explicit reply
 remains nonterminal for later responder orchestration. One narrow coordinator
 now composes an already authorized event through those boundaries. Its
-integration test uses real SQLite stores with fake generation and Discord
-transports, proves the deterministic no-reply conversation terminates, and
-rejects capability reuse before another external call. Observation scheduling,
-recovery, and responder continuation remain unimplemented. Do not deploy this
-revision or connect it to infrastructure, model providers, or Discord.
+integration test uses real SQLite stores with a fake observer, generation, and
+Discord transports, proving that one observed transition reaches deterministic
+no-reply completion without returning event facts or reusable authorization
+capabilities from the cycle boundary. Generation still supplies only the
+allowlisted event facts to the explicitly configured model provider.
+An opt-in GenServer schedules those cycles without overlap; it has no live
+defaults and is not installed in the application tree automatically. Bounded
+restart recovery validates every abandoned record before mutation, marks open
+publication outcomes ambiguous without retry, and fails interrupted
+conversations and trigger executions through existing CAS boundaries.
+Responder continuation and deployment-specific runtime assembly remain
+unimplemented. Do not deploy this revision or connect it to infrastructure,
+model providers, or Discord without explicit review of that private assembly.
 
 ## Boundary
 
