@@ -165,6 +165,28 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
     assert length(schedules) == 100
     assert hd(schedules).trigger_id == "trigger-000"
     assert List.last(schedules).trigger_id == "trigger-099"
+
+    assert {:ok, remaining} =
+             StochasticScheduleStore.list_due_after(
+               ~U[2026-08-04 14:00:00.000000Z],
+               {~U[2026-08-04 14:00:00.000000Z], "trigger-099"}
+             )
+
+    assert Enum.map(remaining, & &1.trigger_id) == ["trigger-100"]
+  end
+
+  test "rejects malformed due-page cursors before reading storage" do
+    Repo.put_dynamic_repo(:missing_stochastic_schedule_repo)
+
+    assert StochasticScheduleStore.list_due_after(
+             ~U[2026-08-04 14:00:00.000000Z],
+             {~U[2026-08-04 14:00:00.000000Z], ""}
+           ) == {:error, :invalid_schedule}
+
+    assert StochasticScheduleStore.list_due_after(
+             ~U[2026-08-04 14:00:00.000000Z],
+             :not_a_cursor
+           ) == {:error, :invalid_schedule}
   end
 
   test "rejects noncanonical due instants before reading storage" do

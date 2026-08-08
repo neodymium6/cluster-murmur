@@ -154,9 +154,13 @@ time remain identical across retries of one scheduled version and exact
 template; template drift preserves the ID so persistence can fail closed rather
 than accept a duplicate. A narrow SQLite transaction now commits one exact
 projected stochastic event together with its claimed next-run state, rolling
-back either side on conflict. External stochastic worker timing and
-event-trigger dispatch are not implemented. Event retention and dedupe-window
-policy also remain future work. Observer target responses now pass a
+back either side on conflict. One explicit bounded cycle now traverses
+100-record cursor pages up to the 256-trigger configuration bound, skips
+ineligible policies without claiming, and runs each eligible schedule through
+claim, planning, projection, and atomic commit in durable order. External
+stochastic worker timing and event-trigger dispatch are
+not implemented. Event retention and dedupe-window policy also remain future
+work. Observer target responses now pass a
 closed 256-entry and 64 KiB identity catalog that rejects duplicates and sorts
 accepted redacted targets before polling. One injected, sequential poll lists
 that catalog once, observes each accepted identity once, and sends only matched

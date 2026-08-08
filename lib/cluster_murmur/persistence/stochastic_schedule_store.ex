@@ -81,34 +81,76 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStore do
     :exit, _reason -> {:error, :storage_unavailable}
   end
 
-  @doc "Returns at most 100 schedules due at or before one supplied UTC instant."
+  @doc "Returns the first page of at most 100 schedules due at one UTC instant."
   @spec list_due(term()) :: {:ok, [StochasticSchedule.t()]} | {:error, error()}
   def list_due(now) do
-    if valid_storage_datetime?(now) do
-      query =
-        from schedule in StochasticSchedule,
-          where:
-            schedule.next_run_at <= ^now and
-              (is_nil(schedule.claim_token) or schedule.claim_expires_at <= ^now),
-          order_by: [asc: schedule.next_run_at, asc: schedule.trigger_id],
-          limit: @max_due_schedules,
-          select:
-            struct(schedule, [
-              :trigger_id,
-              :next_run_at,
-              :last_run_at,
-              :daily_count,
-              :daily_count_date
-            ])
+    if valid_storage_datetime?(now),
+      do: list_due_query(now, nil),
+      else: {:error, :invalid_datetime}
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
 
-      {:ok, Repo.all(query)}
-    else
-      {:error, :invalid_datetime}
+  @doc "Returns the next due page strictly after one `(next_run_at, trigger_id)` cursor."
+  @spec list_due_after(term(), term()) ::
+          {:ok, [StochasticSchedule.t()]} | {:error, error()}
+  def list_due_after(now, {next_run_at, trigger_id} = cursor) do
+    cond do
+      not valid_storage_datetime?(now) -> {:error, :invalid_datetime}
+      not valid_due_cursor?(next_run_at, trigger_id) -> {:error, :invalid_schedule}
+      true -> list_due_query(now, cursor)
     end
   rescue
     _error -> {:error, :storage_unavailable}
   catch
     :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  def list_due_after(now, _cursor) do
+    if valid_storage_datetime?(now),
+      do: {:error, :invalid_schedule},
+      else: {:error, :invalid_datetime}
+  end
+
+  defp list_due_query(now, cursor) do
+    query =
+      from schedule in StochasticSchedule,
+        where:
+          schedule.next_run_at <= ^now and
+            (is_nil(schedule.claim_token) or schedule.claim_expires_at <= ^now),
+        order_by: [asc: schedule.next_run_at, asc: schedule.trigger_id],
+        limit: @max_due_schedules,
+        select:
+          struct(schedule, [
+            :trigger_id,
+            :next_run_at,
+            :last_run_at,
+            :daily_count,
+            :daily_count_date
+          ])
+
+    query = apply_due_cursor(query, cursor)
+    {:ok, Repo.all(query)}
+  end
+
+  defp apply_due_cursor(query, nil), do: query
+
+  defp apply_due_cursor(query, {next_run_at, trigger_id}) do
+    from schedule in query,
+      where:
+        schedule.next_run_at > ^next_run_at or
+          (schedule.next_run_at == ^next_run_at and schedule.trigger_id > ^trigger_id)
+  end
+
+  defp valid_due_cursor?(next_run_at, trigger_id) do
+    valid_storage_datetime?(next_run_at) and
+      StochasticSchedule.changeset(%StochasticSchedule{}, %{
+        trigger_id: trigger_id,
+        next_run_at: next_run_at,
+        daily_count: 0
+      }).valid?
   end
 
   defp persist(changeset, trigger_id) do
