@@ -21,7 +21,7 @@ defmodule ClusterMurmur.Observers.Poller do
     Observation
   }
 
-  alias ClusterMurmur.Observers.TargetCatalog
+  alias ClusterMurmur.Observers.{Client, TargetCatalog}
   alias ClusterMurmur.Persistence.ObservationIngestionStore
 
   defmodule Result do
@@ -77,15 +77,15 @@ defmodule ClusterMurmur.Observers.Poller do
           | {:observer, ExternalError.t()}
 
   @doc "Runs one bounded poll through injected fixed observer and ingestion modules."
-  @spec poll_once(module(), term(), module()) :: {:ok, Result.t()} | {:error, error()}
+  @spec poll_once(Client.t(), term(), module()) :: {:ok, Result.t()} | {:error, error()}
   def poll_once(
         observer_client,
         state_tracking,
         ingestion_store \\ ObservationIngestionStore
       )
 
-  def poll_once(observer_client, state_tracking, ingestion_store)
-      when is_atom(observer_client) and is_atom(ingestion_store) do
+  def poll_once(%Client{} = observer_client, state_tracking, ingestion_store)
+      when is_atom(ingestion_store) do
     with {:ok, policy} <- StateTracking.to_debounce_policy(state_tracking),
          :ok <- validate_dependencies(observer_client, ingestion_store),
          {:ok, raw_targets} <- list_targets(observer_client),
@@ -128,16 +128,14 @@ defmodule ClusterMurmur.Observers.Poller do
   def validate_result(_result), do: {:error, :invalid_poll}
 
   defp validate_dependencies(observer_client, ingestion_store) do
-    if Code.ensure_loaded?(observer_client) and Code.ensure_loaded?(ingestion_store) and
-         function_exported?(observer_client, :list_targets, 0) and
-         function_exported?(observer_client, :observe_target, 1) and
+    if Client.validate(observer_client) == :ok and Code.ensure_loaded?(ingestion_store) and
          function_exported?(ingestion_store, :ingest, 2),
        do: :ok,
        else: {:error, :invalid_poll}
   end
 
   defp list_targets(observer_client) do
-    case observer_client.list_targets() do
+    case observer_client.adapter.list_targets(observer_client.context) do
       {:ok, targets} -> {:ok, targets}
       {:error, reason} when reason in @external_errors -> {:error, {:observer, reason}}
       _failure -> {:error, {:observer, :invalid_response}}
@@ -182,7 +180,7 @@ defmodule ClusterMurmur.Observers.Poller do
   end
 
   defp observe_target(observer_client, target_id) do
-    case observer_client.observe_target(target_id) do
+    case observer_client.adapter.observe_target(observer_client.context, target_id) do
       {:ok, %Observation{} = observation} -> {:ok, observation}
       {:error, reason} when reason in @external_errors -> {:error, {:observer, reason}}
       _failure -> {:error, {:observer, :invalid_response}}
