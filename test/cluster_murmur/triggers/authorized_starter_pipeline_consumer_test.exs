@@ -3,12 +3,18 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumerTest do
 
   alias ClusterMurmur.Config.Triggers
   alias ClusterMurmur.Observers.Poller.Result, as: PollResult
+  alias ClusterMurmur.Persistence.EventDispatchCandidate
   alias ClusterMurmur.TestSupport.RuntimeFixture
 
-  alias ClusterMurmur.Triggers.{AuthorizedStarterPipelineConsumer, PollEventTriggerPlanner}
+  alias ClusterMurmur.Triggers.{
+    AuthorizedStarterPipelineConsumer,
+    EventConversationIdentity,
+    EventDispatchPlanner,
+    PollEventTriggerPlanner
+  }
 
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.{Adapters, Input}
-  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.Context
+  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.{Context, Entry}
 
   @executed_at ~U[2026-08-07 02:00:00.000000Z]
 
@@ -33,7 +39,8 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumerTest do
     event = RuntimeFixture.event()
     poll_result = poll_result([event])
     plan = plan(poll_result, configuration)
-    context = context([input(configuration, "conversation-1")])
+    trigger = configuration.triggers.triggers["failure-conversation"]
+    context = context([entry(input(configuration, "conversation-1"), event, trigger)])
 
     assert AuthorizedStarterPipelineConsumer.preflight(
              plan,
@@ -47,20 +54,45 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumerTest do
     refute inspect(context) =~ "conversation-1"
   end
 
+  test "preflights the same fixed inputs for a durable dispatch plan" do
+    configuration = RuntimeFixture.configuration()
+    event = RuntimeFixture.event()
+    plan = dispatch_plan(event, configuration)
+    trigger = configuration.triggers.triggers["failure-conversation"]
+    context = context([entry(input(configuration, "conversation-1"), event, trigger)])
+
+    assert AuthorizedStarterPipelineConsumer.preflight(plan, configuration, context) == :ok
+
+    assert AuthorizedStarterPipelineConsumer.preflight(
+             %{plan | match_count: 0},
+             configuration,
+             context
+           ) == {:error, :invalid_starter_context}
+  end
+
   test "rejects every malformed batch before a pipeline can run" do
     configuration = configuration_with_two_triggers()
     event = RuntimeFixture.event()
     poll_result = poll_result([event])
     plan = plan(poll_result, configuration)
-    first = input(configuration, "conversation-1")
-    second = input(configuration, "conversation-2")
+    first_trigger = configuration.triggers.triggers["failure-conversation"]
+    second_trigger = configuration.triggers.triggers["second-failure-conversation"]
+    first = entry(input(configuration, "conversation-1"), event, first_trigger)
+    second = entry(input(configuration, "conversation-2"), event, second_trigger)
     authorization = RuntimeFixture.started().plan.authorization
 
     invalid_contexts = [
       context([first]),
-      context([first, %{second | authorization: authorization}]),
-      context([first, %{second | conversation_id: first.conversation_id}]),
-      context([first, %{second | generated_at: ~U[2026-08-07 01:59:58.000000Z]}]),
+      context([first, %{second | input: %{second.input | authorization: authorization}}]),
+      context([
+        first,
+        %{second | input: %{second.input | conversation_id: first.input.conversation_id}}
+      ]),
+      context([
+        first,
+        %{second | input: %{second.input | generated_at: ~U[2026-08-07 01:59:58.000000Z]}}
+      ]),
+      context([first, %{second | trigger: first.trigger}]),
       Map.put(context([first, second]), :private, true)
     ]
 
@@ -79,7 +111,8 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumerTest do
     event = RuntimeFixture.event()
     poll_result = poll_result([event])
     plan = plan(poll_result, configuration)
-    context = context([input(configuration, "conversation-1")])
+    trigger = configuration.triggers.triggers["failure-conversation"]
+    context = context([entry(input(configuration, "conversation-1"), event, trigger)])
     authorization = RuntimeFixture.started(configuration, event).plan.authorization
 
     assert AuthorizedStarterPipelineConsumer.preflight(
@@ -96,8 +129,49 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumerTest do
              {:error, :starter_failed}
   end
 
-  defp context(inputs) do
-    %Context{inputs: inputs, adapters: adapters()}
+  test "rejects swapped durable trigger positions before invoking a pipeline" do
+    configuration = configuration_with_two_triggers()
+    event = RuntimeFixture.event()
+    plan = dispatch_plan(event, configuration)
+    first_trigger = configuration.triggers.triggers["failure-conversation"]
+    second_trigger = configuration.triggers.triggers["second-failure-conversation"]
+
+    first = entry(input(configuration, "conversation-1"), event, first_trigger)
+    second = entry(input(configuration, "conversation-2"), event, second_trigger)
+    swapped = context([%{first | trigger: second_trigger}, %{second | trigger: first_trigger}])
+    swapped_inputs = context([%{first | input: second.input}, %{second | input: first.input}])
+
+    assert AuthorizedStarterPipelineConsumer.preflight(plan, configuration, swapped) ==
+             {:error, :invalid_starter_context}
+
+    assert AuthorizedStarterPipelineConsumer.preflight(plan, configuration, swapped_inputs) ==
+             {:error, :invalid_starter_context}
+
+    first_authorization = RuntimeFixture.started(configuration, event).plan.authorization
+
+    assert AuthorizedStarterPipelineConsumer.consume(first_authorization, 0, swapped_inputs) ==
+             {:error, :starter_failed}
+
+    valid = context([first, second])
+
+    assert AuthorizedStarterPipelineConsumer.consume(first_authorization, 1, valid) ==
+             {:error, :starter_failed}
+  end
+
+  defp context(entries) do
+    %Context{entries: entries, adapters: adapters()}
+  end
+
+  defp entry(input, event, trigger) do
+    assert {:ok, conversation_id} =
+             EventConversationIdentity.derive(event, trigger, @executed_at)
+
+    %Entry{
+      input: %{input | conversation_id: conversation_id},
+      event: event,
+      trigger: trigger,
+      executed_at: @executed_at
+    }
   end
 
   defp input(configuration, conversation_id) do
@@ -155,6 +229,12 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumerTest do
 
   defp plan(poll_result, configuration) do
     {:ok, plan} = PollEventTriggerPlanner.plan(poll_result, configuration, @executed_at)
+    plan
+  end
+
+  defp dispatch_plan(event, configuration) do
+    candidate = %EventDispatchCandidate{event_id: event.id, enqueued_at: @executed_at}
+    {:ok, plan} = EventDispatchPlanner.plan([candidate], [event], configuration, @executed_at)
     plan
   end
 end

@@ -43,6 +43,7 @@ defmodule ClusterMurmur.Triggers.EventDispatchPlannerTest do
            ]
 
     assert EventDispatchPlanner.validate(plan, candidates, events, configuration) == :ok
+    assert EventDispatchPlanner.validate(plan, configuration) == :ok
     refute inspect(plan) =~ "event-a"
     refute inspect(plan) =~ "private"
   end
@@ -113,9 +114,13 @@ defmodule ClusterMurmur.Triggers.EventDispatchPlannerTest do
           nil,
           %{plan | candidate_count: 0},
           %{plan | entries: []},
+          %{plan | entries: List.duplicate(hd(plan.entries), 101)},
           Map.put(plan, :private, true)
         ] do
       assert EventDispatchPlanner.validate(forged, candidates, events, configuration) ==
+               {:error, :invalid_event_dispatch_plan}
+
+      assert EventDispatchPlanner.validate(forged, configuration) ==
                {:error, :invalid_event_dispatch_plan}
     end
 

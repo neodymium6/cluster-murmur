@@ -166,7 +166,9 @@ event-dispatch handoff. Each successful stochastic commit now inserts the
 event, enqueues that handoff, and advances its claimed schedule in one SQLite
 transaction. A pure planner now correlates up to 100 available handoffs with
 their restored immutable events and caps current event-trigger matches at 256
-before any claim. Claimed outbox consumption remains future assembly work.
+before any claim. The fixed starter-only and bounded-conversation consumers can
+preflight that durable plan without changing their authorization-free input
+checks. Claimed outbox consumption remains future assembly work.
 Event retention and dedupe-window policy also remain future work. Observer
 target responses now pass a closed 256-entry and 64 KiB
 identity catalog that rejects duplicates and sorts accepted redacted targets
