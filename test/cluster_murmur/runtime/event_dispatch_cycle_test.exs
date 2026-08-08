@@ -179,6 +179,34 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
            ]
   end
 
+  test "validates reusable runtime dependencies without reading the outbox" do
+    configuration = RuntimeFixture.configuration()
+    valid_context = context(configuration)
+    valid_adapters = adapters()
+
+    assert EventDispatchCycle.validate_runtime(
+             configuration,
+             valid_context,
+             valid_adapters
+           ) == :ok
+
+    assert Process.get({__MODULE__, :trace}) == []
+
+    for {candidate_configuration, candidate_context, candidate_adapters} <- [
+          {%{configuration | version: 1.0}, valid_context, valid_adapters},
+          {configuration, %{valid_context | shared_input: nil}, valid_adapters},
+          {configuration, valid_context, %{valid_adapters | events: String}}
+        ] do
+      assert EventDispatchCycle.validate_runtime(
+               candidate_configuration,
+               candidate_context,
+               candidate_adapters
+             ) == {:error, :invalid_event_dispatch_cycle}
+    end
+
+    assert Process.get({__MODULE__, :trace}) == []
+  end
+
   test "accepts storage-normalized completion precision for the same instant" do
     configuration = RuntimeFixture.configuration()
     event = event("event-a", "observation.recovered")
@@ -331,6 +359,41 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
           %{valid | claimed_count: 0},
           %{valid | attempted_match_count: 2},
           %{valid | skipped_count: -1},
+          %{
+            valid
+            | candidate_count: 0,
+              claimed_count: 0,
+              completed_count: 0,
+              candidate_failure_count: 0,
+              planned_match_count: 1,
+              attempted_match_count: 0,
+              skipped_count: 0
+          },
+          %{
+            valid
+            | claimed_count: 0,
+              completed_count: 0,
+              candidate_failure_count: 2,
+              attempted_match_count: 1,
+              skipped_count: 1
+          },
+          %{
+            valid
+            | candidate_count: 1,
+              claimed_count: 1,
+              completed_count: 1,
+              candidate_failure_count: 0,
+              planned_match_count: 1,
+              attempted_match_count: 0,
+              skipped_count: 0
+          },
+          %{
+            valid
+            | planned_match_count: 1,
+              attempted_match_count: 1,
+              skipped_count: 0,
+              dispatch_failure_count: 1
+          },
           Map.put(valid, :private, true)
         ] do
       assert EventDispatchCycle.validate_result(invalid) ==
