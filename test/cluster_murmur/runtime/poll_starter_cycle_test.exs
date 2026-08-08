@@ -43,6 +43,7 @@ defmodule ClusterMurmur.Runtime.PollStarterCycleTest do
     def mark_ambiguous(_id, _completed_at), do: :unused
     def record_spoken(_persona_id, _spoken_at, _cooldown_until), do: :unused
     def complete(_conversation_id, _completed_at), do: :unused
+    def wait(_conversation), do: :unused
     def weighted_choice(_choices), do: :unused
     def uniform, do: :unused
   end

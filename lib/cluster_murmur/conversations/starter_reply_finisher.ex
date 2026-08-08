@@ -4,8 +4,8 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisher do
 
   An explicit no-reply decision closes the exact advanced conversation through
   an injected narrow store at the durable publication completion instant. A
-  reply decision remains explicit for later bounded responder orchestration and
-  performs no storage mutation.
+  reply decision atomically moves the exact conversation into its durable
+  waiting state before returning a continuation capability.
   """
 
   alias ClusterMurmur.Config.Configuration
@@ -35,8 +35,23 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisher do
           }
   end
 
+  defmodule Continuation do
+    @moduledoc false
+
+    @derive {Inspect, only: []}
+    @enforce_keys [:recorded, :conversation]
+    defstruct [:recorded, :conversation]
+
+    @type t :: %__MODULE__{
+            recorded: ClusterMurmur.Personas.StarterCooldownRecorder.Recorded.t(),
+            conversation: ClusterMurmur.Persistence.ConversationRecord.t()
+          }
+  end
+
   @completed_keys Completed.__struct__() |> Map.keys()
   @completed_key_count length(@completed_keys)
+  @continuation_keys Continuation.__struct__() |> Map.keys()
+  @continuation_key_count length(@continuation_keys)
 
   @type error ::
           :conversation_conflict
@@ -49,7 +64,8 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisher do
           | :invalid_starter_completion
           | :storage_unavailable
 
-  @type result :: {:ok, Completed.t()} | {:continue, :reply} | {:error, error()}
+  @type result ::
+          {:ok, Completed.t()} | {:continue, :reply, Continuation.t()} | {:error, error()}
 
   @doc "Closes an exact starter conversation only after an explicit no reply."
   @spec finish(term(), term(), term(), term(), module(), module()) :: result()
@@ -64,7 +80,8 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisher do
         store
       )
       when is_atom(random) and is_atom(store) do
-    with :ok <- StarterCooldownRecorder.validate(recorded, configuration, cooldowns, settings),
+    with :ok <- validate_store(store),
+         :ok <- StarterCooldownRecorder.validate(recorded, configuration, cooldowns, settings),
          {:ok, group} <- resolve_group(recorded, configuration),
          {:ok, %ReplyGateDecision{} = decision} <- ReplyGate.evaluate(group, random) do
       apply_decision(decision, recorded, configuration, cooldowns, settings, store)
@@ -117,15 +134,64 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisher do
   def validate(_completed, _configuration, _cooldowns, _settings),
     do: {:error, :invalid_starter_completion}
 
+  @doc "Revalidates one exact reply continuation capability."
+  @spec validate_continuation(term(), term(), term(), term()) ::
+          :ok | {:error, :invalid_starter_completion}
+  def validate_continuation(
+        %Continuation{} = continuation,
+        %Configuration{} = configuration,
+        cooldowns,
+        %WebhookSettings{} = settings
+      ) do
+    if exact_continuation?(continuation) and
+         StarterCooldownRecorder.validate(
+           continuation.recorded,
+           configuration,
+           cooldowns,
+           settings
+         ) == :ok and compatible_current_reply?(continuation.recorded, configuration) and
+         correlated_waiting?(continuation) do
+      :ok
+    else
+      {:error, :invalid_starter_completion}
+    end
+  rescue
+    _error -> {:error, :invalid_starter_completion}
+  catch
+    _kind, _reason -> {:error, :invalid_starter_completion}
+  end
+
+  def validate_continuation(_continuation, _configuration, _cooldowns, _settings),
+    do: {:error, :invalid_starter_completion}
+
   defp apply_decision(
          %ReplyGateDecision{outcome: :reply},
-         _recorded,
-         _configuration,
-         _cooldowns,
-         _settings,
-         _store
-       ),
-       do: {:continue, :reply}
+         recorded,
+         configuration,
+         cooldowns,
+         settings,
+         store
+       ) do
+    active = recorded.published.started.plan.persisted.conversation
+
+    with {:ok, %ConversationRecord{} = waiting} <- safe_wait(store, active),
+         :ok <- validate_waiting_result(waiting, active),
+         continuation = %Continuation{recorded: recorded, conversation: waiting},
+         :ok <- validate_continuation(continuation, configuration, cooldowns, settings) do
+      {:continue, :reply, continuation}
+    else
+      {:error, reason}
+      when reason in [
+             :conversation_conflict,
+             :invalid_conversation_record,
+             :storage_unavailable
+           ] ->
+        {:error, reason}
+
+      _failure ->
+        {:error, :invalid_starter_completion}
+    end
+  end
 
   defp apply_decision(
          %ReplyGateDecision{outcome: :no_reply} = decision,
@@ -138,8 +204,7 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisher do
     conversation = recorded.published.started.plan.persisted.conversation
     completed_at = recorded.published.attempt.completed_at
 
-    with :ok <- validate_store(store),
-         {:ok, %ConversationRecord{} = terminal} <-
+    with {:ok, %ConversationRecord{} = terminal} <-
            safe_complete(store, conversation, completed_at),
          :ok <- validate_terminal_result(terminal, conversation, completed_at),
          completed = %Completed{
@@ -184,10 +249,26 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisher do
     end
   end
 
+  defp compatible_current_reply?(recorded, configuration) do
+    case resolve_group(recorded, configuration) do
+      {:ok, %{reply_probability: probability}} -> probability != 0
+      _failure -> false
+    end
+  end
+
   defp validate_store(store) do
-    if Code.ensure_loaded?(store) and function_exported?(store, :complete, 2),
-      do: :ok,
-      else: {:error, :storage_unavailable}
+    if Code.ensure_loaded?(store) and function_exported?(store, :complete, 2) and
+         function_exported?(store, :wait, 1),
+       do: :ok,
+       else: {:error, :storage_unavailable}
+  end
+
+  defp safe_wait(store, conversation) do
+    store.wait(conversation)
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    _kind, _reason -> {:error, :storage_unavailable}
   end
 
   defp safe_complete(store, conversation, completed_at) do
@@ -206,14 +287,32 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisher do
       else: {:error, :invalid_conversation_record}
   end
 
+  defp validate_waiting_result(waiting, active) do
+    expected = %{active | status: :waiting}
+
+    if ConversationRecordValidator.validate_active(waiting) == :ok and waiting === expected,
+      do: :ok,
+      else: {:error, :invalid_conversation_record}
+  end
+
   defp correlated_terminal?(completed) do
     active = completed.recorded.published.started.plan.persisted.conversation
     completed_at = completed.recorded.published.attempt.completed_at
     validate_terminal_result(completed.conversation, active, completed_at) == :ok
   end
 
+  defp correlated_waiting?(continuation) do
+    active = continuation.recorded.published.started.plan.persisted.conversation
+    validate_waiting_result(continuation.conversation, active) == :ok
+  end
+
   defp exact_completed?(completed) do
     map_size(completed) == @completed_key_count and
       Enum.all?(@completed_keys, &Map.has_key?(completed, &1))
+  end
+
+  defp exact_continuation?(continuation) do
+    map_size(continuation) == @continuation_key_count and
+      Enum.all?(@continuation_keys, &Map.has_key?(continuation, &1))
   end
 end

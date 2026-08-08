@@ -164,7 +164,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
 
   @type result ::
           {:ok, ClusterMurmur.Conversations.StarterReplyFinisher.Completed.t()}
-          | {:continue, :reply, ClusterMurmur.Personas.StarterCooldownRecorder.Recorded.t()}
+          | {:continue, :reply, ClusterMurmur.Conversations.StarterReplyFinisher.Continuation.t()}
           | {:skip, :no_starter}
           | {:failed, atom(), ClusterMurmur.Discord.StarterPublicationExecutor.Outcome.t()}
           | {:ambiguous, :interrupted,
@@ -317,7 +317,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
            adapters.conversation_store
          ) do
       {:ok, completed} -> {:ok, completed}
-      {:continue, :reply} -> {:continue, :reply, recorded}
+      {:continue, :reply, continuation} -> {:continue, :reply, continuation}
       {:error, reason} when is_atom(reason) -> {:error, reason}
       _failure -> {:error, :invalid_starter_pipeline}
     end
@@ -386,7 +386,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
       {adapters.publisher, [publish: 6]},
       {adapters.publication_terminal_store, [succeed: 4, fail: 3, mark_ambiguous: 2]},
       {adapters.cooldown_store, [record_spoken: 3]},
-      {adapters.conversation_store, [complete: 2]},
+      {adapters.conversation_store, [complete: 2, wait: 1]},
       {adapters.starter_random, [weighted_choice: 1]},
       {adapters.reply_random, [uniform: 0]}
     ]
