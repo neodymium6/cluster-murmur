@@ -12,6 +12,9 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
   @behaviour ClusterMurmur.Conversations.ResponderContinuationConsumer
 
   alias ClusterMurmur.Config.Configuration
+  alias ClusterMurmur.Conversations.ResponderContinuationConsumer
+  alias ClusterMurmur.Conversations.ResponderContinuationConsumer.Delivery
+  alias ClusterMurmur.Conversations.ResponderContinuationPlanner
   alias ClusterMurmur.Conversations.ResponderContinuationPlanner.{Input, Plan}
   alias ClusterMurmur.DateTimeValidator
 
@@ -39,7 +42,7 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
     MessageRecordValidator
   }
 
-  alias ClusterMurmur.Personas.{Persona, ResponderCandidateProjector}
+  alias ClusterMurmur.Personas.Persona
 
   @discord_content_limit 2_000
   @input_keys Input.__struct__() |> Map.keys()
@@ -109,8 +112,8 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
   def consume(%Plan{} = plan, %ConsumerContext{} = context) do
     with :ok <- preflight(plan.input, context),
          true <- exact_plan?(plan),
-         :ok <- consume_outcome(plan, context) do
-      :ok
+         result when result == :ok or is_tuple(result) <- consume_outcome(plan, context) do
+      result
     else
       _failure -> {:error, :responder_message_failed}
     end
@@ -136,7 +139,7 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
   end
 
   defp consume_outcome(%Plan{outcome: :reply, responder: %Persona{}} = plan, context) do
-    with :ok <- validate_reply_plan(plan),
+    with :ok <- ResponderContinuationPlanner.validate_reply_plan(plan),
          :ok <- consume_durable_selection(context, plan),
          {:ok, generation_context} <- build_generation_context(plan),
          {:ok, request} <- PromptAssembler.assemble(generation_context),
@@ -149,46 +152,14 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
            ),
          {:ok, generated} <- build_message(decision, plan, context.inserted_at),
          {:ok, {message, conversation}} <- append_reserved(context, plan, generated),
-         :ok <- validate_append_result(message, conversation, plan, generated) do
-      :ok
+         {:ok, delivery} <- validate_append_result(message, conversation, plan, generated) do
+      {:ok, delivery}
     else
       _failure -> {:error, :responder_message_failed}
     end
   end
 
   defp consume_outcome(_plan, _context), do: {:error, :responder_message_failed}
-
-  defp validate_reply_plan(plan) do
-    input = plan.input
-    waiting = input.continuation.conversation
-
-    expected = %{
-      waiting
-      | status: :generating,
-        llm_call_count: waiting.llm_call_count + 1
-    }
-
-    with true <- plan.conversation === expected,
-         :ok <- ConversationRecordValidator.validate_active(plan.conversation),
-         true <- plan.planned_at === input.planned_at,
-         true <- input.configuration.bindings.bindings[plan.binding.id] === plan.binding,
-         true <- input.configuration.personas.personas[plan.responder.id] === plan.responder,
-         {:ok, candidates} <-
-           ResponderCandidateProjector.project(
-             plan.binding,
-             input.configuration.personas.personas,
-             input.current_cooldowns,
-             input.conversation,
-             input.budget,
-             input.planned_at,
-             input.policy
-           ),
-         true <- Enum.any?(candidates, &(&1.persona_id === plan.responder.id)) do
-      :ok
-    else
-      _failure -> {:error, :responder_message_failed}
-    end
-  end
 
   defp build_generation_context(plan) do
     input = plan.input
@@ -312,9 +283,15 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
     expected_conversation = %{plan.conversation | turn_count: plan.conversation.turn_count + 1}
 
     if correlated_message?(message, generated) and conversation === expected_conversation and
-         ConversationRecordValidator.validate_active(conversation) == :ok,
-       do: :ok,
-       else: {:error, :responder_message_failed}
+         ConversationRecordValidator.validate_active(conversation) == :ok do
+      delivery = %Delivery{plan: plan, message: message, conversation: conversation}
+
+      if ResponderContinuationConsumer.validate_delivery(delivery, plan) == :ok,
+        do: {:ok, delivery},
+        else: {:error, :responder_message_failed}
+    else
+      {:error, :responder_message_failed}
+    end
   end
 
   defp validate_append_result(_message, _conversation, _plan, _generated),

@@ -2,6 +2,7 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumerTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Conversations.ResponderContinuationPlanner
+  alias ClusterMurmur.Conversations.ResponderContinuationConsumer.Delivery
   alias ClusterMurmur.Conversations.ResponderContinuationPlanner.{Plan, Result}
   alias ClusterMurmur.Generation.ResponderMessageConsumer
   alias ClusterMurmur.Generation.ResponderMessageConsumer.ConsumerContext
@@ -139,7 +140,7 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumerTest do
     ClaimStore.seed(input.continuation.conversation)
     context = context(input, Provider, fn :request -> {:ok, "A factual response."} end)
 
-    assert {:ok, %Result{status: :dispatched}} =
+    assert {:ok, %Result{status: :dispatched, delivery: %Delivery{} = delivery}} =
              ResponderContinuationPlanner.dispatch(
                input,
                ReplyRandom,
@@ -150,6 +151,12 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumerTest do
 
     assert_receive {:provider_request, _request}
     assert_receive {:append_reserved, _conversation, _generated}
+
+    assert ResponderMessageConsumer.consume(delivery.plan, context) ==
+             {:error, :responder_message_failed}
+
+    refute_received {:provider_request, _request}
+    refute_received {:append_reserved, _conversation, _generated}
 
     assert ResponderContinuationPlanner.dispatch(
              input,

@@ -11,8 +11,9 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlannerTest do
   }
 
   alias ClusterMurmur.Conversations.ResponderContinuationPlanner.{Input, Plan, Result}
+  alias ClusterMurmur.Conversations.ResponderContinuationConsumer.Delivery
   alias ClusterMurmur.Messages.Message
-  alias ClusterMurmur.Persistence.PersonaCooldownRecord
+  alias ClusterMurmur.Persistence.{MessageRecord, PersonaCooldownRecord}
   alias ClusterMurmur.Personas.ResponderPolicy
   alias ClusterMurmur.TestSupport.RuntimeFixture
 
@@ -82,9 +83,33 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlannerTest do
     end
 
     @impl true
-    def consume(plan, context) do
+    def consume(%Plan{outcome: :no_reply} = plan, context) do
       send(context, {:consumed, plan})
       :ok
+    end
+
+    def consume(%Plan{outcome: :reply} = plan, context) do
+      send(context, {:consumed, plan})
+
+      message =
+        %MessageRecord{
+          id: 2,
+          conversation_id: plan.conversation.id,
+          persona_id: plan.responder.id,
+          origin: :llm,
+          content: "A bounded response.",
+          discord_message_id: nil,
+          inserted_at: plan.planned_at
+        }
+        |> Ecto.put_meta(state: :loaded)
+
+      delivery = %Delivery{
+        plan: plan,
+        message: message,
+        conversation: %{plan.conversation | turn_count: plan.conversation.turn_count + 1}
+      }
+
+      {:ok, delivery}
     end
   end
 
@@ -100,7 +125,7 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlannerTest do
     end
   end
 
-  test "synchronously dispatches the sampled responder without returning its capability" do
+  test "returns only the persisted delivery after synchronously consuming the sampled responder" do
     input = input()
 
     assert {:ok, %Result{outcome: :reply, status: :dispatched, reason: nil} = result} =
@@ -123,6 +148,9 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlannerTest do
     assert plan.conversation.status == :generating
     assert plan.conversation.llm_call_count == input.conversation.llm_call_count + 1
     assert plan.planned_at == @planned_at
+    assert %Delivery{} = result.delivery
+    assert result.delivery.plan === plan
+    assert result.delivery.message.persona_id == "responder"
 
     inspected = inspect(result) <> inspect(input)
     refute inspected =~ "private fact"
@@ -131,7 +159,7 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlannerTest do
   end
 
   test "synchronously dispatches the sampled explicit no-reply outcome" do
-    assert {:ok, %Result{outcome: :no_reply, status: :dispatched}} =
+    assert {:ok, %Result{outcome: :no_reply, status: :dispatched, delivery: nil}} =
              ResponderContinuationPlanner.dispatch(
                input(),
                NoReplyRandom,
