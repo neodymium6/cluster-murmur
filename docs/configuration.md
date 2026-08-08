@@ -567,8 +567,9 @@ lists at most 100 pending or expired entries without claim data, grants one
 opaque fixed 60-second lease, and completes only that exact live claim. A
 stochastic commit inserts its immutable event, enqueues this claim-free
 handoff, and advances the claimed schedule in one transaction. The outbox does
-not select triggers or perform external I/O. Runtime consumption remains a
-subsequent assembly step.
+does not perform external I/O. A pure planner can correlate its ordered batch
+with restored immutable events and cap current trigger matches before any
+claim. Runtime consumption remains a subsequent assembly step.
 
 Active windows include their start minute and exclude their end minute. A
 crossing-midnight window is active from its start through local midnight and

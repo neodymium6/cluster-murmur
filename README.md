@@ -164,9 +164,11 @@ cycles without overlap but is not installed in the public application tree,
 while a dedicated 100-entry, opaque-lease outbox now provides the durable
 event-dispatch handoff. Each successful stochastic commit now inserts the
 event, enqueues that handoff, and advances its claimed schedule in one SQLite
-transaction. Bounded outbox consumption remains future assembly work. Event
-retention and dedupe-window policy also remain future work. Observer target
-responses now pass a closed 256-entry and 64 KiB
+transaction. A pure planner now correlates up to 100 available handoffs with
+their restored immutable events and caps current event-trigger matches at 256
+before any claim. Claimed outbox consumption remains future assembly work.
+Event retention and dedupe-window policy also remain future work. Observer
+target responses now pass a closed 256-entry and 64 KiB
 identity catalog that rejects duplicates and sorts accepted redacted targets
 before polling. One injected, sequential poll lists that catalog once, observes
 each accepted identity once, and sends only matched normalized observations
