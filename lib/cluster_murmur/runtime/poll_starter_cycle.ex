@@ -88,6 +88,28 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
 
   @type error :: :invalid_poll_starter_cycle | :poll_failed
 
+  @doc "Validates reusable cycle dependencies without observing a target."
+  @spec validate_runtime(term(), term()) :: :ok | {:error, :invalid_poll_starter_cycle}
+  def validate_runtime(%Configuration{} = configuration, %Context{} = context) do
+    with true <- exact_context?(context),
+         true <- context.shared_input.configuration === configuration,
+         :ok <-
+           AuthorizedStarterPipeline.validate_shared_runtime(
+             context.shared_input,
+             context.adapters
+           ) do
+      :ok
+    else
+      _failure -> {:error, :invalid_poll_starter_cycle}
+    end
+  rescue
+    _error -> {:error, :invalid_poll_starter_cycle}
+  catch
+    _kind, _reason -> {:error, :invalid_poll_starter_cycle}
+  end
+
+  def validate_runtime(_configuration, _context), do: {:error, :invalid_poll_starter_cycle}
+
   @doc "Runs one bounded poll and immediately consumes every authorized match."
   @spec run(Client.t(), Configuration.t(), term(), Context.t(), module()) ::
           {:ok, Result.t()} | {:error, error()}
@@ -141,14 +163,8 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
     do: {:error, :invalid_poll_starter_cycle}
 
   defp preflight(configuration, cycle_started_at, context) do
-    with true <- exact_context?(context),
-         true <- context.shared_input.configuration === configuration,
-         :ok <- DateTimeValidator.validate_storage_utc(cycle_started_at),
-         :ok <-
-           AuthorizedStarterPipeline.validate_shared_runtime(
-             context.shared_input,
-             context.adapters
-           ) do
+    with :ok <- validate_runtime(configuration, context),
+         :ok <- DateTimeValidator.validate_storage_utc(cycle_started_at) do
       :ok
     else
       _failure -> {:error, :invalid_poll_starter_cycle}
