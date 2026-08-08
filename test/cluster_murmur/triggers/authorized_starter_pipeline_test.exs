@@ -17,6 +17,9 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
   }
 
   alias ClusterMurmur.Repo
+  alias ClusterMurmur.Observations.{IngestionPlanner, Observation}
+  alias ClusterMurmur.Observers.Client
+  alias ClusterMurmur.Runtime.PollStarterCycle
 
   alias ClusterMurmur.Repo.Migrations.{
     AddPublicationAttemptDispatching,
@@ -40,6 +43,8 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
 
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.{Adapters, Input}
   alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.Context
+  alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.SharedInput
+  alias ClusterMurmur.Runtime.PollStarterCycle.Context, as: CycleContext
 
   @events_version 20_260_804_180_500
   @executions_version 20_260_804_200_000
@@ -60,6 +65,23 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
   defmodule UnusedRandom do
     def weighted_choice(_choices), do: raise("single candidate must not sample")
     def uniform, do: raise("zero reply probability must not sample")
+  end
+
+  defmodule CycleObserver do
+    def list_targets(:process_dictionary), do: {:ok, [%{id: "example-target"}]}
+
+    def observe_target(:process_dictionary, "example-target") do
+      Process.get({__MODULE__, :observation})
+    end
+  end
+
+  defmodule CycleIngestionStore do
+    def ingest(observation, policy) do
+      with {:ok, plan} <- IngestionPlanner.plan(nil, observation, policy),
+           {:ok, _event} <- EventStore.insert(plan.event) do
+        {:ok, plan}
+      end
+    end
   end
 
   setup_all do
@@ -248,6 +270,70 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
     assert_receive {:publication, %WebhookRequest{}}
     refute_receive {:generation, _request}
     refute_receive {:publication, _request}
+  end
+
+  test "runs a fake observer event through the complete SQLite-backed starter cycle" do
+    parent = self()
+
+    configuration =
+      RuntimeFixture.configuration()
+      |> Map.put(
+        :state_tracking,
+        %ClusterMurmur.Config.StateTracking{failures_required: 1, successes_required: 1}
+      )
+
+    Process.put(
+      {CycleObserver, :observation},
+      {:ok,
+       %Observation{
+         source: "example-observer",
+         subject: "example-target",
+         state: :unhealthy,
+         observed_at: ~U[2026-08-07 01:59:59.000000Z],
+         facts: %{"detail" => "private fact"},
+         labels: %{"category" => "monitoring"}
+       }}
+    )
+
+    assert {:ok, observer_client} = Client.new(CycleObserver, :process_dictionary)
+
+    shared_input = %SharedInput{
+      configuration: configuration,
+      cooldowns: %{},
+      provider_settings: RuntimeFixture.provider_settings(),
+      webhook_settings: RuntimeFixture.webhook_settings(),
+      generation_transport: fn request ->
+        send(parent, {:generation, request})
+        {:ok, "A bounded confirmed fact."}
+      end,
+      publication_transport: fn request ->
+        send(parent, {:publication, request})
+        {:ok, %WebhookResponse{status: 200, body: ~s({"id":"12345"})}}
+      end
+    }
+
+    context = %CycleContext{shared_input: shared_input, adapters: adapters()}
+
+    assert {:ok, result} =
+             PollStarterCycle.run(
+               observer_client,
+               configuration,
+               ~U[2026-08-07 01:00:00.000000Z],
+               context,
+               CycleIngestionStore
+             )
+
+    assert result.event_count == 1
+    assert result.match_count == 1
+    assert result.dispatched_count == 1
+    assert result.dispatch_failure_count == 0
+
+    [conversation] = Repo.all(ConversationRecord)
+    assert conversation.status == :completed
+    assert conversation.started_at == ~U[2026-08-07 01:59:59.000000Z]
+    assert_receive {:generation, _request}
+    assert_receive {:publication, %WebhookRequest{}}
+    refute inspect(result) =~ "private fact"
   end
 
   defp input(generation_transport, publication_transport) do

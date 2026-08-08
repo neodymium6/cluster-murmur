@@ -124,10 +124,43 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
           }
   end
 
+  defmodule SharedInput do
+    @moduledoc false
+
+    @derive {Inspect, only: []}
+    @enforce_keys [
+      :configuration,
+      :cooldowns,
+      :provider_settings,
+      :webhook_settings,
+      :generation_transport,
+      :publication_transport
+    ]
+    defstruct [
+      :configuration,
+      :cooldowns,
+      :provider_settings,
+      :webhook_settings,
+      :generation_transport,
+      :publication_transport
+    ]
+
+    @type t :: %__MODULE__{
+            configuration: ClusterMurmur.Config.Configuration.t(),
+            cooldowns: map(),
+            provider_settings: ClusterMurmur.Generation.ProviderSettings.t(),
+            webhook_settings: ClusterMurmur.Discord.WebhookSettings.t(),
+            generation_transport: function(),
+            publication_transport: function()
+          }
+  end
+
   @input_keys Input.__struct__() |> Map.keys()
   @input_key_count length(@input_keys)
   @adapter_keys Adapters.__struct__() |> Map.keys()
   @adapter_key_count length(@adapter_keys)
+  @shared_input_keys SharedInput.__struct__() |> Map.keys()
+  @shared_input_key_count length(@shared_input_keys)
 
   @type result ::
           {:ok, ClusterMurmur.Conversations.StarterReplyFinisher.Completed.t()}
@@ -231,15 +264,9 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
   @spec validate_shared_input(term(), term()) :: :ok | {:error, :invalid_starter_pipeline}
   def validate_shared_input(%Input{} = input, %Adapters{} = adapters) do
     with true <- exact_input?(input),
-         true <- exact_adapters?(adapters),
-         :ok <- Configuration.validate(input.configuration),
-         :ok <- StarterCandidateProjector.validate_cooldowns(input.cooldowns),
+         :ok <- validate_shared_runtime(to_shared_input(input), adapters),
          {:ok, _conversation_id} <- Value.id(input.conversation_id),
-         :ok <- validate_provider_settings(input.provider_settings, input.configuration),
-         :ok <- WebhookSettings.validate(input.webhook_settings),
-         :ok <- validate_shared_times(input),
-         :ok <- validate_transports(input),
-         :ok <- validate_adapters(adapters) do
+         :ok <- validate_shared_times(input) do
       :ok
     else
       _failure -> {:error, :invalid_starter_pipeline}
@@ -251,6 +278,34 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
   end
 
   def validate_shared_input(_input, _adapters), do: {:error, :invalid_starter_pipeline}
+
+  @doc "Validates reusable starter settings and adapters before observation begins."
+  @spec validate_shared_runtime(term(), term()) :: :ok | {:error, :invalid_starter_pipeline}
+  def validate_shared_runtime(%SharedInput{} = shared_input, %Adapters{} = adapters) do
+    with true <- exact_shared_input?(shared_input),
+         true <- exact_adapters?(adapters),
+         :ok <- Configuration.validate(shared_input.configuration),
+         :ok <- StarterCandidateProjector.validate_cooldowns(shared_input.cooldowns),
+         :ok <-
+           validate_provider_settings(
+             shared_input.provider_settings,
+             shared_input.configuration
+           ),
+         :ok <- WebhookSettings.validate(shared_input.webhook_settings),
+         :ok <- validate_transports(shared_input),
+         :ok <- validate_adapters(adapters) do
+      :ok
+    else
+      _failure -> {:error, :invalid_starter_pipeline}
+    end
+  rescue
+    _error -> {:error, :invalid_starter_pipeline}
+  catch
+    _kind, _reason -> {:error, :invalid_starter_pipeline}
+  end
+
+  def validate_shared_runtime(_shared_input, _adapters),
+    do: {:error, :invalid_starter_pipeline}
 
   defp finish(recorded, input, adapters) do
     case StarterReplyFinisher.finish(
@@ -359,5 +414,21 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
   defp exact_adapters?(adapters) do
     map_size(adapters) == @adapter_key_count and
       Enum.all?(@adapter_keys, &Map.has_key?(adapters, &1))
+  end
+
+  defp exact_shared_input?(shared_input) do
+    map_size(shared_input) == @shared_input_key_count and
+      Enum.all?(@shared_input_keys, &Map.has_key?(shared_input, &1))
+  end
+
+  defp to_shared_input(input) do
+    %SharedInput{
+      configuration: input.configuration,
+      cooldowns: input.cooldowns,
+      provider_settings: input.provider_settings,
+      webhook_settings: input.webhook_settings,
+      generation_transport: input.generation_transport,
+      publication_transport: input.publication_transport
+    }
   end
 end
