@@ -85,4 +85,11 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand(
+    "../priv/repo/migrations/20260808060000_create_responder_generation_claims.exs",
+    __DIR__
+  )
+)
+
 ExUnit.start()

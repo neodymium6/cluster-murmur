@@ -85,7 +85,14 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
     @moduledoc false
 
     @derive {Inspect, only: [:outcome, :planned_at]}
-    @enforce_keys [:input, :binding, :outcome, :responder, :conversation, :planned_at]
+    @enforce_keys [
+      :input,
+      :binding,
+      :outcome,
+      :responder,
+      :conversation,
+      :planned_at
+    ]
     defstruct [:input, :binding, :outcome, :responder, :conversation, :planned_at]
 
     @type t :: %__MODULE__{
@@ -135,7 +142,13 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
              random
            ),
          {:ok, responder} <- resolve_outcome(outcome, input.configuration),
-         {:ok, claimed} <- claim_once(claim_store, input.continuation.conversation) do
+         {:ok, claimed} <-
+           claim_once(
+             claim_store,
+             input.continuation.conversation,
+             outcome,
+             input.planned_at
+           ) do
       plan = %Plan{
         input: input,
         binding: binding,
@@ -288,14 +301,19 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
   end
 
   defp validate_claim_store(store) do
-    if Code.ensure_loaded?(store) and function_exported?(store, :claim_generation, 1),
-      do: :ok,
-      else: {:error, :invalid_responder_continuation}
+    if Code.ensure_loaded?(store) and function_exported?(store, :complete, 2) and
+         function_exported?(store, :claim_generation, 2),
+       do: :ok,
+       else: {:error, :invalid_responder_continuation}
   end
 
-  defp claim_once(store, waiting) do
-    with {:ok, claimed} <- safe_claim(store, waiting),
-         expected = %{waiting | status: :generating},
+  defp claim_once(store, waiting, {:reply, persona_id}, _planned_at) do
+    with {:ok, claimed} <- safe_claim(store, waiting, persona_id),
+         expected = %{
+           waiting
+           | status: :generating,
+             llm_call_count: waiting.llm_call_count + 1
+         },
          true <- claimed === expected,
          :ok <- ConversationRecordValidator.validate_active(claimed) do
       {:ok, claimed}
@@ -304,8 +322,30 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
     end
   end
 
-  defp safe_claim(store, waiting) do
-    store.claim_generation(waiting)
+  defp claim_once(store, waiting, :no_reply, planned_at) do
+    with {:ok, completed} <- safe_complete(store, waiting, planned_at),
+         expected = %{waiting | status: :completed, completed_at: planned_at},
+         true <- completed === expected,
+         :ok <- ConversationRecordValidator.validate(completed) do
+      {:ok, completed}
+    else
+      _failure -> {:error, :invalid_responder_continuation}
+    end
+  end
+
+  defp claim_once(_store, _waiting, _outcome, _planned_at),
+    do: {:error, :invalid_responder_continuation}
+
+  defp safe_claim(store, waiting, persona_id) do
+    store.claim_generation(waiting, persona_id)
+  rescue
+    _error -> {:error, :invalid_responder_continuation}
+  catch
+    _kind, _reason -> {:error, :invalid_responder_continuation}
+  end
+
+  defp safe_complete(store, waiting, completed_at) do
+    store.complete(waiting, completed_at)
   rescue
     _error -> {:error, :invalid_responder_continuation}
   catch

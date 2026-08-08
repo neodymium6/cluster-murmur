@@ -28,11 +28,26 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlannerTest do
   defmodule ClaimStore do
     def seed(record), do: Process.put({__MODULE__, :record}, record)
 
-    def claim_generation(waiting) do
+    def claim_generation(waiting, persona_id) do
       if Process.get({__MODULE__, :record}) === waiting do
-        generating = %{waiting | status: :generating}
-        Process.put({__MODULE__, :record}, generating)
+        generating = %{
+          waiting
+          | status: :generating,
+            llm_call_count: waiting.llm_call_count + 1
+        }
+
+        Process.put({__MODULE__, :record}, {generating, persona_id})
         {:ok, generating}
+      else
+        {:error, :conversation_conflict}
+      end
+    end
+
+    def complete(waiting, completed_at) do
+      if Process.get({__MODULE__, :record}) === waiting do
+        completed = %{waiting | status: :completed, completed_at: completed_at}
+        Process.put({__MODULE__, :record}, completed)
+        {:ok, completed}
       else
         {:error, :conversation_conflict}
       end
@@ -79,7 +94,10 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlannerTest do
       :ok
     end
 
-    def consume(_plan, _context), do: raise("private consumer failure")
+    def consume(plan, _context) do
+      _plan = plan
+      raise "private consumer failure"
+    end
   end
 
   test "synchronously dispatches the sampled responder without returning its capability" do
@@ -103,6 +121,7 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlannerTest do
     assert plan.responder.id == "responder"
     assert plan.binding.id == "characters"
     assert plan.conversation.status == :generating
+    assert plan.conversation.llm_call_count == input.conversation.llm_call_count + 1
     assert plan.planned_at == @planned_at
 
     inspected = inspect(result) <> inspect(input)
@@ -123,7 +142,13 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlannerTest do
 
     assert_receive :consumer_preflighted
     assert_receive {:selected_from, _outcomes}
-    assert_receive {:consumed, %Plan{outcome: :no_reply, responder: nil}}
+
+    assert_receive {:consumed,
+                    %Plan{
+                      outcome: :no_reply,
+                      responder: nil,
+                      conversation: %{status: :completed}
+                    }}
   end
 
   test "preflights the consumer before selection and contains consumption failures" do

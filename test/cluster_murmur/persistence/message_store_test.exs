@@ -20,20 +20,24 @@ defmodule ClusterMurmur.Persistence.MessageStoreTest do
   alias ClusterMurmur.Repo.Migrations.{
     CreateConversations,
     CreateEvents,
-    CreateMessages
+    CreateMessages,
+    CreateResponderGenerationClaims
   }
 
   @events_version 20_260_804_180_500
   @conversations_version 20_260_805_200_000
   @messages_version 20_260_805_220_000
+  @responder_claims_version 20_260_808_060_000
   @max_safe_integer 9_007_199_254_740_991
 
   setup_all do
     migrate_up(@events_version, CreateEvents)
     migrate_up(@conversations_version, CreateConversations)
     migrate_up(@messages_version, CreateMessages)
+    migrate_up(@responder_claims_version, CreateResponderGenerationClaims)
 
     on_exit(fn ->
+      migrate_down(@responder_claims_version, CreateResponderGenerationClaims)
       migrate_down(@messages_version, CreateMessages)
       migrate_down(@conversations_version, CreateConversations)
       migrate_down(@events_version, CreateEvents)
@@ -83,6 +87,32 @@ defmodule ClusterMurmur.Persistence.MessageStoreTest do
     assert fallback.origin == :fallback
     assert advanced.turn_count == 2
     assert advanced.llm_call_count == 2
+  end
+
+  test "appends a reserved generation without counting its LLM call twice" do
+    started = start_conversation!()
+    assert {:ok, waiting} = ConversationStore.wait(started)
+    assert {:ok, reserved} = ConversationStore.claim_generation(waiting, "caretaker")
+    assert ConversationStore.consume_generation(reserved, "caretaker") == :ok
+
+    assert reserved.status == :generating
+    assert reserved.turn_count == 0
+    assert reserved.llm_call_count == 1
+
+    assert {:ok, {stored, advanced}} = MessageStore.append_reserved(reserved, message([]))
+    assert stored.content == "A bounded fact."
+    assert advanced.status == :generating
+    assert advanced.turn_count == 1
+    assert advanced.llm_call_count == 1
+    assert {:ok, waiting_again} = ConversationStore.wait(advanced)
+    assert waiting_again.status == :waiting
+
+    assert MessageStore.append_reserved(
+             reserved,
+             message(content: "A replay.", inserted_at: ~U[2026-08-05 12:02:00Z])
+           ) == {:error, :conversation_conflict}
+
+    assert Repo.aggregate(MessageRecord, :count) == 1
   end
 
   test "rejects invalid, published, mismatched, and predating messages before storage" do
