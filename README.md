@@ -148,9 +148,13 @@ successful execution while atomically advancing the next run and daily bucket.
 A pure adapter evaluates each available due projection against active hours and
 the correctly rolled-over local-date count before claiming. A redacted pure
 plan rechecks claimed execution eligibility and assembles only the supplied
-event facts and completion values. External stochastic execution and
-exactly-once delivery are not implemented. Event retention and dedupe-window
-policy also remain future work. Observer target responses now pass a
+event facts and completion values. Configured schedule and stochastic event
+templates now project to bounded immutable events whose identity and occurrence
+time remain identical across retries of one scheduled version and exact
+template; template drift preserves the ID so persistence can fail closed rather
+than accept a duplicate. External stochastic execution and exactly-once
+delivery are not implemented. Event retention and dedupe-window policy also
+remain future work. Observer target responses now pass a
 closed 256-entry and 64 KiB identity catalog that rejects duplicates and sorts
 accepted redacted targets before polling. One injected, sequential poll lists
 that catalog once, observes each accepted identity once, and sends only matched

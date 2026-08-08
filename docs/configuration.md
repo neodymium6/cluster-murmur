@@ -526,6 +526,14 @@ the supplied execution instant. Ineligible work is skipped without sampling a
 new wait; an eligible plan contains only the configured event template and the
 redacted values needed for a later completion record.
 
+The shared pure emitted-event projector derives a complete bounded event from
+the trigger kind, configured trigger ID, template, and scheduled UTC instant.
+The same scheduled version and exact template produce the same immutable event
+across retries. Template drift preserves the scheduled event ID so idempotent
+persistence rejects changed facts instead of accepting a duplicate. Its fixed
+labels contain only the configured trigger ID and kind; prompt fact projection
+excludes both labels.
+
 Active windows include their start minute and exclude their end minute. A
 crossing-midnight window is active from its start through local midnight and
 from midnight up to its end. Both instants in a repeated DST wall-clock minute
