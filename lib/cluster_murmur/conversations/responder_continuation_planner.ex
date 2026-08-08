@@ -17,6 +17,8 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
   }
 
   alias ClusterMurmur.Conversations.Validator, as: ConversationValidator
+  alias ClusterMurmur.Conversations.ResponderContinuationConsumer
+  alias ClusterMurmur.Conversations.ResponderContinuationConsumer.Delivery
   alias ClusterMurmur.DomainLimits
   alias ClusterMurmur.Messages.Message
 
@@ -109,18 +111,21 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
     @moduledoc false
 
     @derive {Inspect, only: [:outcome, :status, :reason]}
-    @enforce_keys [:outcome, :status, :reason]
-    defstruct [:outcome, :status, :reason]
+    @enforce_keys [:outcome, :status, :reason, :delivery]
+    defstruct [:outcome, :status, :reason, :delivery]
 
     @type t :: %__MODULE__{
             outcome: :reply | :no_reply,
             status: :dispatched | :failed,
-            reason: :dispatch_failed | nil
+            reason: :dispatch_failed | nil,
+            delivery: ClusterMurmur.Conversations.ResponderContinuationConsumer.Delivery.t() | nil
           }
   end
 
   @input_keys Input.__struct__() |> Map.keys()
   @input_key_count length(@input_keys)
+  @plan_keys Plan.__struct__() |> Map.keys()
+  @plan_key_count length(@plan_keys)
   @max_float DomainLimits.max_float()
 
   @type error :: :invalid_responder_continuation
@@ -170,6 +175,37 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
 
   def dispatch(_input, _random, _claim_store, _consumer, _consumer_context),
     do: {:error, :invalid_responder_continuation}
+
+  @doc "Revalidates one exact claimed reply plan and its deterministic eligibility."
+  @spec validate_reply_plan(term()) :: :ok | {:error, error()}
+  def validate_reply_plan(%Plan{outcome: :reply, responder: %Persona{} = responder} = plan) do
+    waiting = plan.input.continuation.conversation
+
+    expected_conversation = %{
+      waiting
+      | status: :generating,
+        llm_call_count: waiting.llm_call_count + 1
+    }
+
+    with true <- exact_plan?(plan),
+         {:ok, binding, candidates} <- prepare(plan.input),
+         true <- plan.binding === binding,
+         true <- plan.planned_at === plan.input.planned_at,
+         true <- plan.conversation === expected_conversation,
+         :ok <- ConversationRecordValidator.validate_active(plan.conversation),
+         true <- plan.input.configuration.personas.personas[responder.id] === responder,
+         true <- Enum.any?(candidates, &(&1.persona_id === responder.id)) do
+      :ok
+    else
+      _failure -> {:error, :invalid_responder_continuation}
+    end
+  rescue
+    _error -> {:error, :invalid_responder_continuation}
+  catch
+    _kind, _reason -> {:error, :invalid_responder_continuation}
+  end
+
+  def validate_reply_plan(_plan), do: {:error, :invalid_responder_continuation}
 
   defp prepare(%Input{} = input) do
     with true <- exact_input?(input),
@@ -365,14 +401,25 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
 
   defp consume_one(consumer, plan, context) do
     case consumer.consume(plan, context) do
-      :ok -> %Result{outcome: plan.outcome, status: :dispatched, reason: nil}
-      _failure -> %Result{outcome: plan.outcome, status: :failed, reason: :dispatch_failed}
+      :ok when plan.outcome == :no_reply ->
+        result(plan, :dispatched, nil, nil)
+
+      {:ok, %Delivery{} = delivery} when plan.outcome == :reply ->
+        if ResponderContinuationConsumer.validate_delivery(delivery, plan) == :ok,
+          do: result(plan, :dispatched, nil, delivery),
+          else: result(plan, :failed, :dispatch_failed, nil)
+
+      _failure ->
+        result(plan, :failed, :dispatch_failed, nil)
     end
   rescue
-    _error -> %Result{outcome: plan.outcome, status: :failed, reason: :dispatch_failed}
+    _error -> result(plan, :failed, :dispatch_failed, nil)
   catch
-    _kind, _reason ->
-      %Result{outcome: plan.outcome, status: :failed, reason: :dispatch_failed}
+    _kind, _reason -> result(plan, :failed, :dispatch_failed, nil)
+  end
+
+  defp result(plan, status, reason, delivery) do
+    %Result{outcome: plan.outcome, status: status, reason: reason, delivery: delivery}
   end
 
   defp outcome_kind(:no_reply), do: :no_reply
@@ -388,5 +435,9 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
 
   defp exact_input?(input) do
     map_size(input) == @input_key_count and Enum.all?(@input_keys, &Map.has_key?(input, &1))
+  end
+
+  defp exact_plan?(plan) do
+    map_size(plan) == @plan_key_count and Enum.all?(@plan_keys, &Map.has_key?(plan, &1))
   end
 end
