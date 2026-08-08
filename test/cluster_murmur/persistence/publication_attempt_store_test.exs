@@ -166,6 +166,26 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStoreTest do
              {:ok, ambiguous}
   end
 
+  test "lists only bounded open attempts at or before the recovery cutoff", %{message: message} do
+    {plan, persona, settings} = plan(message)
+
+    assert {:ok, started} =
+             PublicationAttemptStore.start(plan, message, persona, settings, started_at())
+
+    assert PublicationAttemptStore.list_open_before(~U[2026-08-05 12:00:59.999999Z]) ==
+             {:ok, []}
+
+    assert PublicationAttemptStore.list_open_before(started_at()) == {:ok, [started]}
+    assert {:ok, dispatching} = PublicationAttemptStore.claim_dispatch(started)
+    assert PublicationAttemptStore.list_open_before(started_at()) == {:ok, [dispatching]}
+
+    assert {:ok, _ambiguous} =
+             PublicationAttemptStore.mark_ambiguous(dispatching, completed_at())
+
+    assert PublicationAttemptStore.list_open_before(completed_at()) == {:ok, []}
+    assert PublicationAttemptStore.list_open_before(nil) == {:error, :invalid_datetime}
+  end
+
   test "grants exactly one durable dispatch claim", %{message: message} do
     {plan, persona, settings} = plan(message)
 
