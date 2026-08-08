@@ -11,6 +11,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedConversationPipeline do
 
   alias ClusterMurmur.Config.ConversationDefaults
   alias ClusterMurmur.Conversations.StarterReplyFinisher
+  alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.Runtime.{ResponderConversationInitializer, ResponderConversationRunner}
   alias ClusterMurmur.Runtime.ResponderConversationInitializer.Input, as: InitializerInput
   alias ClusterMurmur.Runtime.ResponderConversationRunner.Turn
@@ -79,21 +80,49 @@ defmodule ClusterMurmur.Triggers.AuthorizedConversationPipeline do
   @spec validate_runtime(term(), term()) ::
           :ok | {:error, :invalid_authorized_conversation_pipeline}
   def validate_runtime(%Input{} = input, %Adapters{} = adapters) do
+    with %StarterInput{} <- input.starter,
+         :ok <- AuthorizedStarterPipeline.validate_runtime(input.starter, adapters.starter),
+         :ok <-
+           validate_shared_runtime(
+             input,
+             adapters,
+             input.starter.authorization.plan.executed_at
+           ) do
+      :ok
+    else
+      _failure -> {:error, :invalid_authorized_conversation_pipeline}
+    end
+  rescue
+    _error -> {:error, :invalid_authorized_conversation_pipeline}
+  catch
+    _kind, _reason -> {:error, :invalid_authorized_conversation_pipeline}
+  end
+
+  def validate_runtime(_input, _adapters),
+    do: {:error, :invalid_authorized_conversation_pipeline}
+
+  @doc "Validates authorization-independent conversation runtime dependencies."
+  @spec validate_shared_runtime(term(), term(), term()) ::
+          :ok | {:error, :invalid_authorized_conversation_pipeline}
+  def validate_shared_runtime(%Input{} = input, %Adapters{} = adapters, conversation_started_at) do
     with true <- exact_input?(input),
          true <- exact_adapters?(adapters),
          %StarterInput{} <- input.starter,
          %AuthorizedStarterPipeline.Adapters{} <- adapters.starter,
          %ResponderTurnCycle.Adapters{} <- adapters.responder,
-         :ok <- AuthorizedStarterPipeline.validate_runtime(input.starter, adapters.starter),
+         :ok <- AuthorizedStarterPipeline.validate_shared_input(input.starter, adapters.starter),
          :ok <- ResponderTurnCycle.validate_adapters(adapters.responder),
          true <- shared_adapters?(adapters),
+         :ok <- DateTimeValidator.validate_storage_utc(conversation_started_at),
+         true <-
+           DateTime.compare(conversation_started_at, input.starter.generated_at) in [:eq, :lt],
          {:ok, first_planned_at} <- first_planned_at(input.responder_turns),
          true <-
            DateTime.compare(first_planned_at, input.starter.publication_completed_at) in [
              :eq,
              :gt
            ],
-         {:ok, deadline} <- duration_deadline(input.starter),
+         {:ok, deadline} <- duration_deadline(input.starter, conversation_started_at),
          :ok <-
            ResponderConversationRunner.validate_schedule(
              input.responder_turns,
@@ -110,7 +139,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedConversationPipeline do
     _kind, _reason -> {:error, :invalid_authorized_conversation_pipeline}
   end
 
-  def validate_runtime(_input, _adapters),
+  def validate_shared_runtime(_input, _adapters, _conversation_started_at),
     do: {:error, :invalid_authorized_conversation_pipeline}
 
   defp continue(
@@ -157,12 +186,12 @@ defmodule ClusterMurmur.Triggers.AuthorizedConversationPipeline do
   defp first_planned_at([%Turn{planned_at: planned_at} | _turns]), do: {:ok, planned_at}
   defp first_planned_at(_turns), do: {:error, :invalid_authorized_conversation_pipeline}
 
-  defp duration_deadline(starter) do
+  defp duration_deadline(starter, conversation_started_at) do
     with {:ok, budget} <-
            ConversationDefaults.to_budget(starter.configuration.conversation_defaults) do
       {:ok,
        DateTime.add(
-         starter.authorization.plan.executed_at,
+         conversation_started_at,
          budget.max_duration_ms * 1_000,
          :microsecond
        )}
