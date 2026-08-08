@@ -173,6 +173,46 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
 
   @type error :: :event_dispatch_failed | :invalid_event_dispatch_cycle
 
+  @doc "Validates reusable dispatch dependencies without reading the outbox."
+  @spec validate_runtime(term(), term(), term()) ::
+          :ok | {:error, :invalid_event_dispatch_cycle}
+  def validate_runtime(
+        configuration,
+        context,
+        adapters \\ %Adapters{
+          dispatches: EventDispatchStore,
+          events: EventStore,
+          authorizer: EventTriggerAuthorizer
+        }
+      )
+
+  def validate_runtime(
+        %Configuration{} = configuration,
+        %Context{} = context,
+        %Adapters{} = adapters
+      ) do
+    with true <- exact_context?(context),
+         true <- context.shared_input.configuration === configuration,
+         :ok <- validate_adapters(adapters),
+         :ok <-
+           AuthorizedStarterPipeline.validate_shared_runtime(
+             context.shared_input,
+             context.adapters
+           ),
+         :ok <- validate_conversation_runtime(context) do
+      :ok
+    else
+      _failure -> {:error, :invalid_event_dispatch_cycle}
+    end
+  rescue
+    _error -> {:error, :invalid_event_dispatch_cycle}
+  catch
+    _kind, _reason -> {:error, :invalid_event_dispatch_cycle}
+  end
+
+  def validate_runtime(_configuration, _context, _adapters),
+    do: {:error, :invalid_event_dispatch_cycle}
+
   @doc "Runs one available outbox batch through a fixed bounded consumer."
   @spec run(term(), term(), term(), term()) :: {:ok, Result.t()} | {:error, error()}
   def run(
@@ -226,9 +266,14 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
          result.completed_count <= result.claimed_count and
          result.candidate_count == result.completed_count + result.candidate_failure_count and
          result.planned_match_count <= @max_matches and
+         (result.candidate_count > 0 or result.planned_match_count == 0) and
          result.attempted_match_count <= result.planned_match_count and
+         (result.claimed_count > 0 or result.attempted_match_count == 0) and
+         (result.claimed_count < result.candidate_count or
+            result.attempted_match_count == result.planned_match_count) and
          result.attempted_match_count ==
-           result.dispatched_count + result.skipped_count + result.dispatch_failure_count do
+           result.dispatched_count + result.skipped_count + result.dispatch_failure_count and
+         (result.completed_count < result.claimed_count or result.dispatch_failure_count == 0) do
       :ok
     else
       {:error, :invalid_event_dispatch_cycle}
@@ -242,16 +287,8 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
   def validate_result(_result), do: {:error, :invalid_event_dispatch_cycle}
 
   defp preflight(configuration, now, context, adapters) do
-    with true <- exact_context?(context),
-         true <- context.shared_input.configuration === configuration,
-         :ok <- DateTimeValidator.validate_storage_utc(now),
-         :ok <- validate_adapters(adapters),
-         :ok <-
-           AuthorizedStarterPipeline.validate_shared_runtime(
-             context.shared_input,
-             context.adapters
-           ),
-         :ok <- validate_conversation_runtime(context) do
+    with :ok <- validate_runtime(configuration, context, adapters),
+         :ok <- DateTimeValidator.validate_storage_utc(now) do
       :ok
     else
       _failure -> {:error, :invalid_event_dispatch_cycle}

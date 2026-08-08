@@ -575,6 +575,14 @@ then claims entries in order, immediately consumes matching fixed pipelines,
 and completes only unmatched or fully terminal handoffs. It is not installed
 in the public application supervision tree automatically.
 
+An opt-in event-dispatch scheduler can invoke that cycle repeatedly without
+overlap. It requires an explicit validated configuration, dispatch context,
+fixed persistence and authorizer adapters, cycle module, UTC clock, interval,
+and initial delay. The next timer is scheduled only after the synchronous cycle
+returns. Status retains only a validated redacted aggregate result or a stable
+failure class. The scheduler supplies no live defaults and is not installed in
+the public application supervision tree automatically.
+
 Active windows include their start minute and exclude their end minute. A
 crossing-midnight window is active from its start through local midnight and
 from midnight up to its end. Both instants in a repeated DST wall-clock minute
