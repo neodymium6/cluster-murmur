@@ -16,6 +16,13 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
   alias ClusterMurmur.Conversations.ResponderContinuationConsumer.Delivery
   alias ClusterMurmur.Conversations.ResponderContinuationPlanner
   alias ClusterMurmur.Conversations.ResponderContinuationPlanner.{Input, Plan}
+
+  alias ClusterMurmur.Conversations.ResponderTurnFinisher.Continuation,
+    as: ResponderContinuation
+
+  alias ClusterMurmur.Conversations.StarterReplyFinisher.Continuation,
+    as: StarterContinuation
+
   alias ClusterMurmur.DateTimeValidator
 
   alias ClusterMurmur.Generation.{
@@ -164,9 +171,6 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
   defp build_generation_context(plan) do
     input = plan.input
 
-    event =
-      input.continuation.recorded.published.started.plan.persisted.generated.plan.started.plan.authorization.plan.event
-
     persona = %PersonaProjection{
       display_name: plan.responder.display_name,
       instructions: plan.responder.prompt
@@ -182,7 +186,8 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
       conversation: []
     }
 
-    with :ok <- PersonaProjectionValidator.validate(persona),
+    with {:ok, event} <- root_event(input.continuation),
+         :ok <- PersonaProjectionValidator.validate(persona),
          {:ok, facts} <- FactProjector.project(event),
          {:ok, history} <- project_history(input.conversation.messages, input.configuration),
          context = %{context | facts: facts, conversation: history},
@@ -235,16 +240,33 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
     do: validate_generated(message(plan, :llm, content, inserted_at))
 
   defp build_message(:fallback, plan, inserted_at) do
-    event =
-      plan.input.continuation.recorded.published.started.plan.persisted.generated.plan.started.plan.authorization.plan.event
-
-    event
-    |> FallbackGenerator.generate(plan.conversation.id, plan.responder.id, inserted_at)
-    |> normalize_fallback()
+    with {:ok, event} <- root_event(plan.input.continuation) do
+      event
+      |> FallbackGenerator.generate(plan.conversation.id, plan.responder.id, inserted_at)
+      |> normalize_fallback()
+    else
+      _failure -> {:error, :responder_message_failed}
+    end
   end
 
   defp build_message(_decision, _plan, _inserted_at),
     do: {:error, :responder_message_failed}
+
+  defp root_event(%StarterContinuation{} = continuation) do
+    {:ok,
+     continuation.recorded.published.started.plan.persisted.generated.plan.started.plan.authorization.plan.event}
+  rescue
+    _error -> {:error, :responder_message_failed}
+  end
+
+  defp root_event(%ResponderContinuation{} = continuation) do
+    continuation.recorded.published.started.plan.delivery.plan.input.continuation
+    |> root_event()
+  rescue
+    _error -> {:error, :responder_message_failed}
+  end
+
+  defp root_event(_continuation), do: {:error, :responder_message_failed}
 
   defp validate_generated(%Message{} = message) do
     if MessageValidator.validate(message) == :ok,
