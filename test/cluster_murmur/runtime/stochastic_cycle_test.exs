@@ -241,6 +241,24 @@ defmodule ClusterMurmur.Runtime.StochasticCycleTest do
     assert Process.get({__MODULE__, :trace}) == []
   end
 
+  test "validates only exact bounded and correlated aggregate results" do
+    valid = %Result{due_count: 3, executed_count: 1, skipped_count: 1, failure_count: 1}
+    assert StochasticCycle.validate_result(valid) == :ok
+
+    invalid = [
+      %{valid | due_count: 2},
+      %{valid | executed_count: -1},
+      %{valid | failure_count: 257},
+      %{valid | skipped_count: "private"},
+      Map.put(valid, :private, "private")
+    ]
+
+    for result <- invalid do
+      assert StochasticCycle.validate_result(result) ==
+               {:error, :invalid_stochastic_cycle_result}
+    end
+  end
+
   defp configuration(stochastic_triggers) do
     base = RuntimeFixture.configuration()
 

@@ -552,6 +552,14 @@ their calls before execution is counted. Its result contains aggregate counts
 only. No stochastic timer is installed in the public application tree, and
 committed-event dispatch remains a separate runtime step.
 
+An opt-in stochastic scheduler can invoke that cycle repeatedly without
+overlap. It requires an explicit validated configuration, cycle module, UTC
+clock, random source, interval, and initial delay; no live defaults are
+provided. The next timer is scheduled only after the synchronous cycle returns,
+and only an exact bounded, correlated aggregate result is retained. Status
+inspection excludes configuration and event details. The worker is not
+installed in the public application supervision tree automatically.
+
 Active windows include their start minute and exclude their end minute. A
 crossing-midnight window is active from its start through local midnight and
 from midnight up to its end. Both instants in a repeated DST wall-clock minute
