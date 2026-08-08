@@ -6,8 +6,15 @@ defmodule ClusterMurmur.Runtime.PollStarterCycleTest do
   alias ClusterMurmur.Observers.Client
   alias ClusterMurmur.Runtime.PollStarterCycle
   alias ClusterMurmur.Runtime.PollStarterCycle.Result
+  alias ClusterMurmur.Runtime.ResponderTurnSchedule
+  alias ClusterMurmur.Runtime.ResponderTurnSchedule.Step
   alias ClusterMurmur.TestSupport.RuntimeFixture
-  alias ClusterMurmur.Runtime.PollStarterCycle.Context
+  alias ClusterMurmur.Runtime.PollStarterCycle.{Context, ConversationRuntime}
+  alias ClusterMurmur.Runtime.ResponderTurnCycle.Adapters, as: ResponderAdapters
+
+  alias ClusterMurmur.Triggers.AuthorizedConversationPipeline.Adapters,
+    as: ConversationAdapters
+
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.{Adapters, SharedInput}
 
   @executed_at ~U[2026-08-07 02:00:00.000000Z]
@@ -36,6 +43,7 @@ defmodule ClusterMurmur.Runtime.PollStarterCycleTest do
     def consume(_plan), do: :unused
     def generate(_request, _settings, _transport), do: :unused
     def append(_message, _conversation), do: :unused
+    def append_reserved(_conversation, _message), do: :unused
     def start(_message_id, _conversation_id, _persona_id, _started_at, _request_id), do: :unused
     def publish(_started, _settings, _completed_at, _transport, _publisher, _store), do: :unused
     def succeed(_id, _message_id, _completed_at, _external_id), do: :unused
@@ -44,6 +52,9 @@ defmodule ClusterMurmur.Runtime.PollStarterCycleTest do
     def record_spoken(_persona_id, _spoken_at, _cooldown_until), do: :unused
     def complete(_conversation_id, _completed_at), do: :unused
     def wait(_conversation), do: :unused
+    def claim_generation(_conversation, _persona_id), do: :unused
+    def consume_generation(_conversation, _persona_id), do: :unused
+    def confirm_completed(_conversation), do: :unused
     def weighted_choice(_choices), do: :unused
     def uniform, do: :unused
   end
@@ -134,6 +145,35 @@ defmodule ClusterMurmur.Runtime.PollStarterCycleTest do
              "private"
   end
 
+  test "validates an explicit conversation runtime before observing" do
+    configuration = RuntimeFixture.responder_configuration()
+    assert {:ok, client} = Client.new(FakeObserver, :process_dictionary)
+    context = conversation_context(configuration, responder_schedule())
+
+    assert PollStarterCycle.validate_runtime(configuration, context) == :ok
+
+    invalid_schedule = %ResponderTurnSchedule{
+      steps: [
+        %{hd(responder_schedule().steps) | generation_transport: :invalid}
+      ]
+    }
+
+    invalid = %{
+      context
+      | conversation_runtime: %{context.conversation_runtime | schedule: invalid_schedule}
+    }
+
+    assert PollStarterCycle.run(
+             client,
+             configuration,
+             @executed_at,
+             invalid,
+             FakeIngestionStore
+           ) == {:error, :invalid_poll_starter_cycle}
+
+    assert Process.get({FakeObserver, :calls}) == []
+  end
+
   defp adapters do
     %Adapters{
       conversation_action_store: AdaptersStub,
@@ -160,6 +200,57 @@ defmodule ClusterMurmur.Runtime.PollStarterCycleTest do
         publication_transport: fn _request -> :unused end
       },
       adapters: adapters()
+    }
+  end
+
+  defp conversation_context(configuration, schedule) do
+    starter_adapters = adapters()
+
+    %Context{
+      shared_input: shared_input(configuration),
+      adapters: starter_adapters,
+      conversation_runtime: %ConversationRuntime{
+        schedule: schedule,
+        adapters: %ConversationAdapters{
+          starter: starter_adapters,
+          responder: %ResponderAdapters{
+            random: AdaptersStub,
+            conversation_store: AdaptersStub,
+            provider: AdaptersStub,
+            message_store: AdaptersStub,
+            publication_start_store: AdaptersStub,
+            publisher: AdaptersStub,
+            publication_terminal_store: AdaptersStub,
+            cooldown_store: AdaptersStub
+          }
+        }
+      }
+    }
+  end
+
+  defp responder_schedule do
+    %ResponderTurnSchedule{
+      steps: [
+        %Step{
+          planned_after_ms: 0,
+          generated_after_ms: 1_000,
+          publication_started_after_ms: 2_000,
+          publication_completed_after_ms: 3_000,
+          generation_transport: fn _request -> :unused end,
+          publication_transport: fn _request -> :unused end
+        }
+      ]
+    }
+  end
+
+  defp shared_input(configuration) do
+    %SharedInput{
+      configuration: configuration,
+      cooldowns: %{},
+      provider_settings: RuntimeFixture.provider_settings(),
+      webhook_settings: RuntimeFixture.webhook_settings(),
+      generation_transport: fn _request -> :unused end,
+      publication_transport: fn _request -> :unused end
     }
   end
 end
