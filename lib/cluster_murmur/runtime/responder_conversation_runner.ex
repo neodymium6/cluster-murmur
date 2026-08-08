@@ -97,6 +97,24 @@ defmodule ClusterMurmur.Runtime.ResponderConversationRunner do
 
   def run(_input, _adapters), do: {:error, :invalid_responder_conversation}
 
+  @doc "Validates one complete bounded turn schedule without running a turn."
+  @spec validate_schedule(term(), term(), term()) ::
+          :ok | {:error, :invalid_responder_conversation}
+  def validate_schedule(turns, first_planned_at, deadline) do
+    with :ok <- DateTimeValidator.validate_storage_utc(first_planned_at),
+         :ok <- DateTimeValidator.validate_storage_utc(deadline),
+         true <- valid_turn_count?(turns),
+         :ok <- validate_schedule(turns, first_planned_at, nil, deadline) do
+      :ok
+    else
+      _failure -> {:error, :invalid_responder_conversation}
+    end
+  rescue
+    _error -> {:error, :invalid_responder_conversation}
+  catch
+    _kind, _reason -> {:error, :invalid_responder_conversation}
+  end
+
   defp run_turns(continuation, provider_settings, [turn | remaining], adapters) do
     cycle_input = cycle_input(continuation, provider_settings, turn)
 
@@ -131,9 +149,8 @@ defmodule ClusterMurmur.Runtime.ResponderConversationRunner do
   defp preflight(input, adapters) do
     with true <- exact_input?(input),
          %ContinuationInput{} <- input.continuation,
-         true <- valid_turn_count?(input.turns),
          {:ok, deadline} <- duration_deadline(input.continuation),
-         :ok <- validate_schedule(input.turns, input.continuation.planned_at, nil, deadline),
+         :ok <- validate_schedule(input.turns, input.continuation.planned_at, deadline),
          first = hd(input.turns),
          :ok <-
            ResponderTurnCycle.validate_runtime(
