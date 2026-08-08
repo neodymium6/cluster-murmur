@@ -94,6 +94,7 @@ defmodule ClusterMurmur.Runtime.RecoveryTest do
     assert result.conversation_count == 1
     assert result.publication_count == 1
     assert result.failure_count == 1
+    refute result.saturated?
 
     assert Process.get({__MODULE__, :trace}) == [
              {:load, :executions},
@@ -106,6 +107,18 @@ defmodule ClusterMurmur.Runtime.RecoveryTest do
            ]
 
     refute inspect(result) =~ "publication_a"
+  end
+
+  test "reports a saturated bounded page so startup can require another pass" do
+    Process.put({__MODULE__, :executions}, List.duplicate(execution(), 100))
+    Process.put({__MODULE__, :conversations}, [])
+    Process.put({__MODULE__, :publications}, [])
+    Process.put({__MODULE__, :responses}, %{})
+
+    assert {:ok, %Result{} = result} = Recovery.run(@cutoff, @recovered_at, stores())
+    assert result.execution_count == 100
+    assert result.failure_count == 0
+    assert result.saturated?
   end
 
   test "rejects invalid time, stores, and oversized loads before mutation" do

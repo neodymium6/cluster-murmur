@@ -72,13 +72,18 @@ defmodule ClusterMurmur.Runtime.PollScheduler do
   @doc "Starts one opt-in non-overlapping scheduler."
   @spec start_link(Options.t()) :: GenServer.on_start()
   def start_link(%Options{} = options) do
-    case validate_options(options) do
+    case validate(options) do
       :ok -> GenServer.start_link(__MODULE__, options)
       {:error, :invalid_poll_scheduler} -> {:error, :invalid_poll_scheduler}
     end
   end
 
   def start_link(_options), do: {:error, :invalid_poll_scheduler}
+
+  @doc "Revalidates exact scheduler options without starting a worker."
+  @spec validate(term()) :: :ok | {:error, :invalid_poll_scheduler}
+  def validate(%Options{} = options), do: validate_options(options)
+  def validate(_options), do: {:error, :invalid_poll_scheduler}
 
   @doc "Returns aggregate scheduler status without observation or prompt data."
   @spec status(GenServer.server()) :: {:ok, Status.t()} | {:error, :unavailable}

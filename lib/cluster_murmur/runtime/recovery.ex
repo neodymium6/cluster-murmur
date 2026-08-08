@@ -44,26 +44,36 @@ defmodule ClusterMurmur.Runtime.Recovery do
                :execution_count,
                :conversation_count,
                :publication_count,
-               :failure_count
+               :failure_count,
+               :saturated?
              ]}
     @enforce_keys [
       :execution_count,
       :conversation_count,
       :publication_count,
-      :failure_count
+      :failure_count,
+      :saturated?
     ]
-    defstruct [:execution_count, :conversation_count, :publication_count, :failure_count]
+    defstruct [
+      :execution_count,
+      :conversation_count,
+      :publication_count,
+      :failure_count,
+      :saturated?
+    ]
 
     @type t :: %__MODULE__{
             execution_count: non_neg_integer(),
             conversation_count: non_neg_integer(),
             publication_count: non_neg_integer(),
-            failure_count: non_neg_integer()
+            failure_count: non_neg_integer(),
+            saturated?: boolean()
           }
   end
 
   @store_keys Stores.__struct__() |> Map.keys()
   @store_key_count length(@store_keys)
+  @max_recovery_records 100
 
   @doc "Recovers abandoned work through the fixed durable stores."
   @spec run(term(), term()) :: {:ok, Result.t()} | {:error, :invalid_runtime_recovery}
@@ -103,7 +113,8 @@ defmodule ClusterMurmur.Runtime.Recovery do
          execution_count: execution_count,
          conversation_count: conversation_count,
          publication_count: publication_count,
-         failure_count: publication_failures + conversation_failures + execution_failures
+         failure_count: publication_failures + conversation_failures + execution_failures,
+         saturated?: saturated?([executions, conversations, publications])
        }}
     else
       _failure -> {:error, :invalid_runtime_recovery}
@@ -158,7 +169,7 @@ defmodule ClusterMurmur.Runtime.Recovery do
     values
     |> Enum.reduce_while(0, fn value, count ->
       cond do
-        count >= 100 -> {:halt, :invalid}
+        count >= @max_recovery_records -> {:halt, :invalid}
         validator.(value) -> {:cont, count + 1}
         true -> {:halt, :invalid}
       end
@@ -208,4 +219,7 @@ defmodule ClusterMurmur.Runtime.Recovery do
   defp exact_stores?(stores) do
     map_size(stores) == @store_key_count and Enum.all?(@store_keys, &Map.has_key?(stores, &1))
   end
+
+  defp saturated?(collections),
+    do: Enum.any?(collections, &(length(&1) == @max_recovery_records))
 end

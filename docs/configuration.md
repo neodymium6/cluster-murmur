@@ -240,7 +240,14 @@ executions, active conversations, and open publication attempts per collection;
 validates every record before the first mutation; then fails internal work and
 marks uncertain publications ambiguous. It never retries a provider call or
 Discord publication. Operators choose the UTC abandonment cutoff and completion
-instant and should run recovery before enabling the poll scheduler.
+instant. The opt-in recovered poll supervisor reads one injected storage-UTC
+instant, uses it for both values, and starts its fixed scheduler child only when
+every bounded recovery mutation succeeds and no collection fills its 100-record
+page. A full page requires another startup pass to prove that no residual work
+remains. Scheduler termination closes this supervisor so a parent-managed
+replacement must pass through recovery again. The boundary remains outside the
+public application tree, so private deployment assembly must construct and
+supervise it explicitly.
 
 `ClusterMurmur.Release.migrate!/0`, invoked after every application instance
 using the database has stopped, is the only application migration operation. It

@@ -201,9 +201,13 @@ The opt-in GenServer schedules poll cycles without overlap; it has no live
 defaults and is not installed in the application tree automatically. Bounded
 restart recovery validates every abandoned record before mutation, marks open
 publication outcomes ambiguous without retry, and fails interrupted
-conversations and trigger executions through existing CAS boundaries. Do not
-deploy this revision or connect it to infrastructure, model providers, or
-Discord without explicit review of that private assembly.
+conversations and trigger executions through existing CAS boundaries. An
+opt-in supervisor now gates scheduler startup on complete recovery at one
+injected UTC instant, fails closed on a saturated recovery page, and reruns that
+gate through its parent after scheduler termination. It also remains absent
+from the default application tree. Do not deploy this revision or connect it to
+infrastructure, model providers, or Discord without explicit review of that
+private assembly.
 
 ## Boundary
 
