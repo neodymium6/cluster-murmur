@@ -34,6 +34,7 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
     :inserted_at
   ]
   @max_sqlite_integer 9_223_372_036_854_775_807
+  @max_recovery_attempts 100
   @external_errors [
     :authentication_failed,
     :invalid_request,
@@ -127,6 +128,33 @@ defmodule ClusterMurmur.Persistence.PublicationAttemptStore do
           {:ok, PublicationAttemptRecord.t()} | {:error, error()}
   def mark_ambiguous(attempt, completed_at),
     do: finish(attempt, :ambiguous, :interrupted, completed_at)
+
+  @doc "Lists at most 100 open publication attempts at or before one UTC cutoff."
+  @spec list_open_before(term()) ::
+          {:ok, [PublicationAttemptRecord.t()]}
+          | {:error,
+             :invalid_datetime | :invalid_publication_attempt_record | :storage_unavailable}
+  def list_open_before(cutoff) do
+    if DateTimeValidator.validate_storage_utc(cutoff) == :ok do
+      query =
+        from attempt in PublicationAttemptRecord,
+          where: attempt.status in [:started, :dispatching] and attempt.started_at <= ^cutoff,
+          order_by: [asc: attempt.started_at, asc: attempt.message_id],
+          limit: @max_recovery_attempts
+
+      attempts = Repo.all(query)
+
+      if Enum.all?(attempts, &(PublicationAttemptRecordValidator.validate(&1) == :ok)),
+        do: {:ok, attempts},
+        else: {:error, :invalid_publication_attempt_record}
+    else
+      {:error, :invalid_datetime}
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
 
   @doc "Atomically records one known Discord success for an exact dispatch claim."
   @spec succeed(term(), term(), term(), term()) ::

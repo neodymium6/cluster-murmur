@@ -70,7 +70,8 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
 
   @doc "Lists at most 100 started executions at or before one supplied UTC cutoff."
   @spec list_started_before(term()) ::
-          {:ok, [TriggerExecution.t()]} | {:error, :invalid_datetime | :storage_unavailable}
+          {:ok, [TriggerExecution.t()]}
+          | {:error, :invalid_datetime | :invalid_execution | :storage_unavailable}
   def list_started_before(cutoff) do
     if DateTimeValidator.validate_storage_utc(cutoff) == :ok do
       query =
@@ -83,7 +84,11 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
           ],
           limit: @max_recovery_executions
 
-      {:ok, Repo.all(query)}
+      executions = Repo.all(query)
+
+      if Enum.all?(executions, &(TriggerExecutionValidator.validate(&1) == :ok)),
+        do: {:ok, executions},
+        else: {:error, :invalid_execution}
     else
       {:error, :invalid_datetime}
     end
