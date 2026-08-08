@@ -9,7 +9,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
   external effects, or handle a responder continuation.
   """
 
-  alias ClusterMurmur.Config.Configuration
+  alias ClusterMurmur.Config.{Configuration, Value}
   alias ClusterMurmur.Conversations.StarterReplyFinisher
   alias ClusterMurmur.DateTimeValidator
 
@@ -27,7 +27,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
     StarterMessagePersister
   }
 
-  alias ClusterMurmur.Personas.StarterCooldownRecorder
+  alias ClusterMurmur.Personas.{StarterCandidateProjector, StarterCooldownRecorder}
 
   alias ClusterMurmur.Triggers.{
     EventTriggerAuthorizer,
@@ -227,6 +227,31 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
 
   def run(_input, _adapters), do: {:error, :invalid_starter_pipeline}
 
+  @doc "Validates all starter inputs that do not depend on an authorization."
+  @spec validate_shared_input(term(), term()) :: :ok | {:error, :invalid_starter_pipeline}
+  def validate_shared_input(%Input{} = input, %Adapters{} = adapters) do
+    with true <- exact_input?(input),
+         true <- exact_adapters?(adapters),
+         :ok <- Configuration.validate(input.configuration),
+         :ok <- StarterCandidateProjector.validate_cooldowns(input.cooldowns),
+         {:ok, _conversation_id} <- Value.id(input.conversation_id),
+         :ok <- validate_provider_settings(input.provider_settings, input.configuration),
+         :ok <- WebhookSettings.validate(input.webhook_settings),
+         :ok <- validate_shared_times(input),
+         :ok <- validate_transports(input),
+         :ok <- validate_adapters(adapters) do
+      :ok
+    else
+      _failure -> {:error, :invalid_starter_pipeline}
+    end
+  rescue
+    _error -> {:error, :invalid_starter_pipeline}
+  catch
+    _kind, _reason -> {:error, :invalid_starter_pipeline}
+  end
+
+  def validate_shared_input(_input, _adapters), do: {:error, :invalid_starter_pipeline}
+
   defp finish(recorded, input, adapters) do
     case StarterReplyFinisher.finish(
            recorded,
@@ -244,15 +269,9 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
   end
 
   defp preflight(input, adapters) do
-    with true <- exact_input?(input),
-         true <- exact_adapters?(adapters),
-         :ok <- Configuration.validate(input.configuration),
+    with :ok <- validate_shared_input(input, adapters),
          :ok <- EventTriggerAuthorizer.validate(input.authorization),
-         :ok <- validate_provider_settings(input.provider_settings, input.configuration),
-         :ok <- WebhookSettings.validate(input.webhook_settings),
-         :ok <- validate_times(input),
-         :ok <- validate_transports(input),
-         :ok <- validate_adapters(adapters) do
+         :ok <- validate_authorization_times(input) do
       :ok
     else
       _failure -> {:error, :invalid_starter_pipeline}
@@ -269,19 +288,10 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
        else: {:error, :invalid_starter_pipeline}
   end
 
-  defp validate_times(input) do
-    event = input.authorization.plan.event
-    latest_event_at = latest_event_at(event)
-
+  defp validate_shared_times(input) do
     with :ok <- DateTimeValidator.validate_storage_utc(input.generated_at),
          :ok <- DateTimeValidator.validate_storage_utc(input.publication_started_at),
          :ok <- DateTimeValidator.validate_storage_utc(input.publication_completed_at),
-         true <-
-           DateTime.compare(input.generated_at, latest_event_at) in [:gt, :eq] and
-             DateTime.compare(input.generated_at, input.authorization.plan.executed_at) in [
-               :gt,
-               :eq
-             ],
          true <-
            DateTime.compare(input.publication_started_at, input.generated_at) in [:gt, :eq],
          true <-
@@ -293,6 +303,16 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
     else
       _failure -> {:error, :invalid_starter_pipeline}
     end
+  end
+
+  defp validate_authorization_times(input) do
+    event = input.authorization.plan.event
+    latest_event_at = latest_event_at(event)
+
+    if DateTime.compare(input.generated_at, latest_event_at) in [:gt, :eq] and
+         DateTime.compare(input.generated_at, input.authorization.plan.executed_at) in [:gt, :eq],
+       do: :ok,
+       else: {:error, :invalid_starter_pipeline}
   end
 
   defp validate_transports(input) do

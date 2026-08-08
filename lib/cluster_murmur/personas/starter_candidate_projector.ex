@@ -68,9 +68,11 @@ defmodule ClusterMurmur.Personas.StarterCandidateProjector do
 
   defp validate_personas(_personas), do: {:error, :invalid_persona_collection}
 
-  defp validate_cooldowns(cooldowns)
-       when is_map(cooldowns) and not is_struct(cooldowns) and
-              map_size(cooldowns) <= @max_cooldowns do
+  @doc "Validates one bounded exact persona cooldown collection."
+  @spec validate_cooldowns(term()) :: :ok | {:error, error()}
+  def validate_cooldowns(cooldowns)
+      when is_map(cooldowns) and not is_struct(cooldowns) and
+             map_size(cooldowns) <= @max_cooldowns do
     Enum.reduce_while(cooldowns, :ok, fn
       {persona_id, %PersonaCooldownRecord{persona_id: stored_id} = record}, :ok
       when persona_id == stored_id ->
@@ -87,7 +89,7 @@ defmodule ClusterMurmur.Personas.StarterCandidateProjector do
     end)
   end
 
-  defp validate_cooldowns(_cooldowns), do: {:error, :invalid_persona_cooldown_collection}
+  def validate_cooldowns(_cooldowns), do: {:error, :invalid_persona_cooldown_collection}
 
   defp project_candidates([], _binding, _personas, _cooldowns, _now, candidates),
     do: {:ok, Enum.reverse(candidates)}
