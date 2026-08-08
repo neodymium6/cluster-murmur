@@ -534,6 +534,13 @@ persistence rejects changed facts instead of accepting a duplicate. Its fixed
 labels contain only the configured trigger ID and kind; prompt fact projection
 excludes both labels.
 
+The constrained stochastic commit store reprojects that exact event and writes
+it in the same SQLite transaction that advances the opaque claimed schedule to
+its planned next run. An identical precommitted event is restored; template
+drift or schedule conflict fails closed without advancing the claim. Worker
+timing, due enumeration, and later event-trigger dispatch remain explicit
+runtime assembly work.
+
 Active windows include their start minute and exclude their end minute. A
 crossing-midnight window is active from its start through local midnight and
 from midnight up to its end. Both instants in a repeated DST wall-clock minute
