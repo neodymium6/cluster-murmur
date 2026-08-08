@@ -1,7 +1,15 @@
 defmodule ClusterMurmur.Config.ConfigurationValidator do
   @moduledoc false
 
-  alias ClusterMurmur.Config.{Bindings, Configuration, EventGroups, LLM, Personas}
+  alias ClusterMurmur.Config.{
+    Bindings,
+    Configuration,
+    ConversationDefaults,
+    EventGroups,
+    LLM,
+    Personas
+  }
+
   alias ClusterMurmur.Config.{Routing, StateTracking, Triggers, Value}
   alias ClusterMurmur.DomainLimits
   alias ClusterMurmur.Personas.{BindingValidator, Validator, Persona}
@@ -29,6 +37,7 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
     with true <- exact_keys?(configuration, @configuration_keys),
          true <- configuration.version === 1,
          :ok <- validate_state_tracking(configuration.state_tracking),
+         :ok <- validate_conversation_defaults(configuration.conversation_defaults),
          :ok <- validate_event_groups(configuration.event_groups),
          :ok <- validate_personas(configuration.personas),
          :ok <- validate_bindings(configuration.bindings),
@@ -55,6 +64,13 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
     case StateTracking.validate(state_tracking) do
       :ok -> :ok
       {:error, :invalid_state_tracking_configuration} -> {:error, :invalid_configuration}
+    end
+  end
+
+  defp validate_conversation_defaults(defaults) do
+    case ConversationDefaults.validate(defaults) do
+      :ok -> :ok
+      {:error, :invalid_conversation_defaults} -> {:error, :invalid_configuration}
     end
   end
 

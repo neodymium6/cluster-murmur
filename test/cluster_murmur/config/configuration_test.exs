@@ -1,7 +1,15 @@
 defmodule ClusterMurmur.Config.ConfigurationTest do
   use ExUnit.Case, async: true
 
-  alias ClusterMurmur.Config.{Configuration, DocumentSet, LLM, LoadedDocument, Manifest}
+  alias ClusterMurmur.Config.{
+    Configuration,
+    ConversationDefaults,
+    DocumentSet,
+    LLM,
+    LoadedDocument,
+    Manifest
+  }
+
   alias ClusterMurmur.Config.StateTracking
   alias ClusterMurmur.TestSupport.PrivateTmpDir
 
@@ -27,6 +35,7 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
     assert configuration.routing.webhook_secret_file_env == "DISCORD_WEBHOOK_SECRET_FILE"
     assert configuration.llm == llm()
     assert configuration.state_tracking == StateTracking.default()
+    assert configuration.conversation_defaults == ConversationDefaults.default()
     assert Configuration.validate(configuration) == :ok
   end
 
@@ -41,10 +50,30 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
              )
   end
 
+  test "carries explicit conversation defaults into complete configuration", context do
+    defaults = %{ConversationDefaults.default() | max_turns: 5, no_reply_weight: 2.5}
+    manifest = %{manifest() | conversation_defaults: defaults}
+
+    assert {:ok, %Configuration{conversation_defaults: ^defaults}} =
+             Configuration.parse(
+               context.config,
+               %DocumentSet{manifest: manifest, documents: valid_documents(context)}
+             )
+  end
+
   test "revalidates exact category values and catalog references", context do
     assert {:ok, configuration} = Configuration.parse(context.config, document_set(context))
 
-    for field <- [:event_groups, :personas, :bindings, :triggers, :routing, :llm, :state_tracking] do
+    for field <- [
+          :event_groups,
+          :personas,
+          :bindings,
+          :triggers,
+          :routing,
+          :llm,
+          :state_tracking,
+          :conversation_defaults
+        ] do
       assert configuration
              |> Map.put(field, nil)
              |> Configuration.validate() == {:error, :invalid_configuration}
@@ -68,6 +97,13 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
           %{
             configuration
             | state_tracking: %{configuration.state_tracking | failures_required: 0}
+          },
+          %{
+            configuration
+            | conversation_defaults: %{
+                configuration.conversation_defaults
+                | no_reply_weight: 0
+              }
           }
         ] do
       assert Configuration.validate(invalid) == {:error, :invalid_configuration}

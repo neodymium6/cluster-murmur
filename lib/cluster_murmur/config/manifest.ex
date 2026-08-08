@@ -16,13 +16,20 @@ defmodule ClusterMurmur.Config.Manifest do
   ]
   @category_names Enum.map(@categories, &elem(&1, 0))
   @required_fields ["includes", "llm", "version"]
-  @fields ["includes", "llm", "state_tracking", "version"]
+  @fields ["conversation_defaults", "includes", "llm", "state_tracking", "version"]
   @max_patterns 64
   @default_state_tracking ClusterMurmur.Config.StateTracking.default()
+  @default_conversation_defaults ClusterMurmur.Config.ConversationDefaults.default()
 
   @derive {Inspect, only: [:version]}
   @enforce_keys [:version, :includes, :llm]
-  defstruct [:version, :includes, :llm, state_tracking: @default_state_tracking]
+  defstruct [
+    :version,
+    :includes,
+    :llm,
+    state_tracking: @default_state_tracking,
+    conversation_defaults: @default_conversation_defaults
+  ]
 
   @type category :: :event_groups | :personas | :bindings | :triggers | :routing
 
@@ -38,7 +45,8 @@ defmodule ClusterMurmur.Config.Manifest do
           version: 1,
           includes: includes(),
           llm: ClusterMurmur.Config.LLM.t(),
-          state_tracking: ClusterMurmur.Config.StateTracking.t()
+          state_tracking: ClusterMurmur.Config.StateTracking.t(),
+          conversation_defaults: ClusterMurmur.Config.ConversationDefaults.t()
         }
 
   @type error ::
@@ -53,6 +61,7 @@ defmodule ClusterMurmur.Config.Manifest do
           | :unknown_manifest_field
           | :unsupported_config_version
           | {:llm, ClusterMurmur.Config.LLM.error()}
+          | {:conversation_defaults, ClusterMurmur.Config.ConversationDefaults.error()}
           | {:state_tracking, ClusterMurmur.Config.StateTracking.error()}
 
   @doc "Validates a decoded top-level configuration document."
@@ -62,13 +71,15 @@ defmodule ClusterMurmur.Config.Manifest do
          {:ok, version} <- validate_version(document["version"]),
          {:ok, includes} <- validate_includes(document["includes"]),
          {:ok, llm} <- parse_llm(document["llm"]),
-         {:ok, state_tracking} <- parse_state_tracking(document) do
+         {:ok, state_tracking} <- parse_state_tracking(document),
+         {:ok, conversation_defaults} <- parse_conversation_defaults(document) do
       {:ok,
        %__MODULE__{
          version: version,
          includes: includes,
          llm: llm,
-         state_tracking: state_tracking
+         state_tracking: state_tracking,
+         conversation_defaults: conversation_defaults
        }}
     end
   end
@@ -91,6 +102,19 @@ defmodule ClusterMurmur.Config.Manifest do
         case ClusterMurmur.Config.StateTracking.parse(value) do
           {:ok, state_tracking} -> {:ok, state_tracking}
           {:error, reason} -> {:error, {:state_tracking, reason}}
+        end
+    end
+  end
+
+  defp parse_conversation_defaults(document) do
+    case Map.fetch(document, "conversation_defaults") do
+      :error ->
+        {:ok, ClusterMurmur.Config.ConversationDefaults.default()}
+
+      {:ok, value} ->
+        case ClusterMurmur.Config.ConversationDefaults.parse(value) do
+          {:ok, defaults} -> {:ok, defaults}
+          {:error, reason} -> {:error, {:conversation_defaults, reason}}
         end
     end
   end

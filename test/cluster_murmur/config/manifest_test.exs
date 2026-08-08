@@ -1,7 +1,7 @@
 defmodule ClusterMurmur.Config.ManifestTest do
   use ExUnit.Case, async: true
 
-  alias ClusterMurmur.Config.{DocumentDecoder, LLM, Manifest, StateTracking}
+  alias ClusterMurmur.Config.{ConversationDefaults, DocumentDecoder, LLM, Manifest, StateTracking}
 
   test "accepts the bounded decoder output" do
     yaml = """
@@ -27,7 +27,17 @@ defmodule ClusterMurmur.Config.ManifestTest do
             %Manifest{
               version: 1,
               llm: %LLM{timeout_ms: 20_000},
-              state_tracking: %StateTracking{failures_required: 2, successes_required: 2}
+              state_tracking: %StateTracking{failures_required: 2, successes_required: 2},
+              conversation_defaults: %ConversationDefaults{
+                max_turns: 3,
+                max_participants: 2,
+                max_duration_ms: 300_000,
+                max_llm_calls: 3,
+                allow_same_persona_consecutively: false,
+                allow_persona_reentry: true,
+                no_reply_weight: 1.0,
+                random_jitter: 0.2
+              }
             }} =
              Manifest.parse(document)
   end
@@ -86,6 +96,40 @@ defmodule ClusterMurmur.Config.ManifestTest do
                 successes_required: 4
               }
             }} = Manifest.parse(document)
+  end
+
+  test "normalizes optional explicit conversation defaults" do
+    document =
+      valid_document()
+      |> Map.put("conversation_defaults", %{
+        "max_turns" => 5,
+        "max_participants" => 4,
+        "max_duration" => "90s",
+        "max_llm_calls" => 6,
+        "allow_same_persona_consecutively" => true,
+        "allow_persona_reentry" => false,
+        "responder_selection" => %{
+          "no_reply_weight" => 2.5,
+          "random_jitter" => 0.4
+        }
+      })
+
+    assert {:ok,
+            %Manifest{
+              conversation_defaults: %ConversationDefaults{
+                max_turns: 5,
+                max_participants: 4,
+                max_duration_ms: 90_000,
+                max_llm_calls: 6,
+                allow_same_persona_consecutively: true,
+                allow_persona_reentry: false,
+                no_reply_weight: 2.5,
+                random_jitter: 0.4
+              }
+            }} = Manifest.parse(document)
+
+    assert Manifest.parse(Map.put(valid_document(), "conversation_defaults", %{})) ==
+             {:error, {:conversation_defaults, :invalid_conversation_defaults}}
   end
 
   test "allows present categories to have no include patterns" do
