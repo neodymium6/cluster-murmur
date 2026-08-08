@@ -7,9 +7,19 @@ defmodule ClusterMurmur.Config.Configuration do
   runtime construction boundaries without reopening configuration files.
   """
 
-  alias ClusterMurmur.Config.{Bindings, Catalog, DocumentSet, EventGroups, LLM}
+  alias ClusterMurmur.Config.{
+    Bindings,
+    Catalog,
+    ConversationDefaults,
+    DocumentSet,
+    EventGroups,
+    LLM
+  }
+
   alias ClusterMurmur.Config.{ConfigurationValidator, Personas, Routing, StateTracking, Triggers}
   alias ClusterMurmur.Triggers.{EventTrigger, ScheduleTrigger, StochasticTrigger}
+
+  @default_conversation_defaults ConversationDefaults.default()
 
   @derive {Inspect, only: [:version]}
   @enforce_keys [
@@ -30,7 +40,8 @@ defmodule ClusterMurmur.Config.Configuration do
     :triggers,
     :routing,
     :llm,
-    :state_tracking
+    :state_tracking,
+    conversation_defaults: @default_conversation_defaults
   ]
 
   @type t :: %__MODULE__{
@@ -41,7 +52,8 @@ defmodule ClusterMurmur.Config.Configuration do
           triggers: Triggers.t(),
           routing: Routing.t(),
           llm: LLM.t(),
-          state_tracking: StateTracking.t()
+          state_tracking: StateTracking.t(),
+          conversation_defaults: ConversationDefaults.t()
         }
 
   @type error ::
@@ -70,7 +82,8 @@ defmodule ClusterMurmur.Config.Configuration do
          triggers: triggers,
          routing: routing,
          llm: document_set.manifest.llm,
-         state_tracking: document_set.manifest.state_tracking
+         state_tracking: document_set.manifest.state_tracking,
+         conversation_defaults: document_set.manifest.conversation_defaults
        }}
     end
   end

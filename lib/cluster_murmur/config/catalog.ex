@@ -9,6 +9,7 @@ defmodule ClusterMurmur.Config.Catalog do
 
   alias ClusterMurmur.Config.{
     Bindings,
+    ConversationDefaults,
     DocumentSet,
     EventGroups,
     LLM,
@@ -80,7 +81,8 @@ defmodule ClusterMurmur.Config.Catalog do
            version: 1,
            includes: includes,
            llm: llm,
-           state_tracking: state_tracking
+           state_tracking: state_tracking,
+           conversation_defaults: conversation_defaults
          } = manifest
        )
        when is_map(includes) do
@@ -90,12 +92,15 @@ defmodule ClusterMurmur.Config.Catalog do
 
       with {:ok, llm_document} <- LLM.to_document(llm),
            {:ok, state_tracking_document} <- StateTracking.to_document(state_tracking),
+           {:ok, conversation_defaults_document} <-
+             ConversationDefaults.to_document(conversation_defaults),
            {:ok, ^manifest} <-
              Manifest.parse(%{
                "version" => 1,
                "includes" => decoded_includes,
                "llm" => llm_document,
-               "state_tracking" => state_tracking_document
+               "state_tracking" => state_tracking_document,
+               "conversation_defaults" => conversation_defaults_document
              }) do
         :ok
       else

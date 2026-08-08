@@ -77,6 +77,20 @@ defmodule ClusterMurmur.Config.CatalogTest do
              %DocumentSet{manifest: missing_state_tracking, documents: valid_documents(context)}
            ) == {:error, :invalid_catalog}
 
+    missing_conversation_defaults =
+      manifest()
+      |> Map.from_struct()
+      |> Map.delete(:conversation_defaults)
+      |> Map.put(:__struct__, Manifest)
+
+    assert Catalog.parse(
+             context.config,
+             %DocumentSet{
+               manifest: missing_conversation_defaults,
+               documents: valid_documents(context)
+             }
+           ) == {:error, :invalid_catalog}
+
     incomplete = %DocumentSet{
       manifest: %Manifest{version: 1, includes: nil, llm: llm()},
       documents: %{event_groups: [], personas: [], bindings: []}
