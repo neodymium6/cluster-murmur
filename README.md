@@ -157,14 +157,15 @@ projected stochastic event together with its claimed next-run state, rolling
 back either side on conflict. One explicit bounded cycle now traverses
 100-record cursor pages up to the 256-trigger configuration bound, skips
 ineligible policies without claiming, and runs each eligible schedule through
-claim, planning, projection, and atomic commit in durable order. External
-stochastic worker timing and event-trigger dispatch are
-not implemented. Event retention and dedupe-window policy also remain future
-work. Observer target responses now pass a
-closed 256-entry and 64 KiB identity catalog that rejects duplicates and sorts
-accepted redacted targets before polling. One injected, sequential poll lists
-that catalog once, observes each accepted identity once, and sends only matched
-normalized observations through atomic ingestion while collecting validated
+claim, planning, projection, and atomic commit in durable order. Scheduling and
+event-trigger dispatch remain separate: an opt-in worker can now schedule those
+cycles without overlap but is not installed in the public application tree,
+while crash-safe event-trigger dispatch remains future work. Event retention
+and dedupe-window policy also remain future work. Observer target responses now
+pass a closed 256-entry and 64 KiB identity catalog that rejects duplicates and
+sorts accepted redacted targets before polling. One injected, sequential poll
+lists that catalog once, observes each accepted identity once, and sends only
+matched normalized observations through atomic ingestion while collecting validated
 events and stable partial failures. A fixed MCP observer client exposes only
 target-list and cluster-health operations through a bounded redacted transport.
 One matched event trigger can now cross its

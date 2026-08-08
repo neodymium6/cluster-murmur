@@ -87,6 +87,8 @@ defmodule ClusterMurmur.Runtime.StochasticCycle do
 
   @adapter_keys Adapters.__struct__() |> Map.keys()
   @adapter_key_count length(@adapter_keys)
+  @result_keys Result.__struct__() |> Map.keys()
+  @result_key_count length(@result_keys)
 
   @doc "Runs one due batch through the fixed durable stores."
   @spec run(term(), term(), term()) ::
@@ -116,6 +118,24 @@ defmodule ClusterMurmur.Runtime.StochasticCycle do
 
   def run(_configuration, _now, _random, _adapters),
     do: {:error, :invalid_stochastic_cycle}
+
+  @doc "Validates one exact bounded aggregate cycle result."
+  @spec validate_result(term()) :: :ok | {:error, :invalid_stochastic_cycle_result}
+  def validate_result(%Result{} = result) do
+    counts = [result.due_count, result.executed_count, result.skipped_count, result.failure_count]
+
+    if exact_result?(result) and
+         Enum.all?(counts, &(is_integer(&1) and &1 in 0..@max_due_schedules)) and
+         result.due_count == result.executed_count + result.skipped_count + result.failure_count,
+       do: :ok,
+       else: {:error, :invalid_stochastic_cycle_result}
+  rescue
+    _error -> {:error, :invalid_stochastic_cycle_result}
+  catch
+    _kind, _reason -> {:error, :invalid_stochastic_cycle_result}
+  end
+
+  def validate_result(_result), do: {:error, :invalid_stochastic_cycle_result}
 
   defp preflight(configuration, now, random, adapters) do
     with :ok <- normalize_configuration(Configuration.validate(configuration)),
@@ -373,5 +393,9 @@ defmodule ClusterMurmur.Runtime.StochasticCycle do
   defp exact_adapters?(adapters) do
     map_size(adapters) == @adapter_key_count and
       Enum.all?(@adapter_keys, &Map.has_key?(adapters, &1))
+  end
+
+  defp exact_result?(result) do
+    map_size(result) == @result_key_count and Enum.all?(@result_keys, &Map.has_key?(result, &1))
   end
 end
