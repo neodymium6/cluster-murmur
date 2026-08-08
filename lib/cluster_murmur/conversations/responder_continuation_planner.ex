@@ -13,6 +13,7 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
   alias ClusterMurmur.Conversations.{
     Conversation,
     ReplyGateDecision,
+    ResponderTurnFinisher,
     StarterReplyFinisher
   }
 
@@ -37,7 +38,12 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
     ResponderSelector
   }
 
-  alias ClusterMurmur.Conversations.StarterReplyFinisher.Continuation
+  alias ClusterMurmur.Conversations.ResponderTurnFinisher.Continuation,
+    as: ResponderContinuation
+
+  alias ClusterMurmur.Conversations.StarterReplyFinisher.Continuation,
+    as: StarterContinuation
+
   alias ClusterMurmur.Personas.Validator, as: PersonaValidator
 
   defmodule Input do
@@ -70,7 +76,9 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
     ]
 
     @type t :: %__MODULE__{
-            continuation: ClusterMurmur.Conversations.StarterReplyFinisher.Continuation.t(),
+            continuation:
+              ClusterMurmur.Conversations.StarterReplyFinisher.Continuation.t()
+              | ClusterMurmur.Conversations.ResponderTurnFinisher.Continuation.t(),
             configuration: ClusterMurmur.Config.Configuration.t(),
             starter_cooldowns: map(),
             current_cooldowns: map(),
@@ -209,14 +217,8 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
 
   defp prepare(%Input{} = input) do
     with true <- exact_input?(input),
-         :ok <-
-           StarterReplyFinisher.validate_continuation(
-             input.continuation,
-             input.configuration,
-             input.starter_cooldowns,
-             input.webhook_settings
-           ),
-         :ok <- correlate_current_starter_cooldown(input),
+         :ok <- validate_continuation(input),
+         :ok <- correlate_current_cooldowns(input),
          :ok <- correlate_conversation(input.continuation, input.conversation),
          true <-
            DateTime.compare(input.planned_at, input.conversation.last_message_at) in [:eq, :gt],
@@ -240,7 +242,45 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
 
   defp prepare(_input), do: {:error, :invalid_responder_continuation}
 
-  defp correlate_current_starter_cooldown(%Input{} = input) do
+  defp validate_continuation(%Input{continuation: %StarterContinuation{}} = input) do
+    StarterReplyFinisher.validate_continuation(
+      input.continuation,
+      input.configuration,
+      input.starter_cooldowns,
+      input.webhook_settings
+    )
+  end
+
+  defp validate_continuation(
+         %Input{continuation: %ResponderContinuation{} = continuation} = input
+       ) do
+    previous_input = continuation.recorded.published.started.plan.delivery.plan.input
+
+    with true <- input.starter_cooldowns === previous_input.starter_cooldowns,
+         true <- input.budget === previous_input.budget,
+         true <- input.policy === previous_input.policy,
+         true <- input.no_reply_weight === previous_input.no_reply_weight,
+         true <-
+           DateTime.compare(
+             input.planned_at,
+             continuation.recorded.published.attempt.completed_at
+           ) in [:eq, :gt],
+         :ok <-
+           ResponderTurnFinisher.validate_continuation(
+             continuation,
+             input.configuration,
+             previous_input.current_cooldowns,
+             input.webhook_settings
+           ) do
+      :ok
+    else
+      _failure -> {:error, :invalid_responder_continuation}
+    end
+  end
+
+  defp validate_continuation(_input), do: {:error, :invalid_responder_continuation}
+
+  defp correlate_current_cooldowns(%Input{continuation: %StarterContinuation{}} = input) do
     recorded = input.continuation.recorded.cooldown
 
     case Map.fetch(input.current_cooldowns, recorded.persona_id) do
@@ -255,15 +295,41 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
     end
   end
 
+  defp correlate_current_cooldowns(
+         %Input{continuation: %ResponderContinuation{} = continuation} = input
+       ) do
+    with :ok <- ResponderCandidateProjector.validate_cooldowns(input.current_cooldowns),
+         true <-
+           Enum.all?(continuation.current_cooldowns, fn {persona_id, recorded} ->
+             case Map.fetch(input.current_cooldowns, persona_id) do
+               {:ok, %PersonaCooldownRecord{} = current} ->
+                 PersonaCooldownRecordValidator.validate(current) == :ok and
+                   current.persona_id === persona_id and current_not_older?(current, recorded)
+
+               _failure ->
+                 false
+             end
+           end) do
+      :ok
+    else
+      _failure -> {:error, :invalid_responder_continuation}
+    end
+  end
+
+  defp correlate_current_cooldowns(_input), do: {:error, :invalid_responder_continuation}
+
   defp current_not_older?(current, recorded) do
     case DateTime.compare(current.last_spoken_at, recorded.last_spoken_at) do
-      :gt -> true
+      :gt -> DateTime.compare(current.cooldown_until, recorded.cooldown_until) in [:eq, :gt]
       :eq -> DateTime.compare(current.cooldown_until, recorded.cooldown_until) == :eq
       :lt -> false
     end
   end
 
-  defp correlate_conversation(%Continuation{} = continuation, %Conversation{} = conversation) do
+  defp correlate_conversation(
+         %StarterContinuation{} = continuation,
+         %Conversation{} = conversation
+       ) do
     waiting = continuation.conversation
     published = continuation.recorded.published.message
 
@@ -276,6 +342,23 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
          conversation.llm_call_count === waiting.llm_call_count and
          conversation.participants === [published.persona_id] and
          last_message_matches?(conversation, published),
+       do: :ok,
+       else: {:error, :invalid_responder_continuation}
+  end
+
+  defp correlate_conversation(
+         %ResponderContinuation{} = continuation,
+         %Conversation{} = conversation
+       ) do
+    waiting = continuation.conversation
+
+    if ConversationValidator.validate(conversation) == :ok and
+         ConversationRecordValidator.validate_active(waiting) == :ok and
+         waiting.status === :waiting and conversation === continuation.runtime and
+         conversation.id === waiting.id and conversation.root_event_id === waiting.root_event_id and
+         conversation.status === waiting.status and conversation.started_at === waiting.started_at and
+         conversation.turn_count === waiting.turn_count and
+         conversation.llm_call_count === waiting.llm_call_count,
        do: :ok,
        else: {:error, :invalid_responder_continuation}
   end
@@ -298,7 +381,7 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
     }
   end
 
-  defp resolve_binding(continuation, configuration) do
+  defp resolve_binding(%StarterContinuation{} = continuation, configuration) do
     upstream =
       continuation.recorded.published.started.plan.persisted.generated.plan.started.plan.binding
 
@@ -311,6 +394,22 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
       _failure -> {:error, :invalid_responder_continuation}
     end
   end
+
+  defp resolve_binding(%ResponderContinuation{} = continuation, configuration) do
+    upstream = continuation.recorded.published.started.plan.delivery.plan.binding
+
+    with :ok <- BindingValidator.validate(upstream),
+         {:ok, %Binding{} = configured} <-
+           Map.fetch(configuration.bindings.bindings, upstream.id),
+         true <- configured === upstream do
+      {:ok, configured}
+    else
+      _failure -> {:error, :invalid_responder_continuation}
+    end
+  end
+
+  defp resolve_binding(_continuation, _configuration),
+    do: {:error, :invalid_responder_continuation}
 
   defp resolve_outcome(:no_reply, _configuration), do: {:ok, nil}
 
