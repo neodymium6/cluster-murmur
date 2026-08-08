@@ -9,7 +9,14 @@ defmodule ClusterMurmur.Runtime.ResponderTurnCycle do
   """
 
   alias ClusterMurmur.Config.Configuration
-  alias ClusterMurmur.Conversations.{ResponderContinuationPlanner, ResponderTurnFinisher}
+
+  alias ClusterMurmur.Conversations.{
+    BudgetEvaluator,
+    BudgetState,
+    ResponderContinuationPlanner,
+    ResponderTurnFinisher
+  }
+
   alias ClusterMurmur.Conversations.ResponderContinuationPlanner.Result
   alias ClusterMurmur.DateTimeValidator
 
@@ -108,7 +115,7 @@ defmodule ClusterMurmur.Runtime.ResponderTurnCycle do
   @doc "Runs one responder decision without retries or implicit recursion."
   @spec run(Input.t(), Adapters.t()) :: result()
   def run(%Input{} = input, %Adapters{} = adapters) do
-    with :ok <- preflight(input, adapters),
+    with :ok <- validate_runtime(input, adapters),
          consumer_context = consumer_context(input, adapters),
          {:ok, %Result{} = selected} <-
            ResponderContinuationPlanner.dispatch(
@@ -130,6 +137,23 @@ defmodule ClusterMurmur.Runtime.ResponderTurnCycle do
   end
 
   def run(_input, _adapters), do: {:error, :invalid_responder_turn_cycle}
+
+  @doc "Validates one complete turn runtime without selecting or mutating state."
+  @spec validate_runtime(term(), term()) ::
+          :ok | {:error, :invalid_responder_turn_cycle}
+  def validate_runtime(%Input{} = input, %Adapters{} = adapters) do
+    case preflight(input, adapters) do
+      :ok -> :ok
+      _failure -> {:error, :invalid_responder_turn_cycle}
+    end
+  rescue
+    _error -> {:error, :invalid_responder_turn_cycle}
+  catch
+    _kind, _reason -> {:error, :invalid_responder_turn_cycle}
+  end
+
+  def validate_runtime(_input, _adapters),
+    do: {:error, :invalid_responder_turn_cycle}
 
   defp continue_selected(
          %Result{outcome: :no_reply, status: :dispatched} = result,
@@ -211,6 +235,7 @@ defmodule ClusterMurmur.Runtime.ResponderTurnCycle do
          :ok <- Configuration.validate(continuation.configuration),
          :ok <- validate_provider_settings(input.provider_settings, continuation.configuration),
          :ok <- validate_times(input),
+         :ok <- validate_duration_window(input),
          true <- is_function(input.generation_transport, 1),
          true <- is_function(input.publication_transport, 1),
          :ok <- validate_adapters(adapters),
@@ -254,6 +279,25 @@ defmodule ClusterMurmur.Runtime.ResponderTurnCycle do
 
   defp validate_provider_settings(_settings, _configuration),
     do: {:error, :invalid_responder_turn_cycle}
+
+  defp validate_duration_window(input) do
+    continuation = input.continuation
+    conversation = continuation.conversation
+    budget = continuation.budget
+
+    with {:ok, %BudgetState{} = budget_state} <-
+           BudgetEvaluator.evaluate(conversation, budget, continuation.planned_at),
+         deadline =
+           DateTime.add(conversation.started_at, budget.max_duration_ms * 1_000, :microsecond),
+         true <-
+           not budget_state.open? or
+             (DateTime.compare(input.generated_at, deadline) == :lt and
+                DateTime.compare(input.publication_started_at, deadline) == :lt) do
+      :ok
+    else
+      _failure -> {:error, :invalid_responder_turn_cycle}
+    end
+  end
 
   defp validate_adapters(adapters) do
     requirements = [

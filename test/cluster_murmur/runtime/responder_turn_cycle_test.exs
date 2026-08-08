@@ -264,6 +264,22 @@ defmodule ClusterMurmur.Runtime.ResponderTurnCycleTest do
     assert ResponderTurnCycle.run(valid, %{adapters(ReplyRandom) | publisher: String}) ==
              {:error, :invalid_responder_turn_cycle}
 
+    assert ResponderTurnCycle.validate_runtime(
+             %{valid | generated_at: :private_invalid_time},
+             adapters(ReplyRandom)
+           ) == {:error, :invalid_responder_turn_cycle}
+
+    expiring = %{
+      valid
+      | continuation: %{
+          valid.continuation
+          | budget: %{valid.continuation.budget | max_duration_ms: 4_000}
+        }
+    }
+
+    assert ResponderTurnCycle.run(expiring, adapters(ReplyRandom)) ==
+             {:error, :invalid_responder_turn_cycle}
+
     refute_received {:complete, _active, _completed_at}
     refute_received {:claim_generation, _waiting, _persona_id}
     refute_received {:generate, _request}
