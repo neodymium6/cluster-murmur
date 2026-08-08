@@ -12,27 +12,54 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
   alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.Observers.{Client, Poller}
   alias ClusterMurmur.Persistence.ObservationIngestionStore
+  alias ClusterMurmur.Runtime.ResponderTurnSchedule
 
   alias ClusterMurmur.Triggers.{
+    AuthorizedConversationPipeline,
+    AuthorizedConversationPipelineConsumer,
     AuthorizedStarterPipeline,
     AuthorizedStarterPipelineConsumer,
     PollEventTriggerDispatcher,
     PollEventTriggerPlanner
   }
 
+  alias ClusterMurmur.Triggers.AuthorizedConversationPipeline.Input, as: ConversationInput
+
+  alias ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer.Context,
+    as: ConversationConsumerContext
+
+  alias ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer.Entry
+
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.{Input, SharedInput}
-  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.Context, as: ConsumerContext
+
+  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.Context,
+    as: StarterConsumerContext
+
+  defmodule ConversationRuntime do
+    @moduledoc false
+    @derive {Inspect, only: [:schedule]}
+    @enforce_keys [:schedule, :adapters]
+    defstruct [:schedule, :adapters]
+
+    @type t :: %__MODULE__{
+            schedule: ClusterMurmur.Runtime.ResponderTurnSchedule.t(),
+            adapters: ClusterMurmur.Triggers.AuthorizedConversationPipeline.Adapters.t()
+          }
+  end
 
   defmodule Context do
     @moduledoc false
 
     @derive {Inspect, only: []}
     @enforce_keys [:shared_input, :adapters]
-    defstruct [:shared_input, :adapters]
+    defstruct [:shared_input, :adapters, conversation_runtime: nil]
 
     @type t :: %__MODULE__{
             shared_input: ClusterMurmur.Triggers.AuthorizedStarterPipeline.SharedInput.t(),
-            adapters: ClusterMurmur.Triggers.AuthorizedStarterPipeline.Adapters.t()
+            adapters: ClusterMurmur.Triggers.AuthorizedStarterPipeline.Adapters.t(),
+            conversation_runtime:
+              ClusterMurmur.Runtime.PollStarterCycle.ConversationRuntime.t()
+              | nil
           }
   end
 
@@ -85,6 +112,9 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
 
   @context_keys Context.__struct__() |> Map.keys()
   @context_key_count length(@context_keys)
+  @conversation_runtime_keys ConversationRuntime.__struct__() |> Map.keys()
+  @conversation_runtime_key_count length(@conversation_runtime_keys)
+  @validation_at ~U[2026-01-01 00:00:00.000000Z]
 
   @type error :: :invalid_poll_starter_cycle | :poll_failed
 
@@ -97,7 +127,8 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
            AuthorizedStarterPipeline.validate_shared_runtime(
              context.shared_input,
              context.adapters
-           ) do
+           ),
+         :ok <- validate_conversation_runtime(context) do
       :ok
     else
       _failure -> {:error, :invalid_poll_starter_cycle}
@@ -134,13 +165,14 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
            Poller.poll_once(observer_client, configuration.state_tracking, ingestion_store),
          executed_at <- safe_executed_at(cycle_started_at, poll_result.events),
          {:ok, plan} <- PollEventTriggerPlanner.plan(poll_result, configuration, executed_at),
-         {:ok, consumer_context} <- build_consumer_context(plan, context, executed_at),
+         {:ok, consumer, consumer_context} <-
+           build_consumer_context(plan, context, executed_at),
          {:ok, dispatch_result} <-
            PollEventTriggerDispatcher.dispatch(
              plan,
              poll_result,
              configuration,
-             AuthorizedStarterPipelineConsumer,
+             consumer,
              consumer_context
            ) do
       {:ok, summarize(poll_result, dispatch_result)}
@@ -194,7 +226,46 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
         end)
       end)
 
-    {:ok, %ConsumerContext{inputs: inputs, adapters: context.adapters}}
+    case context.conversation_runtime do
+      nil ->
+        {:ok, AuthorizedStarterPipelineConsumer,
+         %StarterConsumerContext{inputs: inputs, adapters: context.adapters}}
+
+      %ConversationRuntime{} = runtime ->
+        build_conversation_consumer_context(plan, inputs, runtime, executed_at)
+
+      _invalid ->
+        {:error, :invalid_poll_starter_cycle}
+    end
+  end
+
+  defp build_conversation_consumer_context(plan, inputs, runtime, executed_at) do
+    with {:ok, turns} <- ResponderTurnSchedule.project(runtime.schedule, executed_at),
+         matches <- expected_matches(plan.entries),
+         true <- length(inputs) == length(matches) do
+      entries =
+        inputs
+        |> Enum.zip(matches)
+        |> Enum.map(fn {starter, {event, trigger}} ->
+          %Entry{
+            input: %ConversationInput{starter: starter, responder_turns: turns},
+            event: event,
+            trigger: trigger,
+            executed_at: executed_at
+          }
+        end)
+
+      {:ok, AuthorizedConversationPipelineConsumer,
+       %ConversationConsumerContext{entries: entries, adapters: runtime.adapters}}
+    else
+      _failure -> {:error, :invalid_poll_starter_cycle}
+    end
+  end
+
+  defp expected_matches(entries) do
+    Enum.flat_map(entries, fn entry ->
+      Enum.map(entry.triggers, fn trigger -> {entry.event, trigger} end)
+    end)
   end
 
   defp build_input(%SharedInput{} = shared, conversation_id, executed_at) do
@@ -234,8 +305,39 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
     }
   end
 
+  defp validate_conversation_runtime(%Context{conversation_runtime: nil}), do: :ok
+
+  defp validate_conversation_runtime(%Context{
+         shared_input: shared,
+         adapters: starter_adapters,
+         conversation_runtime: %ConversationRuntime{} = runtime
+       }) do
+    with true <- exact_conversation_runtime?(runtime),
+         true <- runtime.adapters.starter === starter_adapters,
+         {:ok, turns} <- ResponderTurnSchedule.project(runtime.schedule, @validation_at),
+         starter = build_input(shared, "conversation-validation", @validation_at),
+         input = %ConversationInput{starter: starter, responder_turns: turns},
+         :ok <-
+           AuthorizedConversationPipeline.validate_shared_runtime(
+             input,
+             runtime.adapters,
+             @validation_at
+           ) do
+      :ok
+    else
+      _failure -> {:error, :invalid_poll_starter_cycle}
+    end
+  end
+
+  defp validate_conversation_runtime(_context), do: {:error, :invalid_poll_starter_cycle}
+
   defp exact_context?(context) do
     map_size(context) == @context_key_count and
       Enum.all?(@context_keys, &Map.has_key?(context, &1))
+  end
+
+  defp exact_conversation_runtime?(runtime) do
+    map_size(runtime) == @conversation_runtime_key_count and
+      Enum.all?(@conversation_runtime_keys, &Map.has_key?(runtime, &1))
   end
 end

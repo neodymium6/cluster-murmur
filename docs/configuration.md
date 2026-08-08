@@ -224,12 +224,14 @@ narrow observation-ingestion transaction restores prior entity state, applies
 the pure debounce and event plan, and commits the next state with its optional
 event atomically. It performs no observer call or trigger action.
 
-The implemented no-reply starter runtime composes one fixed read-only observer
-poll, atomic ingestion, deterministic event-trigger matching, durable
-authorization, bounded starter generation, and one claimed Discord publication.
-Its periodic scheduler is opt-in: the public application supervision tree does
-not construct an observer, external transports, secrets, or an interval by
-default. A deployment must build validated scheduler options in its private
+The implemented poll runtime composes one fixed read-only observer poll, atomic
+ingestion, deterministic event-trigger matching, durable authorization,
+bounded starter generation, and claimed Discord publication. Its explicit
+conversation mode additionally projects a finite responder schedule from
+validated relative offsets and runs only through correlated fixed adapters.
+The periodic scheduler is opt-in: the public application supervision tree does
+not construct an observer, external transports, secrets, timing, or an interval
+by default. A deployment must build validated scheduler options in its private
 assembly and explicitly supervise the child. The scheduler completes one cycle
 before creating the next timer and rejects stale or injected timer messages.
 
