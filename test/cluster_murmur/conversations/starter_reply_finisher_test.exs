@@ -2,7 +2,7 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisherTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Conversations.StarterReplyFinisher
-  alias ClusterMurmur.Conversations.StarterReplyFinisher.Completed
+  alias ClusterMurmur.Conversations.StarterReplyFinisher.{Completed, Continuation}
   alias ClusterMurmur.Discord.{StarterPublicationExecutor, StarterPublicationPlanner}
   alias ClusterMurmur.Discord.StarterPublicationExecutor.Outcome
   alias ClusterMurmur.Discord.StarterPublicationStarter.Started
@@ -20,17 +20,25 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisherTest do
   @cooldown_until ~U[2026-08-07 02:01:03.000000Z]
 
   defmodule FakeStore do
+    def wait(conversation) do
+      Process.put({__MODULE__, :input}, {:wait, conversation})
+      {:ok, %{conversation | status: :waiting}}
+    end
+
     def complete(conversation, completed_at) do
-      Process.put({__MODULE__, :input}, {conversation, completed_at})
+      Process.put({__MODULE__, :input}, {:complete, conversation, completed_at})
       {:ok, %{conversation | status: :completed, completed_at: completed_at}}
     end
   end
 
   defmodule ConflictingStore do
+    def wait(_conversation), do: {:error, :conversation_conflict}
     def complete(_conversation, _completed_at), do: {:error, :conversation_conflict}
   end
 
   defmodule WrongStore do
+    def wait(conversation), do: {:ok, %{conversation | status: :generating}}
+
     def complete(conversation, completed_at) do
       {:ok,
        %{
@@ -42,6 +50,7 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisherTest do
   end
 
   defmodule RaisingStore do
+    def wait(_conversation), do: raise("private storage diagnostic")
     def complete(_conversation, _completed_at), do: raise("private storage diagnostic")
   end
 
@@ -68,7 +77,7 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisherTest do
              )
 
     active = recorded.published.started.plan.persisted.conversation
-    assert Process.get({FakeStore, :input}) === {active, @completed_at}
+    assert Process.get({FakeStore, :input}) === {:complete, active, @completed_at}
     assert completed.recorded === recorded
     assert completed.decision.outcome == :no_reply
     assert completed.conversation.status == :completed
@@ -80,7 +89,7 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisherTest do
     refute inspected =~ "fake-token"
   end
 
-  test "returns an explicit reply without touching the completion store" do
+  test "returns an explicit reply only after durably waiting the conversation" do
     {configuration, settings, recorded} = scenario()
 
     configuration =
@@ -89,16 +98,32 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisherTest do
         1
       )
 
-    assert StarterReplyFinisher.finish(
-             recorded,
+    assert {:continue, :reply, %Continuation{} = continuation} =
+             StarterReplyFinisher.finish(
+               recorded,
+               configuration,
+               %{},
+               settings,
+               RaisingRandom,
+               FakeStore
+             )
+
+    assert continuation.recorded === recorded
+
+    assert continuation.conversation === %{
+             recorded.published.started.plan.persisted.conversation
+             | status: :waiting
+           }
+
+    assert StarterReplyFinisher.validate_continuation(
+             continuation,
              configuration,
              %{},
-             settings,
-             RaisingRandom,
-             FakeStore
-           ) == {:continue, :reply}
+             settings
+           ) == :ok
 
-    assert Process.get({FakeStore, :input}) == nil
+    assert Process.get({FakeStore, :input}) ===
+             {:wait, recorded.published.started.plan.persisted.conversation}
   end
 
   test "rejects forged upstream capabilities before reply policy or storage" do

@@ -195,6 +195,44 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
              {:error, :invalid_conversation_record}
   end
 
+  test "atomically moves an exact conversation into waiting only once" do
+    started = start_conversation!("waiting-conversation")
+
+    assert {:ok, waiting} = ConversationStore.wait(started)
+    assert waiting === %{started | status: :waiting}
+    assert Repo.get!(ConversationRecord, started.id) === waiting
+
+    assert ConversationStore.wait(started) == {:error, :conversation_conflict}
+    assert ConversationStore.wait(waiting) == {:error, :conversation_conflict}
+    assert Repo.get!(ConversationRecord, started.id) === waiting
+  end
+
+  test "moves an exact generating conversation into waiting without changing counters" do
+    started = start_conversation!("generating-conversation")
+
+    assert {1, nil} =
+             Repo.update_all(
+               from(record in ConversationRecord, where: record.id == ^started.id),
+               set: [status: :generating, turn_count: 1, llm_call_count: 1]
+             )
+
+    generating = Repo.get!(ConversationRecord, started.id)
+    assert {:ok, waiting} = ConversationStore.wait(generating)
+    assert waiting === %{generating | status: :waiting}
+  end
+
+  test "claims one exact waiting conversation for generation only once" do
+    started = start_conversation!("generation-claim")
+    assert {:ok, waiting} = ConversationStore.wait(started)
+
+    assert {:ok, generating} = ConversationStore.claim_generation(waiting)
+    assert generating === %{waiting | status: :generating}
+    assert Repo.get!(ConversationRecord, started.id) === generating
+
+    assert ConversationStore.claim_generation(waiting) == {:error, :conversation_conflict}
+    assert ConversationStore.claim_generation(generating) == {:error, :conversation_conflict}
+  end
+
   test "requires the exact loaded active capability" do
     started = start_conversation!("exact-capability")
 

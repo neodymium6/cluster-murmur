@@ -8,6 +8,14 @@ defmodule ClusterMurmur.TestSupport.RuntimeFixture do
   alias ClusterMurmur.Events.Matcher.Predicate
   alias ClusterMurmur.Discord.WebhookSettings
 
+  alias ClusterMurmur.Discord.{
+    StarterPublicationExecutor,
+    StarterPublicationPlanner
+  }
+
+  alias ClusterMurmur.Discord.StarterPublicationExecutor.Outcome
+  alias ClusterMurmur.Discord.StarterPublicationStarter.Started, as: PublicationStarted
+
   alias ClusterMurmur.Generation.{
     ProviderSettings,
     StarterGenerationPlanner,
@@ -16,8 +24,17 @@ defmodule ClusterMurmur.TestSupport.RuntimeFixture do
   }
 
   alias ClusterMurmur.Generation.StarterMessagePersister.Persisted
-  alias ClusterMurmur.Persistence.{ConversationRecord, MessageRecord, TriggerExecution}
+
+  alias ClusterMurmur.Persistence.{
+    ConversationRecord,
+    MessageRecord,
+    PersonaCooldownRecord,
+    PublicationAttemptRecord,
+    TriggerExecution
+  }
+
   alias ClusterMurmur.Personas.{Binding, Persona}
+  alias ClusterMurmur.Personas.StarterCooldownRecorder.Recorded
 
   alias ClusterMurmur.Triggers.{
     EventTrigger,
@@ -218,6 +235,49 @@ defmodule ClusterMurmur.TestSupport.RuntimeFixture do
     result = %Persisted{generated: generated, message: message, conversation: conversation}
     :ok = StarterMessagePersister.validate(result, configuration, %{})
     result
+  end
+
+  def recorded(configuration \\ configuration(), event \\ event()) do
+    persisted = persisted(configuration, event)
+    settings = webhook_settings()
+    {:ok, plan} = StarterPublicationPlanner.plan(persisted, configuration, %{}, settings)
+
+    started_attempt =
+      %PublicationAttemptRecord{
+        message_id: persisted.message.id,
+        status: :started,
+        started_at: ~U[2026-08-07 02:00:02.000000Z],
+        completed_at: nil,
+        error_class: nil
+      }
+      |> Ecto.put_meta(state: :loaded)
+
+    attempt = %{
+      started_attempt
+      | status: :succeeded,
+        completed_at: ~U[2026-08-07 02:00:03.000000Z],
+        error_class: nil
+    }
+
+    published = %Outcome{
+      started: %PublicationStarted{plan: plan, attempt: started_attempt},
+      attempt: attempt,
+      message: %{persisted.message | discord_message_id: "12345"},
+      status: :succeeded,
+      error_class: nil
+    }
+
+    :ok = StarterPublicationExecutor.validate(published, configuration, %{}, settings)
+
+    cooldown =
+      %PersonaCooldownRecord{
+        persona_id: persisted.message.persona_id,
+        last_spoken_at: attempt.completed_at,
+        cooldown_until: ~U[2026-08-07 02:01:03.000000Z]
+      }
+      |> Ecto.put_meta(state: :loaded)
+
+    %Recorded{published: published, cooldown: cooldown}
   end
 
   defmodule FakeProvider do

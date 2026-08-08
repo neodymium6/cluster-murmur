@@ -68,6 +68,38 @@ defmodule ClusterMurmur.Persistence.ConversationStore do
   @spec fail(term(), term()) :: {:ok, ConversationRecord.t()} | {:error, error()}
   def fail(record, completed_at), do: finish(record, :failed, completed_at)
 
+  @doc "Moves one exact starting or generating conversation into its waiting state."
+  @spec wait(term()) :: {:ok, ConversationRecord.t()} | {:error, error()}
+  def wait(record) do
+    with :ok <- ConversationRecordValidator.validate_active(record),
+         true <- record.status in [:starting, :generating] do
+      persist_waiting(record)
+    else
+      false -> {:error, :conversation_conflict}
+      {:error, :invalid_conversation_record} -> {:error, :invalid_conversation_record}
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  @doc "Claims one exact waiting conversation for a single generation attempt."
+  @spec claim_generation(term()) :: {:ok, ConversationRecord.t()} | {:error, error()}
+  def claim_generation(record) do
+    with :ok <- ConversationRecordValidator.validate_active(record),
+         true <- record.status == :waiting do
+      persist_generation_claim(record)
+    else
+      false -> {:error, :conversation_conflict}
+      {:error, :invalid_conversation_record} -> {:error, :invalid_conversation_record}
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
   @doc "Lists at most 100 active conversations started at or before one UTC cutoff."
   @spec list_active_before(term()) ::
           {:ok, [ConversationRecord.t()]}
@@ -208,6 +240,91 @@ defmodule ClusterMurmur.Persistence.ConversationStore do
       {:error, :conversation_conflict} -> {:error, :conversation_conflict}
       {:error, :invalid_conversation_record} -> {:error, :invalid_conversation_record}
       _failure -> {:error, :storage_unavailable}
+    end
+  end
+
+  defp persist_waiting(record) do
+    case Repo.transaction(fn -> compare_and_set_waiting(record) end) do
+      {:ok, %ConversationRecord{} = waiting} -> {:ok, waiting}
+      {:error, :conversation_conflict} -> {:error, :conversation_conflict}
+      {:error, :invalid_conversation_record} -> {:error, :invalid_conversation_record}
+      _failure -> {:error, :storage_unavailable}
+    end
+  end
+
+  defp persist_generation_claim(record) do
+    case Repo.transaction(fn -> compare_and_set_generation(record) end) do
+      {:ok, %ConversationRecord{} = generating} -> {:ok, generating}
+      {:error, :conversation_conflict} -> {:error, :conversation_conflict}
+      {:error, :invalid_conversation_record} -> {:error, :invalid_conversation_record}
+      _failure -> {:error, :storage_unavailable}
+    end
+  end
+
+  defp compare_and_set_waiting(record) do
+    query =
+      from persisted in ConversationRecord,
+        where:
+          persisted.id == ^record.id and
+            persisted.root_event_id == ^record.root_event_id and
+            persisted.status == ^record.status and
+            persisted.turn_count == ^record.turn_count and
+            persisted.llm_call_count == ^record.llm_call_count and
+            persisted.started_at == ^record.started_at and
+            is_nil(persisted.completed_at)
+
+    case Repo.update_all(query, set: [status: :waiting]) do
+      {1, nil} -> restore_waiting(record)
+      {0, nil} -> Repo.rollback(:conversation_conflict)
+      _failure -> Repo.rollback(:storage_unavailable)
+    end
+  end
+
+  defp compare_and_set_generation(record) do
+    query =
+      from persisted in ConversationRecord,
+        where:
+          persisted.id == ^record.id and
+            persisted.root_event_id == ^record.root_event_id and
+            persisted.status == :waiting and
+            persisted.turn_count == ^record.turn_count and
+            persisted.llm_call_count == ^record.llm_call_count and
+            persisted.started_at == ^record.started_at and
+            is_nil(persisted.completed_at)
+
+    case Repo.update_all(query, set: [status: :generating]) do
+      {1, nil} -> restore_generation_claim(record)
+      {0, nil} -> Repo.rollback(:conversation_conflict)
+      _failure -> Repo.rollback(:storage_unavailable)
+    end
+  end
+
+  defp restore_waiting(previous) do
+    case Repo.get(ConversationRecord, previous.id) do
+      %ConversationRecord{} = waiting ->
+        expected = %{previous | status: :waiting}
+
+        if waiting === expected and ConversationRecordValidator.validate_active(waiting) == :ok,
+          do: waiting,
+          else: Repo.rollback(:invalid_conversation_record)
+
+      nil ->
+        Repo.rollback(:storage_unavailable)
+    end
+  end
+
+  defp restore_generation_claim(previous) do
+    case Repo.get(ConversationRecord, previous.id) do
+      %ConversationRecord{} = generating ->
+        expected = %{previous | status: :generating}
+
+        if generating === expected and
+             ConversationRecordValidator.validate_active(generating) == :ok,
+           do: generating,
+           else: Repo.rollback(:invalid_conversation_record)
+
+      nil ->
+        Repo.rollback(:storage_unavailable)
     end
   end
 
