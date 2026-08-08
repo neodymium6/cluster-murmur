@@ -3,16 +3,16 @@ defmodule ClusterMurmur.Observers.PollerTest do
 
   alias ClusterMurmur.Config.StateTracking
   alias ClusterMurmur.Observations.{DebouncePolicy, IngestionPlanner, Observation}
-  alias ClusterMurmur.Observers.Poller
+  alias ClusterMurmur.Observers.{Client, Poller}
   alias ClusterMurmur.Observers.Poller.Result
 
   defmodule FakeClient do
-    def list_targets do
+    def list_targets(:process_dictionary) do
       record({:observer, :list_targets})
       Process.get({__MODULE__, :targets}, {:ok, []})
     end
 
-    def observe_target(id) do
+    def observe_target(:process_dictionary, id) do
       record({:observer, :observe_target, id})
 
       Process.get({__MODULE__, :observations}, %{})
@@ -72,7 +72,7 @@ defmodule ClusterMurmur.Observers.PollerTest do
     state_tracking = %StateTracking{failures_required: 1, successes_required: 1}
 
     assert {:ok, %Result{} = result} =
-             Poller.poll_once(FakeClient, state_tracking, FakeIngestionStore)
+             Poller.poll_once(client(), state_tracking, FakeIngestionStore)
 
     assert result.target_count == 2
     assert result.ingested_count == 2
@@ -117,7 +117,7 @@ defmodule ClusterMurmur.Observers.PollerTest do
     Process.put({FakeIngestionStore, :failures}, ["example-target-c"])
 
     assert {:ok, result} =
-             Poller.poll_once(FakeClient, StateTracking.default(), FakeIngestionStore)
+             Poller.poll_once(client(), StateTracking.default(), FakeIngestionStore)
 
     assert result.target_count == 3
     assert result.ingested_count == 0
@@ -141,29 +141,33 @@ defmodule ClusterMurmur.Observers.PollerTest do
       {:ok, [%{id: "duplicate"}, %{id: "duplicate"}]}
     )
 
-    assert Poller.poll_once(FakeClient, StateTracking.default(), FakeIngestionStore) ==
+    assert Poller.poll_once(client(), StateTracking.default(), FakeIngestionStore) ==
              {:error, :invalid_observer_targets}
 
     assert Process.get({FakeClient, :calls}) == [{:observer, :list_targets}]
 
     Process.put({FakeClient, :calls}, [])
 
-    assert Poller.poll_once(FakeClient, nil, FakeIngestionStore) == {:error, :invalid_poll}
+    assert Poller.poll_once(client(), nil, FakeIngestionStore) == {:error, :invalid_poll}
     assert Process.get({FakeClient, :calls}) == []
   end
 
   test "preserves only stable list failures and catches observer exceptions" do
     Process.put({FakeClient, :targets}, {:error, :unavailable})
 
-    assert Poller.poll_once(FakeClient, StateTracking.default(), FakeIngestionStore) ==
+    assert Poller.poll_once(client(), StateTracking.default(), FakeIngestionStore) ==
              {:error, {:observer, :unavailable}}
 
     Process.put({FakeClient, :targets}, {:error, {:private, "diagnostic"}})
 
-    assert Poller.poll_once(FakeClient, StateTracking.default(), FakeIngestionStore) ==
+    assert Poller.poll_once(client(), StateTracking.default(), FakeIngestionStore) ==
              {:error, {:observer, :invalid_response}}
 
-    assert Poller.poll_once(String, StateTracking.default(), FakeIngestionStore) ==
+    assert Poller.poll_once(
+             %Client{adapter: String, context: nil},
+             StateTracking.default(),
+             FakeIngestionStore
+           ) ==
              {:error, :invalid_poll}
   end
 
@@ -179,7 +183,7 @@ defmodule ClusterMurmur.Observers.PollerTest do
     assert {:ok, unrelated_plan} = IngestionPlanner.plan(nil, unrelated, policy)
     Process.put({FakeIngestionStore, :plans}, %{"example-target" => unrelated_plan})
 
-    assert {:ok, result} = Poller.poll_once(FakeClient, state_tracking, FakeIngestionStore)
+    assert {:ok, result} = Poller.poll_once(client(), state_tracking, FakeIngestionStore)
     assert result.ingested_count == 0
     assert result.failures == [:ingestion_failed]
 
@@ -190,7 +194,7 @@ defmodule ClusterMurmur.Observers.PollerTest do
       %{"example-target" => %{accepted_plan | event: unrelated_plan.event}}
     )
 
-    assert {:ok, result} = Poller.poll_once(FakeClient, state_tracking, FakeIngestionStore)
+    assert {:ok, result} = Poller.poll_once(client(), state_tracking, FakeIngestionStore)
     assert result.ingested_count == 0
     assert result.failures == [:ingestion_failed]
 
@@ -199,7 +203,7 @@ defmodule ClusterMurmur.Observers.PollerTest do
       %{"example-target" => %{accepted_plan | event: nil}}
     )
 
-    assert {:ok, result} = Poller.poll_once(FakeClient, state_tracking, FakeIngestionStore)
+    assert {:ok, result} = Poller.poll_once(client(), state_tracking, FakeIngestionStore)
     assert result.ingested_count == 0
     assert result.failures == [:ingestion_failed]
 
@@ -217,7 +221,7 @@ defmodule ClusterMurmur.Observers.PollerTest do
     )
 
     assert {:ok, result} =
-             Poller.poll_once(FakeClient, StateTracking.default(), FakeIngestionStore)
+             Poller.poll_once(client(), StateTracking.default(), FakeIngestionStore)
 
     assert result.ingested_count == 0
     assert result.failures == [:ingestion_failed]
@@ -233,7 +237,7 @@ defmodule ClusterMurmur.Observers.PollerTest do
     )
 
     assert {:ok, result} =
-             Poller.poll_once(FakeClient, StateTracking.default(), FakeIngestionStore)
+             Poller.poll_once(client(), StateTracking.default(), FakeIngestionStore)
 
     assert result.ingested_count == 0
     assert result.failures == [:ingestion_failed]
@@ -279,5 +283,10 @@ defmodule ClusterMurmur.Observers.PollerTest do
       facts: %{"sample" => offset},
       labels: %{"category" => "monitoring"}
     }
+  end
+
+  defp client do
+    {:ok, client} = Client.new(FakeClient, :process_dictionary)
+    client
   end
 end

@@ -137,10 +137,10 @@ defmodule ClusterMurmur.Random do
 end
 
 defmodule ClusterMurmur.Observers.Client do
-  @callback list_targets() ::
+  @callback list_targets(term()) ::
               {:ok, [%{required(:id) => String.t()}]}
               | {:error, ClusterMurmur.ExternalError.t()}
-  @callback observe_target(String.t()) ::
+  @callback observe_target(term(), String.t()) ::
               {:ok, ClusterMurmur.Observations.Observation.t()}
               | {:error, ClusterMurmur.ExternalError.t()}
 end
