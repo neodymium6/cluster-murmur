@@ -301,6 +301,33 @@ cookie. It still requires an approved absolute `CLUSTER_MURMUR_DATABASE_PATH`
 whose existing parent directory is private. Runtime configuration, secrets,
 external transports, and worker assembly remain deployment-owned inputs.
 
+On Linux, build the Docker-compatible image archive with:
+
+```bash
+nix build .#container-image
+docker image load -i result
+```
+
+The scratch-based image uses the OCI image configuration and standard OCI
+labels, runs as numeric user and group `65532:65532`, starts the nondistributed
+release through Tini, declares no ports or volumes, and contains no deployment
+configuration or credentials. Running it requires all of the following
+deployment-owned controls:
+
+- make the root filesystem read-only;
+- drop every Linux capability and disable privilege escalation;
+- mount a size-bounded private tmpfs at `/tmp`, owned by `65532:65532`; and
+- mount private persistent storage at `/var/lib/cluster-murmur`, owned by
+  `65532:65532`, then set `CLUSTER_MURMUR_DATABASE_PATH` to an absolute path
+  below that directory.
+
+For example, an equivalent Docker hardening profile includes `--read-only`,
+`--cap-drop=ALL`, `--security-opt=no-new-privileges`, and
+`--tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m,uid=65532,gid=65532,mode=0700`.
+The database bind mount and all remaining runtime settings are private
+deployment inputs. Loading the archive does not authorize running it against
+live infrastructure or external services.
+
 Fetch the locked Mix dependencies:
 
 ```bash
