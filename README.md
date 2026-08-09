@@ -175,8 +175,9 @@ An opt-in worker can schedule those cycles without overlap while retaining only
 redacted aggregate status. No event-dispatch scheduler is installed
 automatically.
 The startup configuration now normalizes bounded event dedupe-window and
-retention durations, but durable suppression and retention cleanup remain
-future work. Observer
+retention durations. A pure evaluator defines first acceptance, exact retry,
+active suppression, and expiry-boundary behavior, but durable enforcement and
+retention cleanup remain future work. Observer
 target responses now pass a closed 256-entry and 64 KiB
 identity catalog that rejects duplicates and sorts accepted redacted targets
 before polling. One injected, sequential poll lists that catalog once, observes
