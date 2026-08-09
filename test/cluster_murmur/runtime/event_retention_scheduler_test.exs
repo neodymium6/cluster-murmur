@@ -11,7 +11,14 @@ defmodule ClusterMurmur.Runtime.EventRetentionSchedulerTest do
       send(test_pid, {:cycle_started, self(), now})
 
       receive do
-        :release_cycle -> {:ok, %EventRetentionCycle.Result{pruned_marker_count: 37}}
+        :release_cycle ->
+          {:ok,
+           %EventRetentionCycle.Result{
+             pruned_marker_count: 37,
+             scanned_event_count: 12,
+             pruned_event_count: 5,
+             completed_event_pass?: true
+           }}
       end
     end
   end
@@ -35,7 +42,13 @@ defmodule ClusterMurmur.Runtime.EventRetentionSchedulerTest do
 
   defmodule MalformedResultCycle do
     def run(_configuration, _now) do
-      result = %EventRetentionCycle.Result{pruned_marker_count: 1}
+      result = %EventRetentionCycle.Result{
+        pruned_marker_count: 1,
+        scanned_event_count: 1,
+        pruned_event_count: 1,
+        completed_event_pass?: true
+      }
+
       {:ok, Map.put(result, :private, "private cycle data")}
     end
   end

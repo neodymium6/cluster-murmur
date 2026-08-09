@@ -2,6 +2,7 @@ defmodule ClusterMurmur.Runtime.EventRetentionCycleTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Events.RetentionPlanner.Plan
+  alias ClusterMurmur.Persistence.EventRecordRetentionStore.Result, as: EventResult
   alias ClusterMurmur.Runtime.EventRetentionCycle
   alias ClusterMurmur.Runtime.EventRetentionCycle.{Adapters, Result}
   alias ClusterMurmur.TestSupport.RuntimeFixture
@@ -17,6 +18,23 @@ defmodule ClusterMurmur.Runtime.EventRetentionCycleTest do
 
   defmodule EmptyMarkerStore do
     def prune(%Plan{}), do: {:ok, 0}
+  end
+
+  defmodule EventStore do
+    def prune(%Plan{} = plan) do
+      send(self(), {:events_pruned, plan})
+      {:ok, %EventResult{scanned_count: 12, pruned_event_count: 5, completed_pass?: true}}
+    end
+  end
+
+  defmodule UnavailableEventStore do
+    def prune(%Plan{}), do: {:error, :storage_unavailable}
+  end
+
+  defmodule MalformedEventStore do
+    def prune(%Plan{}) do
+      {:ok, %EventResult{scanned_count: 101, pruned_event_count: 0, completed_pass?: false}}
+    end
   end
 
   defmodule UnavailableMarkerStore do
@@ -43,7 +61,13 @@ defmodule ClusterMurmur.Runtime.EventRetentionCycleTest do
     configuration = RuntimeFixture.configuration()
 
     assert EventRetentionCycle.run(configuration, @now, adapters(MarkerStore)) ==
-             {:ok, %Result{pruned_marker_count: 37}}
+             {:ok,
+              %Result{
+                pruned_marker_count: 37,
+                scanned_event_count: 12,
+                pruned_event_count: 5,
+                completed_event_pass?: true
+              }}
 
     assert_received {:pruned,
                      %Plan{
@@ -53,6 +77,7 @@ defmodule ClusterMurmur.Runtime.EventRetentionCycleTest do
                      }}
 
     assert policy === configuration.event_policy
+    assert_received {:events_pruned, %Plan{planned_at: @now}}
     refute_received {:pruned, _plan}
   end
 
@@ -61,7 +86,14 @@ defmodule ClusterMurmur.Runtime.EventRetentionCycleTest do
              RuntimeFixture.configuration(),
              @now,
              adapters(EmptyMarkerStore)
-           ) == {:ok, %Result{pruned_marker_count: 0}}
+           ) ==
+             {:ok,
+              %Result{
+                pruned_marker_count: 0,
+                scanned_event_count: 12,
+                pruned_event_count: 5,
+                completed_event_pass?: true
+              }}
   end
 
   test "maps only the stable store outage to a cleanup failure" do
@@ -69,6 +101,12 @@ defmodule ClusterMurmur.Runtime.EventRetentionCycleTest do
              RuntimeFixture.configuration(),
              @now,
              adapters(UnavailableMarkerStore)
+           ) == {:error, :event_retention_failed}
+
+    assert EventRetentionCycle.run(
+             RuntimeFixture.configuration(),
+             @now,
+             adapters(MarkerStore, UnavailableEventStore)
            ) == {:error, :event_retention_failed}
   end
 
@@ -80,7 +118,8 @@ defmodule ClusterMurmur.Runtime.EventRetentionCycleTest do
       {%{configuration | version: 2}, @now, adapters(MarkerStore)},
       {configuration, nil, adapters(MarkerStore)},
       {configuration, %{@now | time_zone: "example.invalid"}, adapters(MarkerStore)},
-      {configuration, @now, %Adapters{dedupe_markers: String}},
+      {configuration, @now, %Adapters{dedupe_markers: String, events: EventStore}},
+      {configuration, @now, %Adapters{dedupe_markers: MarkerStore, events: String}},
       {configuration, @now, Map.put(adapters(MarkerStore), :private, "private-value")},
       {configuration, @now, nil}
     ]
@@ -107,16 +146,31 @@ defmodule ClusterMurmur.Runtime.EventRetentionCycleTest do
       assert result == {:error, :invalid_event_retention_cycle}
       refute inspect(result) =~ "private"
     end
+
+    assert EventRetentionCycle.run(
+             configuration,
+             @now,
+             adapters(MarkerStore, MalformedEventStore)
+           ) ==
+             {:error, :invalid_event_retention_cycle}
   end
 
   test "validates only exact bounded aggregate results" do
-    valid = %Result{pruned_marker_count: 100}
+    valid = %Result{
+      pruned_marker_count: 100,
+      scanned_event_count: 100,
+      pruned_event_count: 50,
+      completed_event_pass?: false
+    }
+
     assert EventRetentionCycle.validate_result(valid) == :ok
 
     invalid = [
       %{valid | pruned_marker_count: -1},
       %{valid | pruned_marker_count: 101},
       %{valid | pruned_marker_count: "private"},
+      %{valid | pruned_event_count: 101},
+      %{valid | completed_event_pass?: true},
       Map.put(valid, :private, "private-value"),
       nil
     ]
@@ -127,5 +181,6 @@ defmodule ClusterMurmur.Runtime.EventRetentionCycleTest do
     end
   end
 
-  defp adapters(store), do: %Adapters{dedupe_markers: store}
+  defp adapters(marker_store, event_store \\ EventStore),
+    do: %Adapters{dedupe_markers: marker_store, events: event_store}
 end

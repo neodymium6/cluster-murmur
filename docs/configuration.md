@@ -343,9 +343,9 @@ The normalized event retention duration can be projected into one exact cutoff
 from an injected canonical UTC instant. A fixed store operation can use only
 that exact plan to delete at most 100 expired dedupe markers without returning
 their values. An explicit runtime cycle validates the complete configuration
-and injected instant before planning and invoking exactly one fixed store
-batch. It returns only the aggregate count; it does not repeat cleanup, delete
-immutable events, or read a clock. An opt-in worker can supply a validated UTC
+and injected instant before invoking one marker batch followed by one event
+sweep from the same plan. It returns only aggregate counts and does not repeat
+cleanup or read a clock. An opt-in worker can supply a validated UTC
 clock and schedule these cycles without overlap while retaining only redacted
 aggregate status. No retention worker is installed automatically.
 
