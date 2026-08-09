@@ -19,6 +19,7 @@ check:
   pre-commit run --all-files
   mix format --check-formatted
   MIX_ENV=test mix compile --warnings-as-errors
+  MIX_ENV=test mix credo --strict
   MIX_ENV=test mix test
   nix flake check .
   nix flake check --no-build --all-systems .

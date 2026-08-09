@@ -30,6 +30,7 @@
         root = ./.;
         fileset = nixpkgs.lib.fileset.unions [
           ./.github
+          ./.credo.exs
           ./.markdownlint.yaml
           ./.formatter.exs
           ./AGENTS.md
@@ -187,7 +188,7 @@
             inherit version;
             src = source;
             mixEnv = "test";
-            hash = "sha256-EKELmjAs8BwUzMq+ToC3SRpo7DI0cPUvHVIxfRtXMAE=";
+            hash = "sha256-spYdVjRl7NKMiJLmIsL/DcnKmuS6miw1BBUH7QzXAQY=";
           };
         in
         {
@@ -220,6 +221,7 @@
                 chmod -R u+w "$MIX_DEPS_PATH"
                 mix format --check-formatted
                 mix compile --warnings-as-errors
+                mix credo --strict
                 mix test
                 mix escript.build
                 test "$(escript ./cluster-murmur --version)" = "$(tr -d '\n' < VERSION)"
