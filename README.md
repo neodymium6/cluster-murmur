@@ -184,8 +184,10 @@ and an injected UTC instant without reading storage or a clock. A narrow store
 can prune at most 100 dedupe markers at or before that cutoff without returning
 their values. One explicit cycle validates the complete configuration and an
 injected UTC instant before planning and invoking exactly one such store batch,
-and returns only the aggregate count. Event-record retention, repeated cleanup,
-and cleanup scheduling remain future work.
+and returns only the aggregate count. Event-record retention and deployment
+wiring remain future work. An opt-in worker can schedule these
+cycles without overlap and retains only redacted aggregate status; it is not
+installed automatically.
 Observer
 target responses now pass a closed 256-entry and 64 KiB
 identity catalog that rejects duplicates and sorts accepted redacted targets
