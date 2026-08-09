@@ -623,6 +623,12 @@ claim-free due projection, preserve only application-supplied event facts, and
 calculate the next cron run strictly after an injected execution instant. It
 does not perform persistence or I/O. Stochastic state is not reused.
 
+A fixed recurring commit boundary re-projects the expected application-owned
+event and atomically inserts or restores that event, enqueues its pending
+dispatch handoff, and completes the exact live schedule claim. Any conflict
+rolls back all new event, outbox, and schedule changes. It does not dispatch the
+event or execute external actions.
+
 The persistence layer also provides a dedicated event-dispatch outbox for the
 crash-safe handoff that follows event commit. It accepts only exact immutable
 events already in the event store and returns a claim-free enqueue receipt. It
