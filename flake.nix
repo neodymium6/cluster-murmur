@@ -183,6 +183,33 @@
                   'IO.write("#{Application.spec(:cluster_murmur, :vsn)}:#{Node.alive?()}")')" \
                   = "${version}:false"
 
+                probe_nondistributed() {
+                  probe_output="$(env \
+                    CLUSTER_MURMUR_DATABASE_PATH="$migration_database" \
+                    RELEASE_TMP="$TMPDIR/release" \
+                    "$@" \
+                    "$release_bin" start_iex <<'EOF'
+                IO.puts("PROBE_NODE_ALIVE=#{Node.alive?()}")
+                System.stop(0)
+                EOF
+                  )"
+
+                  grep -Fq "PROBE_NODE_ALIVE=false" <<< "$probe_output"
+                }
+
+                mkdir -p "$TMPDIR/release"
+                chmod 0700 "$TMPDIR/release"
+                probe_nondistributed "ELIXIR_ERL_OPTIONS=-sname injected_elixir"
+                probe_nondistributed "ERL_AFLAGS=-sname injected_aflags"
+                probe_nondistributed "ERL_FLAGS=-sname injected_flags"
+                probe_nondistributed "ERL_ZFLAGS=-sname injected_zflags"
+
+                adversarial_vm_args="$TMPDIR/adversarial.vm.args"
+                cp "${productionRelease}/releases/${version}/vm.args" "$adversarial_vm_args"
+                chmod 0600 "$adversarial_vm_args"
+                echo "-sname injected_vm_args" >> "$adversarial_vm_args"
+                probe_nondistributed "RELEASE_VM_ARGS=$adversarial_vm_args"
+
                 CLUSTER_MURMUR_DATABASE_PATH="$migration_database" \
                   "$release_bin" eval 'ClusterMurmur.Release.migrate!()'
                 test "$(sqlite3 "$migration_database" \

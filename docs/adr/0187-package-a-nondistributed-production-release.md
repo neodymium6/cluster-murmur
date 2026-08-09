@@ -23,7 +23,9 @@ builder remove its generated cookie file.
 
 Set the release profile to nondistributed mode. Supply a clearly public
 placeholder only because the generated launch script requires a cookie argument
-even when distribution is disabled. Do not expose Erlang remote control or
+even when distribution is disabled. Pin the packaged VM argument files and
+clear inherited Erlang and Elixir VM flag channels so they cannot re-enable a
+named node with that public placeholder. Do not expose Erlang remote control or
 accept runtime distribution overrides.
 
 Run version, successful migration, database permission, and redacted migration
