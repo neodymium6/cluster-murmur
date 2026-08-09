@@ -186,9 +186,7 @@ defmodule ClusterMurmur.Config.Manifest do
     end
   end
 
-  defp missing_key_error(:manifest), do: {:error, :missing_manifest_field}
   defp missing_key_error(:includes), do: {:error, :missing_include_category}
-  defp unknown_key_error(:manifest), do: {:error, :unknown_manifest_field}
   defp unknown_key_error(:includes), do: {:error, :unknown_include_category}
 
   defp collect_categories([], _source, includes, _count), do: {:ok, includes}

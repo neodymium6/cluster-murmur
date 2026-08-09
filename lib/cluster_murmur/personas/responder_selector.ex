@@ -137,7 +137,6 @@ defmodule ClusterMurmur.Personas.ResponderSelector do
     replies ++ [{:no_reply, no_reply_weight}]
   end
 
-  defp choose([], _random), do: {:ok, :no_reply}
   defp choose([{outcome, _weight}], _random), do: {:ok, outcome}
 
   defp choose(weighted, random) do

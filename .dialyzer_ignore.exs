@@ -1,8 +1,6 @@
 [
   {"lib/cluster_murmur/config/configuration_validator.ex", :pattern_match_cov, {248, 7}},
   {"lib/cluster_murmur/config/configuration_validator.ex", :pattern_match_cov, {269, 8}},
-  {"lib/cluster_murmur/config/manifest.ex", :pattern_match, {189, 8}},
-  {"lib/cluster_murmur/config/manifest.ex", :pattern_match, {191, 8}},
   {"lib/cluster_murmur/config/triggers.ex", :pattern_match_cov, {211, 7}},
   {"lib/cluster_murmur/config/triggers.ex", :pattern_match_cov, {493, 7}},
   {"lib/cluster_murmur/conversations/responder_continuation_planner.ex", :pattern_match_cov,
@@ -19,7 +17,6 @@
    :pattern_match_cov, {77, 7}},
   {"lib/cluster_murmur/persistence/observation_ingestion_store.ex", :pattern_match_cov, {67, 7}},
   {"lib/cluster_murmur/personas/responder_candidate_projector.ex", :pattern_match_cov, {317, 8}},
-  {"lib/cluster_murmur/personas/responder_selector.ex", :pattern_match, {140, 8}},
   {"lib/cluster_murmur/personas/starter_candidate_projector.ex", :pattern_match_cov, {195, 8}},
   {"lib/cluster_murmur/personas/starter_selector.ex", :pattern_match_cov, {127, 8}},
   {"lib/cluster_murmur/release.ex", :pattern_match_cov, {165, 7}},
