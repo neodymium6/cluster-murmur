@@ -21,7 +21,8 @@ defmodule ClusterMurmur.ReleaseTest do
     20_260_805_230_000,
     20_260_805_231_000,
     20_260_808_060_000,
-    20_260_808_150_000
+    20_260_808_150_000,
+    20_260_809_020_000
   ]
 
   setup do
@@ -81,6 +82,7 @@ defmodule ClusterMurmur.ReleaseTest do
     assert table_exists?("publication_attempts")
     assert table_exists?("responder_generation_claims")
     assert table_exists?("event_dispatches")
+    assert table_exists?("event_dedupe_markers")
     assert migrated_versions() == @migration_versions
   end
 

@@ -329,8 +329,9 @@ precedence remains later configuration work.
 The startup manifest and complete configuration also normalize the exact event
 policy shown above. These values are application-owned limits; they do not add
 storage passthrough or configure a cleanup worker. A pure evaluator defines the
-dedupe decision and stable suppression reason, but a later atomic store boundary
-must enforce it across poll and durable dispatch. The broader `retention`
+dedupe decision and stable suppression reason, and a constrained table can hold
+exact redacted markers. A later atomic store boundary must enforce replacement
+with trigger start across poll and durable dispatch. The broader `retention`
 mapping remains an intended future contract and does not duplicate the
 implemented event retention field.
 

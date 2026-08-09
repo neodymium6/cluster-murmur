@@ -99,4 +99,11 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand(
+    "../priv/repo/migrations/20260809020000_create_event_dedupe_markers.exs",
+    __DIR__
+  )
+)
+
 ExUnit.start()
