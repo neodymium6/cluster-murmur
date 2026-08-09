@@ -468,9 +468,6 @@ defmodule ClusterMurmur.Conversations.ResponderContinuationPlanner do
     end
   end
 
-  defp claim_once(_store, _waiting, _outcome, _planned_at),
-    do: {:error, :invalid_responder_continuation}
-
   defp safe_claim(store, waiting, persona_id) do
     store.claim_generation(waiting, persona_id)
   rescue
