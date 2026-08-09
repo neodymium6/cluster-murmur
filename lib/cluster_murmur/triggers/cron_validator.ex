@@ -23,15 +23,25 @@ defmodule ClusterMurmur.Triggers.CronValidator do
       valid_conditions?(hour, 0, 23) and
       valid_conditions?(day, 1, 31) and valid_conditions?(month, 1, 12) and
       valid_conditions?(weekday, 0, 7) and (day == [:*] or weekday == [:*])
+  rescue
+    _error -> false
+  catch
+    _kind, _reason -> false
   end
 
   def valid?(_expression), do: false
 
-  defp valid_conditions?(conditions, minimum, maximum)
-       when is_list(conditions) and conditions != [] and length(conditions) <= 256,
-       do: Enum.all?(conditions, &valid_condition?(&1, minimum, maximum))
+  defp valid_conditions?(conditions, minimum, maximum) do
+    bounded_proper_conditions?(conditions, 0) and
+      Enum.all?(conditions, &valid_condition?(&1, minimum, maximum))
+  end
 
-  defp valid_conditions?(_conditions, _minimum, _maximum), do: false
+  defp bounded_proper_conditions?([], count), do: count > 0
+
+  defp bounded_proper_conditions?([_condition | rest], count) when count < 256,
+    do: bounded_proper_conditions?(rest, count + 1)
+
+  defp bounded_proper_conditions?(_conditions, _count), do: false
   defp valid_condition?(:*, _minimum, _maximum), do: true
 
   defp valid_condition?(value, minimum, maximum) when is_integer(value),
