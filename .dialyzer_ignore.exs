@@ -23,6 +23,5 @@
   {"lib/cluster_murmur/triggers/event_trigger_batch_authorizer.ex", :pattern_match_cov, {108, 7}},
   {"lib/cluster_murmur/triggers/event_trigger_conversation_planner.ex", :pattern_match_cov,
    {73, 7}},
-  {"lib/cluster_murmur/triggers/poll_event_trigger_planner.ex", :pattern_match_cov, {94, 7}},
-  {"lib/cluster_murmur/triggers/schedule_execution_planner.ex", :pattern_match_cov, {168, 8}}
+  {"lib/cluster_murmur/triggers/poll_event_trigger_planner.ex", :pattern_match_cov, {94, 7}}
 ]

@@ -165,8 +165,6 @@ defmodule ClusterMurmur.Triggers.ScheduleExecutionPlanner do
       valid_id?(event.group) and valid_id?(event.subject)
   end
 
-  defp valid_event?(_event), do: false
-
   defp valid_id?(value), do: match?({:ok, ^value}, Value.id(value))
 
   defp valid_timezone?(timezone)
