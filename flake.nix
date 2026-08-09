@@ -75,6 +75,65 @@
             mainProgram = "cluster_murmur";
           };
         };
+      ociImageFor =
+        system:
+        let
+          pkgs = pkgsFor.${system};
+          productionRelease = releaseFor system;
+        in
+        pkgs.dockerTools.buildLayeredImage {
+          name = "cluster-murmur";
+          tag = version;
+          contents = [ productionRelease ];
+
+          extraCommands = ''
+            mkdir -p ./etc ./tmp ./var/lib/cluster-murmur
+            printf '%s\n' \
+              'cluster-murmur:x:65532:65532:Cluster Murmur:/tmp:/sbin/nologin' \
+              > ./etc/passwd
+            printf '%s\n' 'cluster-murmur:x:65532:' > ./etc/group
+            chmod 0755 ./etc
+            chmod 0644 ./etc/passwd ./etc/group
+            chmod 0700 ./tmp ./var/lib/cluster-murmur
+          '';
+
+          fakeRootCommands = ''
+            chown 65532:65532 ./tmp ./var/lib/cluster-murmur
+          '';
+
+          config = {
+            User = "65532:65532";
+            WorkingDir = "/";
+            Entrypoint = [
+              "${pkgs.tini}/bin/tini"
+              "--"
+            ];
+            Cmd = [
+              "${productionRelease}/bin/cluster_murmur"
+              "start"
+            ];
+            Env = [
+              "HOME=/tmp"
+              "LANG=C.UTF-8"
+              "LC_ALL=C.UTF-8"
+              "RELEASE_TMP=/tmp/release"
+              "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              "TMPDIR=/tmp"
+            ];
+            Labels = {
+              "org.opencontainers.image.description" = "Bounded observation-to-conversation orchestrator";
+              "org.opencontainers.image.licenses" = "Apache-2.0";
+              "org.opencontainers.image.source" = "https://github.com/neodymium6/cluster-murmur";
+              "org.opencontainers.image.title" = "Cluster Murmur";
+              "org.opencontainers.image.version" = version;
+            };
+          };
+
+          meta = {
+            description = "OCI-compatible Cluster Murmur image archive";
+            license = nixpkgs.lib.licenses.asl20;
+          };
+        };
     in
     {
       devShells = forAllSystems (
@@ -107,10 +166,16 @@
         }
       );
 
-      packages = forAllSystems (system: {
-        default = releaseFor system;
-        cluster-murmur = releaseFor system;
-      });
+      packages = forAllSystems (
+        system:
+        {
+          default = releaseFor system;
+          cluster-murmur = releaseFor system;
+        }
+        // nixpkgs.lib.optionalAttrs (pkgsFor.${system}.stdenv.isLinux) {
+          oci-image = ociImageFor system;
+        }
+      );
 
       checks = forAllSystems (
         system:
@@ -246,6 +311,95 @@
                 cd ${source}
                 actionlint .github/workflows/*.yml
                 markdownlint-cli2 AGENTS.md DESIGN.md README.md SECURITY.md docs/**/*.md
+                touch "$out"
+              '';
+        }
+        // nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
+          oci-image =
+            let
+              image = ociImageFor system;
+              expectedArchitecture = pkgs.go.GOARCH;
+              expectedCommand = "${productionRelease}/bin/cluster_murmur";
+              expectedEntrypoint = "${pkgs.tini}/bin/tini";
+              expectedCertificate = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+            in
+            pkgs.runCommand "cluster-murmur-oci-image-check"
+              {
+                nativeBuildInputs = [
+                  pkgs.gnutar
+                  pkgs.gzip
+                  pkgs.jq
+                ];
+              }
+              ''
+                archive_root="$TMPDIR/archive"
+                rootfs="$TMPDIR/rootfs"
+                mkdir -p "$archive_root" "$rootfs"
+                tar -xzf ${image} -C "$archive_root"
+
+                config_file="$(jq -er \
+                  'if length == 1 then .[0].Config else empty end' \
+                  "$archive_root/manifest.json")"
+                jq -e --arg version "${version}" \
+                  '.[0].RepoTags == ["cluster-murmur:" + $version]' \
+                  "$archive_root/manifest.json"
+                jq -e --arg entrypoint "${expectedEntrypoint}" \
+                  --arg command "${expectedCommand}" \
+                  --arg architecture "${expectedArchitecture}" \
+                  --arg version "${version}" \
+                  --arg certificate "${expectedCertificate}" '
+                    .architecture == $architecture and
+                    .os == "linux" and
+                    .config.User == "65532:65532" and
+                    .config.WorkingDir == "/" and
+                    .config.Entrypoint == [$entrypoint, "--"] and
+                    .config.Cmd == [$command, "start"] and
+                    (.config.Env | sort) == ([
+                      "HOME=/tmp",
+                      "LANG=C.UTF-8",
+                      "LC_ALL=C.UTF-8",
+                      "RELEASE_TMP=/tmp/release",
+                      "SSL_CERT_FILE=" + $certificate,
+                      "TMPDIR=/tmp"
+                    ] | sort) and
+                    .config.ExposedPorts == null and
+                    .config.Volumes == null and
+                    .config.Healthcheck == null and
+                    .config.Labels["org.opencontainers.image.title"] ==
+                      "Cluster Murmur" and
+                    .config.Labels["org.opencontainers.image.version"] == $version and
+                    .config.Labels["org.opencontainers.image.licenses"] ==
+                      "Apache-2.0"
+                  ' "$archive_root/$config_file"
+
+                last_layer="$(jq -er '.[0].Layers[-1]' \
+                  "$archive_root/manifest.json")"
+                tar --numeric-owner -tvf "$archive_root/$last_layer" \
+                  > "$TMPDIR/last-layer.txt"
+                grep -Eq \
+                  '^drwx------[[:space:]]+65532/65532[[:space:]]+.*[[:space:]]+\./tmp/$' \
+                  "$TMPDIR/last-layer.txt"
+                grep -Eq \
+                  '^drwx------[[:space:]]+65532/65532[[:space:]]+.*[[:space:]]+\./var/lib/cluster-murmur/$' \
+                  "$TMPDIR/last-layer.txt"
+
+                jq -er '.[0].Layers[]' "$archive_root/manifest.json" |
+                  while IFS= read -r layer; do
+                    if ! tar -xf "$archive_root/$layer" -C "$rootfs" \
+                      2> "$TMPDIR/layer-error.txt"; then
+                      cat "$TMPDIR/layer-error.txt" >&2
+                      exit 1
+                    fi
+                  done
+
+                grep -Fxq \
+                  'cluster-murmur:x:65532:65532:Cluster Murmur:/tmp:/sbin/nologin' \
+                  "$rootfs/etc/passwd"
+                grep -Fxq 'cluster-murmur:x:65532:' "$rootfs/etc/group"
+                test -d "$rootfs/tmp"
+                test -d "$rootfs/var/lib/cluster-murmur"
+                test -x "$rootfs${expectedEntrypoint}"
+                test -x "$rootfs${expectedCommand}"
                 touch "$out"
               '';
         }
