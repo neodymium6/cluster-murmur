@@ -39,7 +39,6 @@ defmodule ClusterMurmur.Observations.DebounceEvaluator do
       {:ok, next}
     else
       {:error, _reason} = error -> error
-      _failure -> {:error, :invalid_entity_state}
     end
   rescue
     _error -> {:error, :invalid_entity_state}
