@@ -249,9 +249,6 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
     end
   end
 
-  defp build_message(_decision, _plan, _inserted_at),
-    do: {:error, :responder_message_failed}
-
   defp root_event(%StarterContinuation{} = continuation) do
     {:ok,
      continuation.recorded.published.started.plan.persisted.generated.plan.started.plan.authorization.plan.event}
