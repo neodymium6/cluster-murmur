@@ -1,20 +1,30 @@
 defmodule ClusterMurmur.Persistence.ScheduleStateStore do
   @moduledoc """
-  Restores, discovers, and claims durable recurring schedule state.
+  Restores, retires, discovers, and claims durable recurring schedule state.
 
   The store exposes only fixed queries and opaque 60-second claims. It does not
-  calculate recurrence, execute actions, emit events, or read a clock.
+  calculate recurrence, execute actions, emit events, or read a clock. Retirement
+  accepts only one bounded active-trigger allowlist and deletes one bounded page.
   """
 
   import Ecto.Query, only: [from: 2]
 
   alias ClusterMurmur.DateTimeValidator
-  alias ClusterMurmur.Persistence.{ScheduleState, ScheduleStateClaim}
+  alias ClusterMurmur.Config.Value
+
+  alias ClusterMurmur.Persistence.{
+    ScheduleState,
+    ScheduleStateClaim,
+    ScheduleStateRetirement
+  }
+
   alias ClusterMurmur.Repo
 
   @claim_lease_seconds 60
   @claim_token_bytes 32
   @max_due_states 100
+  @max_active_trigger_ids 256
+  @retirement_page_size 100
   @claim_keys ScheduleStateClaim.__struct__() |> Map.keys()
   @claim_key_count length(@claim_keys)
 
@@ -37,6 +47,21 @@ defmodule ClusterMurmur.Persistence.ScheduleStateStore do
       persist(changeset, trigger_id)
     else
       _invalid -> {:error, :invalid_schedule}
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  @doc "Retires at most 100 states absent from one exact configured trigger set."
+  @spec retire_unconfigured(term()) ::
+          {:ok, ScheduleStateRetirement.t()} | {:error, error()}
+  def retire_unconfigured(active_trigger_ids) do
+    with {:ok, active_trigger_ids} <- validate_active_trigger_ids(active_trigger_ids) do
+      persist_retirement(active_trigger_ids)
+    else
+      _failure -> {:error, :invalid_schedule}
     end
   rescue
     _error -> {:error, :storage_unavailable}
@@ -139,6 +164,80 @@ defmodule ClusterMurmur.Persistence.ScheduleStateStore do
       _failure -> {:error, :storage_unavailable}
     end
   end
+
+  defp persist_retirement(active_trigger_ids) do
+    case Repo.transaction(fn -> retire_page(active_trigger_ids) end, mode: :immediate) do
+      {:ok, %ScheduleStateRetirement{} = result} -> {:ok, result}
+      {:error, :invalid_schedule} -> {:error, :invalid_schedule}
+      _failure -> {:error, :storage_unavailable}
+    end
+  end
+
+  defp retire_page(active_trigger_ids) do
+    query =
+      from state in ScheduleState,
+        order_by: [asc: state.trigger_id],
+        limit: @retirement_page_size + 1,
+        select: state.trigger_id
+
+    stale_ids =
+      if active_trigger_ids == [],
+        do: Repo.all(query),
+        else: Repo.all(from state in query, where: state.trigger_id not in ^active_trigger_ids)
+
+    with :ok <- validate_stale_ids(stale_ids),
+         retired_ids = Enum.take(stale_ids, @retirement_page_size),
+         :ok <- delete_retired_ids(retired_ids) do
+      %ScheduleStateRetirement{
+        retired_count: length(retired_ids),
+        saturated?: length(stale_ids) > @retirement_page_size
+      }
+    else
+      _failure -> Repo.rollback(:invalid_schedule)
+    end
+  end
+
+  defp delete_retired_ids([]), do: :ok
+
+  defp delete_retired_ids(retired_ids) do
+    query = from state in ScheduleState, where: state.trigger_id in ^retired_ids
+
+    case Repo.delete_all(query) do
+      {count, nil} when count == length(retired_ids) -> :ok
+      _failure -> {:error, :invalid_schedule}
+    end
+  end
+
+  defp validate_active_trigger_ids(trigger_ids) when is_list(trigger_ids) do
+    validate_trigger_ids(trigger_ids, MapSet.new(), 0, @max_active_trigger_ids)
+  end
+
+  defp validate_active_trigger_ids(_trigger_ids), do: {:error, :invalid_schedule}
+
+  defp validate_trigger_ids([], _seen, _count, _maximum), do: {:ok, []}
+
+  defp validate_trigger_ids([trigger_id | rest], seen, count, maximum) when count < maximum do
+    with {:ok, ^trigger_id} <- Value.id(trigger_id),
+         false <- MapSet.member?(seen, trigger_id),
+         {:ok, validated_rest} <-
+           validate_trigger_ids(rest, MapSet.put(seen, trigger_id), count + 1, maximum) do
+      {:ok, [trigger_id | validated_rest]}
+    else
+      _failure -> {:error, :invalid_schedule}
+    end
+  end
+
+  defp validate_trigger_ids(_trigger_ids, _seen, _count, _maximum),
+    do: {:error, :invalid_schedule}
+
+  defp validate_stale_ids(stale_ids) when is_list(stale_ids) do
+    case validate_trigger_ids(stale_ids, MapSet.new(), 0, @retirement_page_size + 1) do
+      {:ok, ^stale_ids} -> :ok
+      _failure -> {:error, :invalid_schedule}
+    end
+  end
+
+  defp validate_stale_ids(_stale_ids), do: {:error, :invalid_schedule}
 
   defp insert_then_restore(changeset, trigger_id) do
     case Repo.insert(changeset, on_conflict: :nothing, conflict_target: [:trigger_id]) do

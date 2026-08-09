@@ -642,6 +642,15 @@ clock, interval, and initial delay. The next timer is created only after the
 synchronous cycle returns, and status retains only exact aggregate results or a
 stable redacted failure. No live defaults are supplied.
 
+Before recurring runtime starts, a bounded initializer calculates every
+configured trigger's initial next run from one injected UTC instant, then
+retires a bounded page of state absent from the active trigger set, and restores
+or initializes active state in identifier order. A saturated retirement page
+requires another startup pass. All recurrence calculations finish before the
+first write, existing active durable state always wins, and the result contains
+only the number of correlated states. The initializer does not read a clock or
+start workers.
+
 The persistence layer also provides a dedicated event-dispatch outbox for the
 crash-safe handoff that follows event commit. It accepts only exact immutable
 events already in the event store and returns a claim-free enqueue receipt. It

@@ -1,7 +1,13 @@
 defmodule ClusterMurmur.Persistence.ScheduleStateStoreTest do
   use ExUnit.Case, async: false
 
-  alias ClusterMurmur.Persistence.{ScheduleState, ScheduleStateClaim, ScheduleStateStore}
+  alias ClusterMurmur.Persistence.{
+    ScheduleState,
+    ScheduleStateClaim,
+    ScheduleStateRetirement,
+    ScheduleStateStore
+  }
+
   alias ClusterMurmur.Repo
   alias ClusterMurmur.Repo.Migrations.CreateScheduleStates
 
@@ -90,6 +96,65 @@ defmodule ClusterMurmur.Persistence.ScheduleStateStoreTest do
     end
 
     assert ScheduleStateStore.restore_or_initialize("daily-summary", @due) ==
+             {:error, :storage_unavailable}
+  end
+
+  test "retires unconfigured state including abandoned claims" do
+    for trigger_id <- ["active", "removed", "renamed"] do
+      assert {:ok, _state} = ScheduleStateStore.restore_or_initialize(trigger_id, @due)
+    end
+
+    assert {:ok, _claim} = ScheduleStateStore.claim_due("removed", @due, @due)
+
+    assert {:ok, %ScheduleStateRetirement{} = result} =
+             ScheduleStateStore.retire_unconfigured(["active"])
+
+    assert result.retired_count == 2
+    refute result.saturated?
+    assert Repo.get!(ScheduleState, "active")
+    assert Repo.get(ScheduleState, "removed") == nil
+    assert Repo.get(ScheduleState, "renamed") == nil
+    refute inspect(result) =~ "removed"
+  end
+
+  test "retires one bounded page and reports saturation" do
+    assert {:ok, _state} = ScheduleStateStore.restore_or_initialize("active", @due)
+
+    for number <- 0..100 do
+      trigger_id = "removed-#{String.pad_leading(Integer.to_string(number), 3, "0")}"
+      assert {:ok, _state} = ScheduleStateStore.restore_or_initialize(trigger_id, @due)
+    end
+
+    assert {:ok, %ScheduleStateRetirement{retired_count: 100, saturated?: true}} =
+             ScheduleStateStore.retire_unconfigured(["active"])
+
+    assert Repo.aggregate(ScheduleState, :count) == 2
+
+    assert {:ok, %ScheduleStateRetirement{retired_count: 1, saturated?: false}} =
+             ScheduleStateStore.retire_unconfigured(["active"])
+
+    assert Repo.aggregate(ScheduleState, :count) == 1
+    assert Repo.get!(ScheduleState, "active")
+  end
+
+  test "validates the exact bounded active set before accessing storage" do
+    Repo.put_dynamic_repo(:missing_schedule_state_repo)
+
+    invalid = [
+      nil,
+      "active",
+      ["bad id"],
+      ["active", "active"],
+      List.duplicate("active", 257),
+      ["active" | "improper"]
+    ]
+
+    for active_trigger_ids <- invalid do
+      assert ScheduleStateStore.retire_unconfigured(active_trigger_ids) ==
+               {:error, :invalid_schedule}
+    end
+
+    assert ScheduleStateStore.retire_unconfigured(["active"]) ==
              {:error, :storage_unavailable}
   end
 
