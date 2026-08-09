@@ -120,4 +120,11 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand(
+    "../priv/repo/migrations/20260809051500_create_event_retention_sweeps.exs",
+    __DIR__
+  )
+)
+
 ExUnit.start()
