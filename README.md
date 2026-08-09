@@ -301,17 +301,18 @@ cookie. It still requires an approved absolute `CLUSTER_MURMUR_DATABASE_PATH`
 whose existing parent directory is private. Runtime configuration, secrets,
 external transports, and worker assembly remain deployment-owned inputs.
 
-On Linux, build the OCI-compatible image archive with:
+On Linux, build the Docker-compatible image archive with:
 
 ```bash
-nix build .#oci-image
+nix build .#container-image
 docker image load -i result
 ```
 
-The scratch-based image runs as numeric user and group `65532:65532`, starts
-the nondistributed release through Tini, declares no ports or volumes, and
-contains no deployment configuration or credentials. Running it requires all
-of the following deployment-owned controls:
+The scratch-based image uses the OCI image configuration and standard OCI
+labels, runs as numeric user and group `65532:65532`, starts the nondistributed
+release through Tini, declares no ports or volumes, and contains no deployment
+configuration or credentials. Running it requires all of the following
+deployment-owned controls:
 
 - make the root filesystem read-only;
 - drop every Linux capability and disable privilege escalation;

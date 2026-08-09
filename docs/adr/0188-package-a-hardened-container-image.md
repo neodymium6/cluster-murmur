@@ -1,4 +1,4 @@
-# 0188. Package a hardened OCI image
+# 0188. Package a hardened container image
 
 Date: 2026-08-09
 
@@ -20,11 +20,13 @@ backup ownership.
 
 ## Decision
 
-Expose a reproducible, scratch-based, OCI-compatible layered image archive on
-Linux as the flake's `oci-image` package. Run the release as the fixed numeric
-identity `65532:65532`, use Tini only for signal forwarding and child reaping,
-and retain the release's nondistributed Erlang policy. Include no configuration,
-credentials, endpoint defaults, declared network ports, or volume declarations.
+Expose a reproducible, scratch-based, Docker-compatible layered image archive
+on Linux as the flake's `container-image` package. Use the OCI image
+configuration semantics and standard OCI labels. Run the release as the fixed
+numeric identity `65532:65532`, use Tini only for signal forwarding and child
+reaping, and retain the release's nondistributed Erlang policy. Include no
+configuration, credentials, endpoint defaults, declared network ports, or
+volume declarations.
 
 Require deployments to provide all of these controls:
 
@@ -43,8 +45,9 @@ requiring a container daemon.
 
 ## Consequences
 
-`nix build .#oci-image` produces a loadable image archive for the current Linux
-system. The same archive does not claim to be safe under runtime defaults: an
-operator must satisfy the documented hardening contract and privately inject
-configuration, secrets, and storage. Multi-architecture manifests and registry
-publication remain deployment or release-pipeline concerns.
+`nix build .#container-image` produces a Docker-loadable image archive for the
+current Linux system. It is not an OCI image-layout archive. The image does not
+claim to be safe under runtime defaults: an operator must satisfy the documented
+hardening contract and privately inject configuration, secrets, and storage.
+Multi-architecture manifests, OCI archive conversion, and registry publication
+remain deployment or release-pipeline concerns.

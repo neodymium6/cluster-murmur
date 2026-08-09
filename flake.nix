@@ -75,7 +75,7 @@
             mainProgram = "cluster_murmur";
           };
         };
-      ociImageFor =
+      containerImageFor =
         system:
         let
           pkgs = pkgsFor.${system};
@@ -130,7 +130,7 @@
           };
 
           meta = {
-            description = "OCI-compatible Cluster Murmur image archive";
+            description = "Docker-compatible Cluster Murmur image archive";
             license = nixpkgs.lib.licenses.asl20;
           };
         };
@@ -173,7 +173,7 @@
           cluster-murmur = releaseFor system;
         }
         // nixpkgs.lib.optionalAttrs (pkgsFor.${system}.stdenv.isLinux) {
-          oci-image = ociImageFor system;
+          container-image = containerImageFor system;
         }
       );
 
@@ -315,15 +315,15 @@
               '';
         }
         // nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
-          oci-image =
+          container-image =
             let
-              image = ociImageFor system;
+              image = containerImageFor system;
               expectedArchitecture = pkgs.go.GOARCH;
               expectedCommand = "${productionRelease}/bin/cluster_murmur";
               expectedEntrypoint = "${pkgs.tini}/bin/tini";
               expectedCertificate = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
             in
-            pkgs.runCommand "cluster-murmur-oci-image-check"
+            pkgs.runCommand "cluster-murmur-container-image-check"
               {
                 nativeBuildInputs = [
                   pkgs.gnutar
