@@ -60,8 +60,7 @@ defmodule ClusterMurmur.Runtime.StochasticSchedulerTest do
   test "runs one cycle at a time and schedules the next only after completion" do
     Process.register(self(), :cluster_murmur_stochastic_scheduler_test)
     options = options(self(), 1_000)
-    assert {:ok, scheduler} = StochasticScheduler.start_link(options)
-    on_exit(fn -> if Process.alive?(scheduler), do: GenServer.stop(scheduler) end)
+    scheduler = start_supervised!({StochasticScheduler, options})
 
     assert_receive {:cycle_started, ^scheduler, ~U[2026-08-08 14:30:00.000000Z], Random}
 

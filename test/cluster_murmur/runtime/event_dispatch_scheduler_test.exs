@@ -129,8 +129,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchSchedulerTest do
   test "runs one cycle at a time and schedules the next only after completion" do
     Process.register(self(), :cluster_murmur_event_dispatch_scheduler_test)
     options = options(BlockingCycle, FixedClock, 1_000)
-    assert {:ok, scheduler} = EventDispatchScheduler.start_link(options)
-    on_exit(fn -> if Process.alive?(scheduler), do: GenServer.stop(scheduler) end)
+    scheduler = start_supervised!({EventDispatchScheduler, options})
 
     assert_receive {:cycle_started, ^scheduler, configuration, ~U[2026-08-08 18:00:00.000000Z],
                     context, adapters}

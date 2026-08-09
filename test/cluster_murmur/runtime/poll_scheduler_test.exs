@@ -71,8 +71,7 @@ defmodule ClusterMurmur.Runtime.PollSchedulerTest do
       |> options(scheduler_delay_ms)
       |> Map.put(:initial_delay_ms, scheduler_delay_ms)
 
-    assert {:ok, scheduler} = PollScheduler.start_link(options)
-    on_exit(fn -> if Process.alive?(scheduler), do: GenServer.stop(scheduler) end)
+    scheduler = start_supervised!({PollScheduler, options})
 
     assert {^options, %Status{cycle_count: 0}, initial_timer_token} = :sys.get_state(scheduler)
     assert is_reference(initial_timer_token)
