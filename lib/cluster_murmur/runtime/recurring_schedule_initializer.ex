@@ -47,6 +47,8 @@ defmodule ClusterMurmur.Runtime.RecurringScheduleInitializer do
 
   @adapter_keys Adapters.__struct__() |> Map.keys()
   @adapter_key_count length(@adapter_keys)
+  @result_keys Result.__struct__() |> Map.keys()
+  @result_key_count length(@result_keys)
 
   @doc "Restores or initializes the complete configured recurring-schedule set."
   @spec run(term(), term()) ::
@@ -79,6 +81,24 @@ defmodule ClusterMurmur.Runtime.RecurringScheduleInitializer do
 
   def run(_configuration, _initialized_at, _adapters),
     do: {:error, :invalid_recurring_schedule_initialization}
+
+  @doc "Validates one exact bounded aggregate initialization result."
+  @spec validate_result(term()) ::
+          :ok | {:error, :invalid_recurring_schedule_initialization_result}
+  def validate_result(%Result{} = result) do
+    if map_size(result) == @result_key_count and
+         Enum.all?(@result_keys, &Map.has_key?(result, &1)) and
+         is_integer(result.schedule_count) and result.schedule_count in 0..@max_schedules,
+       do: :ok,
+       else: {:error, :invalid_recurring_schedule_initialization_result}
+  rescue
+    _error -> {:error, :invalid_recurring_schedule_initialization_result}
+  catch
+    _kind, _reason -> {:error, :invalid_recurring_schedule_initialization_result}
+  end
+
+  def validate_result(_result),
+    do: {:error, :invalid_recurring_schedule_initialization_result}
 
   defp preflight(configuration, initialized_at, adapters) do
     with :ok <- normalize_configuration(Configuration.validate(configuration)),
