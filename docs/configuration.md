@@ -636,6 +636,12 @@ continuing after individual conflicts and returning aggregate counts only. The
 cycle reads no clock, performs no external action, and is not installed in the
 public application supervision tree.
 
+An opt-in recurring-schedule scheduler can invoke that cycle repeatedly without
+overlap. It requires an explicit validated configuration, cycle module, UTC
+clock, interval, and initial delay. The next timer is created only after the
+synchronous cycle returns, and status retains only exact aggregate results or a
+stable redacted failure. No live defaults are supplied.
+
 The persistence layer also provides a dedicated event-dispatch outbox for the
 crash-safe handoff that follows event commit. It accepts only exact immutable
 events already in the event store and returns a claim-free enqueue receipt. It
