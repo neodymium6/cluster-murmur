@@ -317,8 +317,6 @@ defmodule ClusterMurmur.Persistence.EventDispatchStore do
     _kind, _reason -> false
   end
 
-  defp valid_claim?(_claim), do: false
-
   defp valid_dispatch?(%EventDispatch{} = dispatch) do
     Validator.validate_id(dispatch.event_id) == :ok and validate_time(dispatch.enqueued_at) == :ok and
       valid_lifecycle?(dispatch)

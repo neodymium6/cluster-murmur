@@ -6,7 +6,6 @@
   {"lib/cluster_murmur/generation/openai_compatible_request.ex", :pattern_match, 1},
   {"lib/cluster_murmur/observers/poller.ex", :pattern_match_cov, {100, 7}},
   {"lib/cluster_murmur/persistence/event_dispatch_store.ex", :pattern_match_cov, {305, 8}},
-  {"lib/cluster_murmur/persistence/event_dispatch_store.ex", :pattern_match_cov, {320, 8}},
   {"lib/cluster_murmur/persistence/event_trigger_conversation_action_store.ex",
    :pattern_match_cov, {77, 7}},
   {"lib/cluster_murmur/persistence/observation_ingestion_store.ex", :pattern_match_cov, {67, 7}},
