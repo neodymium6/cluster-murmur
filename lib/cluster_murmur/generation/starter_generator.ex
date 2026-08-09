@@ -173,9 +173,6 @@ defmodule ClusterMurmur.Generation.StarterGenerator do
     |> normalize_fallback()
   end
 
-  defp build_message(_decision, _plan, _inserted_at),
-    do: {:error, :invalid_starter_message}
-
   defp normalize_fallback({:ok, %Message{} = message}), do: {:ok, message}
   defp normalize_fallback(_failure), do: {:error, :invalid_starter_message}
 

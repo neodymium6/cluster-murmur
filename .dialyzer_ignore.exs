@@ -5,8 +5,6 @@
   {"lib/cluster_murmur/config/triggers.ex", :pattern_match_cov, {493, 7}},
   {"lib/cluster_murmur/conversations/starter_reply_finisher.ex", :pattern_match_cov, {233, 8}},
   {"lib/cluster_murmur/generation/openai_compatible_request.ex", :pattern_match, 1},
-  {"lib/cluster_murmur/generation/responder_message_consumer.ex", :pattern_match_cov, {252, 8}},
-  {"lib/cluster_murmur/generation/starter_generator.ex", :pattern_match_cov, {176, 8}},
   {"lib/cluster_murmur/observers/poller.ex", :pattern_match_cov, {100, 7}},
   {"lib/cluster_murmur/persistence/event_dispatch_store.ex", :pattern_match_cov, {305, 8}},
   {"lib/cluster_murmur/persistence/event_dispatch_store.ex", :pattern_match_cov, {320, 8}},
