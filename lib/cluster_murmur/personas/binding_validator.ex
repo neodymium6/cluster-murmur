@@ -42,7 +42,7 @@ defmodule ClusterMurmur.Personas.BindingValidator do
   end
 
   defp validate_candidates(candidates) when is_list(candidates),
-    do: validate_candidates(candidates, MapSet.new(), 0)
+    do: validate_candidates(candidates, %{}, 0)
 
   defp validate_candidates(_candidates), do: {:error, :invalid_binding}
 
@@ -54,8 +54,8 @@ defmodule ClusterMurmur.Personas.BindingValidator do
 
   defp validate_candidates([candidate | candidates], seen, count) do
     with {:ok, persona_id} <- validate_candidate(candidate),
-         false <- MapSet.member?(seen, persona_id) do
-      validate_candidates(candidates, MapSet.put(seen, persona_id), count + 1)
+         false <- Map.has_key?(seen, persona_id) do
+      validate_candidates(candidates, Map.put(seen, persona_id, true), count + 1)
     else
       true -> {:error, :duplicate_binding_candidate}
       {:error, :invalid_binding} -> {:error, :invalid_binding}

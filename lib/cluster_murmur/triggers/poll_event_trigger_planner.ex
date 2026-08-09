@@ -77,7 +77,7 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerPlanner do
     with :ok <- validate_poll(poll_result),
          :ok <- validate_configuration(configuration),
          :ok <- validate_executed_at(executed_at, poll_result.events),
-         :ok <- reject_duplicate_events(poll_result.events, MapSet.new()),
+         :ok <- reject_duplicate_events(poll_result.events, %{}),
          triggers <- event_triggers(configuration),
          {:ok, entries, match_count} <- select_entries(poll_result.events, triggers, [], 0) do
       {:ok,
@@ -165,9 +165,9 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerPlanner do
   defp reject_duplicate_events([], _seen), do: :ok
 
   defp reject_duplicate_events([%Event{id: id} | events], seen) do
-    if MapSet.member?(seen, id),
+    if Map.has_key?(seen, id),
       do: {:error, :duplicate_poll_event},
-      else: reject_duplicate_events(events, MapSet.put(seen, id))
+      else: reject_duplicate_events(events, Map.put(seen, id, true))
   end
 
   defp event_triggers(configuration) do

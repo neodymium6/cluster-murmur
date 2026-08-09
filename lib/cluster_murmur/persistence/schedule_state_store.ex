@@ -209,7 +209,7 @@ defmodule ClusterMurmur.Persistence.ScheduleStateStore do
   end
 
   defp validate_active_trigger_ids(trigger_ids) when is_list(trigger_ids) do
-    validate_trigger_ids(trigger_ids, MapSet.new(), 0, @max_active_trigger_ids)
+    validate_trigger_ids(trigger_ids, %{}, 0, @max_active_trigger_ids)
   end
 
   defp validate_active_trigger_ids(_trigger_ids), do: {:error, :invalid_schedule}
@@ -218,9 +218,9 @@ defmodule ClusterMurmur.Persistence.ScheduleStateStore do
 
   defp validate_trigger_ids([trigger_id | rest], seen, count, maximum) when count < maximum do
     with {:ok, ^trigger_id} <- Value.id(trigger_id),
-         false <- MapSet.member?(seen, trigger_id),
+         false <- Map.has_key?(seen, trigger_id),
          {:ok, validated_rest} <-
-           validate_trigger_ids(rest, MapSet.put(seen, trigger_id), count + 1, maximum) do
+           validate_trigger_ids(rest, Map.put(seen, trigger_id, true), count + 1, maximum) do
       {:ok, [trigger_id | validated_rest]}
     else
       _failure -> {:error, :invalid_schedule}
@@ -231,7 +231,7 @@ defmodule ClusterMurmur.Persistence.ScheduleStateStore do
     do: {:error, :invalid_schedule}
 
   defp validate_stale_ids(stale_ids) when is_list(stale_ids) do
-    case validate_trigger_ids(stale_ids, MapSet.new(), 0, @retirement_page_size + 1) do
+    case validate_trigger_ids(stale_ids, %{}, 0, @retirement_page_size + 1) do
       {:ok, ^stale_ids} -> :ok
       _failure -> {:error, :invalid_schedule}
     end

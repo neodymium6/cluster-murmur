@@ -91,7 +91,7 @@ defmodule ClusterMurmur.Conversations.Validator do
   end
 
   defp valid_participants?(participants) when is_list(participants) do
-    case bounded_unique_participants(participants, MapSet.new(), 0) do
+    case bounded_unique_participants(participants, %{}, 0) do
       {:ok, _seen} -> true
       :error -> false
     end
@@ -187,8 +187,8 @@ defmodule ClusterMurmur.Conversations.Validator do
 
   defp bounded_unique_participants([participant | rest], seen, count)
        when count < @max_participants do
-    if valid_portable_id?(participant) and not MapSet.member?(seen, participant) do
-      bounded_unique_participants(rest, MapSet.put(seen, participant), count + 1)
+    if valid_portable_id?(participant) and not Map.has_key?(seen, participant) do
+      bounded_unique_participants(rest, Map.put(seen, participant, true), count + 1)
     else
       :error
     end

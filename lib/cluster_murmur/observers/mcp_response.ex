@@ -61,7 +61,7 @@ defmodule ClusterMurmur.Observers.MCPResponse do
          %{"targets" => targets} = decoded
        )
        when map_size(decoded) == 1 and is_list(targets) do
-    with {:ok, normalized} <- validate_targets(targets, nil, MapSet.new(), [], 0) do
+    with {:ok, normalized} <- validate_targets(targets, nil, %{}, [], 0) do
       eligible =
         normalized
         |> Enum.filter(fn target ->
@@ -100,12 +100,12 @@ defmodule ClusterMurmur.Observers.MCPResponse do
   defp validate_targets([target | remaining], previous_id, seen, targets, count)
        when count < @max_targets do
     with {:ok, normalized} <- validate_target(target),
-         false <- MapSet.member?(seen, normalized.id),
+         false <- Map.has_key?(seen, normalized.id),
          true <- previous_id == nil or previous_id < normalized.id do
       validate_targets(
         remaining,
         normalized.id,
-        MapSet.put(seen, normalized.id),
+        Map.put(seen, normalized.id, true),
         [normalized | targets],
         count + 1
       )
@@ -121,7 +121,7 @@ defmodule ClusterMurmur.Observers.MCPResponse do
        when map_size(target) == 3 and kind in @kinds and is_list(capabilities) do
     with true <- MCPRequest.valid_target_id?(id),
          {:ok, capabilities} <-
-           validate_capabilities(capabilities, kind, nil, MapSet.new(), [], 0) do
+           validate_capabilities(capabilities, kind, nil, %{}, [], 0) do
       {:ok, %{id: id, kind: kind, capabilities: capabilities}}
     else
       _failure -> {:error, :invalid_response}
@@ -145,13 +145,13 @@ defmodule ClusterMurmur.Observers.MCPResponse do
        when count < 2 do
     with true <- capability in @capabilities,
          true <- capability_matches_kind?(capability, kind),
-         false <- MapSet.member?(seen, capability),
+         false <- Map.has_key?(seen, capability),
          true <- previous == nil or previous < capability do
       validate_capabilities(
         remaining,
         kind,
         capability,
-        MapSet.put(seen, capability),
+        Map.put(seen, capability, true),
         [capability | capabilities],
         count + 1
       )
@@ -185,7 +185,7 @@ defmodule ClusterMurmur.Observers.MCPResponse do
     with {:ok, observed_at} <- parse_utc(observed_at),
          {:ok, nodes} <- validate_nodes(nodes),
          {:ok, workloads} <- validate_workloads(workloads),
-         {:ok, warnings} <- validate_warnings(warnings, MapSet.new(), [], 0),
+         {:ok, warnings} <- validate_warnings(warnings, %{}, [], 0),
          true <- consistent_health?(status, partial, nodes, workloads, warnings) do
       {:ok,
        %{
@@ -237,10 +237,10 @@ defmodule ClusterMurmur.Observers.MCPResponse do
        when map_size(warning) == 2 and warning_count < @max_warnings do
     with true <- code in @warning_codes,
          true <- valid_count?(count) and count > 0,
-         false <- MapSet.member?(seen, code) do
+         false <- Map.has_key?(seen, code) do
       validate_warnings(
         remaining,
-        MapSet.put(seen, code),
+        Map.put(seen, code, true),
         [%{"code" => code, "count" => count} | warnings],
         warning_count + 1
       )

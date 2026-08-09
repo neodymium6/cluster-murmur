@@ -37,7 +37,7 @@ defmodule ClusterMurmur.Personas.StarterSelector do
   end
 
   defp validate_candidates(candidates) when is_list(candidates),
-    do: validate_candidates(candidates, MapSet.new(), [], 0)
+    do: validate_candidates(candidates, %{}, [], 0)
 
   defp validate_candidates(_candidates), do: {:error, :invalid_starter_candidate}
 
@@ -49,10 +49,10 @@ defmodule ClusterMurmur.Personas.StarterSelector do
 
   defp validate_candidates([candidate | remaining], seen, validated, count) do
     with :ok <- StarterCandidateValidator.validate(candidate),
-         false <- MapSet.member?(seen, candidate.persona_id) do
+         false <- Map.has_key?(seen, candidate.persona_id) do
       validate_candidates(
         remaining,
-        MapSet.put(seen, candidate.persona_id),
+        Map.put(seen, candidate.persona_id, true),
         [candidate | validated],
         count + 1
       )
