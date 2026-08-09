@@ -177,8 +177,9 @@ automatically.
 The startup configuration now normalizes bounded event dedupe-window and
 retention durations. A pure evaluator defines first acceptance, exact retry,
 active suppression, and expiry-boundary behavior. A constrained redacted table
-can hold its durable markers, but atomic enforcement and retention cleanup
-remain future work. Observer
+holds durable markers, and trigger authorization now advances those markers in
+the same transaction as execution starts across poll and durable dispatch.
+Retention cleanup remains future work. Observer
 target responses now pass a closed 256-entry and 64 KiB
 identity catalog that rejects duplicates and sorts accepted redacted targets
 before polling. One injected, sequential poll lists that catalog once, observes

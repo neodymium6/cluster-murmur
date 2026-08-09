@@ -88,7 +88,8 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
   defmodule Authorizer do
     alias ClusterMurmur.Runtime.EventDispatchCycleTest, as: Test
 
-    def authorize(trigger, event, now) do
+    def authorize(trigger, event, now, event_policy) do
+      Process.put({Test, :event_policies}, [event_policy | policies()])
       trace({:authorize, event.id, trigger.id, now})
 
       Map.get(
@@ -100,6 +101,8 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
 
     defp trace(call),
       do: Process.put({Test, :trace}, Process.get({Test, :trace}, []) ++ [call])
+
+    defp policies, do: Process.get({Test, :event_policies}, [])
   end
 
   defmodule PipelineAdapters do
@@ -125,12 +128,18 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
     Process.put({__MODULE__, :claim_failures}, %{})
     Process.put({__MODULE__, :completion_failures}, %{})
     Process.put({__MODULE__, :authorization_results}, %{})
+    Process.put({__MODULE__, :event_policies}, [])
     :ok
   end
 
   test "claims and completes one terminally skipped matching event" do
     configuration = RuntimeFixture.configuration()
-    event = event("event-a", "observation.failed")
+
+    event = %{
+      event("event-a", "observation.failed")
+      | dedupe_key: "observation.failed:example-target"
+    }
+
     put_batch([event])
 
     assert {:ok, %Result{} = result} =
@@ -153,6 +162,8 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
              {:authorize, "event-a", "failure-conversation", @now},
              {:complete, "event-a"}
            ]
+
+    assert Process.get({__MODULE__, :event_policies}) == [configuration.event_policy]
 
     refute inspect(result) =~ "event-a"
     refute inspect(context(configuration)) =~ "clearly-fake-api-key"
@@ -177,6 +188,26 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
              {:claim, "event-a"},
              {:complete, "event-a"}
            ]
+  end
+
+  test "reports durable dedupe suppression without exposing its key" do
+    configuration = RuntimeFixture.configuration()
+
+    event = %{
+      event("event-a", "observation.failed")
+      | dedupe_key: "observation.failed:example-target"
+    }
+
+    put_batch([event])
+    Process.put({__MODULE__, :authorization_results}, %{"event-a" => {:skip, :dedupe_window}})
+
+    assert {:ok, result} =
+             EventDispatchCycle.run(configuration, @now, context(configuration), adapters())
+
+    assert result.completed_count == 1
+    assert result.skipped_count == 1
+    assert result.dedupe_suppressed_count == 1
+    refute inspect(result) =~ event.dedupe_key
   end
 
   test "validates reusable runtime dependencies without reading the outbox" do
@@ -353,6 +384,9 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
     }
 
     assert EventDispatchCycle.validate_result(valid) == :ok
+
+    assert EventDispatchCycle.validate_result(%{valid | dedupe_suppressed_count: 2}) ==
+             {:error, :invalid_event_dispatch_cycle}
 
     for invalid <- [
           %{valid | candidate_count: 1},

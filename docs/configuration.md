@@ -83,8 +83,8 @@ The version 1 manifest requires exactly `version`, `llm`, and `includes`, and
 optionally accepts exact `state_tracking`, `conversation_defaults`, and
 `event_policy` mappings. Omitting `event_policy` uses a five-minute dedupe
 window and 90-day retention. Both event durations must be positive, no longer
-than 365 days, and retention must be at least the dedupe window. This
-normalization does not yet suppress duplicate events or delete retained data.
+than 365 days, and retention must be at least the dedupe window. Trigger
+authorization enforces the dedupe window; retained data is not yet deleted.
 Omitting `state_tracking` uses the fixed two-failure and two-success defaults.
 All five include categories must be present, even when a category has no
 patterns. Every other field or category is invalid. Category values are lists
@@ -229,8 +229,9 @@ separate bounded event store validates complete events before storage, inserts
 immutable event IDs idempotently, and rejects conflicting reuse without
 replacing committed facts. Its primary-key-only read restores at most one event
 through the shared bounded validator. The startup configuration normalizes
-bounded event retention and dedupe-window durations, but event listing,
-enforcement of that policy, and trigger bookkeeping remain later stages. A
+bounded event retention and dedupe-window durations, and trigger authorization
+enforces durable dedupe markers. Event listing and retention cleanup remain
+later stages. A
 narrow observation-ingestion transaction restores prior entity state, applies
 the pure debounce and event plan, and commits the next state with its optional
 event atomically. It performs no observer call or trigger action.
@@ -330,10 +331,11 @@ The startup manifest and complete configuration also normalize the exact event
 policy shown above. These values are application-owned limits; they do not add
 storage passthrough or configure a cleanup worker. A pure evaluator defines the
 dedupe decision and stable suppression reason, and a constrained table can hold
-exact redacted markers. A later atomic store boundary must enforce replacement
-with trigger start across poll and durable dispatch. The broader `retention`
-mapping remains an intended future contract and does not duplicate the
-implemented event retention field.
+exact redacted markers. Trigger authorization atomically enforces marker
+replacement with execution start across poll and durable dispatch. Poll results
+retain the stable reason and durable dispatch reports a redacted aggregate
+suppression count. The broader `retention` mapping remains an intended future
+contract and does not duplicate the implemented event retention field.
 
 Complete LLM payload retention remains disabled by default. Enabling it does
 not permit credentials, private endpoints, or unrelated source data to be

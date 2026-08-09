@@ -1,6 +1,7 @@
 defmodule ClusterMurmur.Triggers.EventTriggerExecutionPlannerTest do
   use ExUnit.Case, async: true
 
+  alias ClusterMurmur.Config.EventPolicy
   alias ClusterMurmur.Events.{Event, Matcher}
   alias ClusterMurmur.Events.Matcher.Predicate
   alias ClusterMurmur.Triggers.{EventTrigger, EventTriggerExecutionPlanner}
@@ -18,12 +19,34 @@ defmodule ClusterMurmur.Triggers.EventTriggerExecutionPlannerTest do
     assert plan.event == event
     assert plan.executed_at == executed_at
     assert plan.cooldown_until == ~U[2026-08-04 12:01:00.000000Z]
+    assert plan.event_policy == EventPolicy.default()
 
     inspected = inspect(plan)
     refute inspected =~ trigger.id
     refute inspected =~ event.id
     refute inspected =~ "private"
     refute inspected =~ "2026"
+  end
+
+  test "carries one explicit validated event policy into the redacted plan" do
+    policy = %EventPolicy{dedupe_window_ms: 90_000, retention_ms: 2_592_000_000}
+
+    assert {:ok, %Plan{event_policy: ^policy}} =
+             EventTriggerExecutionPlanner.plan(
+               trigger(),
+               event(),
+               nil,
+               ~U[2026-08-04 12:00:00.000000Z],
+               policy
+             )
+
+    assert EventTriggerExecutionPlanner.plan(
+             trigger(),
+             event(),
+             nil,
+             ~U[2026-08-04 12:00:00.000000Z],
+             %{policy | dedupe_window_ms: 0}
+           ) == {:error, :invalid_event_policy}
   end
 
   test "skips an active cooldown at the supplied execution instant" do

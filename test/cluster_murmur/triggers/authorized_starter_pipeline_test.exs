@@ -33,6 +33,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
   alias ClusterMurmur.Repo.Migrations.{
     AddPublicationAttemptDispatching,
     CreateConversations,
+    CreateEventDedupeMarkers,
     CreateEventDispatches,
     CreateEvents,
     CreateMessages,
@@ -71,6 +72,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
   @dispatching_version 20_260_805_231_000
   @responder_claims_version 20_260_808_060_000
   @dispatches_version 20_260_808_150_000
+  @markers_version 20_260_809_020_000
   @executed_at ~U[2026-08-07 02:00:00.000000Z]
   @generated_at ~U[2026-08-07 02:00:01.000000Z]
   @publication_started_at ~U[2026-08-07 02:00:02.000000Z]
@@ -136,7 +138,8 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
       {@attempts_version, CreatePublicationAttempts},
       {@dispatching_version, AddPublicationAttemptDispatching},
       {@responder_claims_version, CreateResponderGenerationClaims},
-      {@dispatches_version, CreateEventDispatches}
+      {@dispatches_version, CreateEventDispatches},
+      {@markers_version, CreateEventDedupeMarkers}
     ]
 
     for {version, migration} <- migrations do
@@ -169,6 +172,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
           "conversations",
           "trigger_executions",
           "event_dispatches",
+          "event_dedupe_markers",
           "events"
         ] do
       Ecto.Adapters.SQL.query!(Repo, "DELETE FROM #{table}", [], log: false)

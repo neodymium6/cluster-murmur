@@ -1,15 +1,30 @@
 defmodule ClusterMurmur.Persistence.TriggerExecutionStoreTest do
   use ExUnit.Case, async: false
 
+  alias ClusterMurmur.Config.EventPolicy
   alias ClusterMurmur.Events.{Event, Matcher}
   alias ClusterMurmur.Events.Matcher.Predicate
-  alias ClusterMurmur.Persistence.{EventStore, TriggerExecution, TriggerExecutionStore}
+
+  alias ClusterMurmur.Persistence.{
+    EventDedupeMarker,
+    EventStore,
+    TriggerExecution,
+    TriggerExecutionStore
+  }
+
   alias ClusterMurmur.Repo
-  alias ClusterMurmur.Repo.Migrations.{CreateEvents, CreateTriggerExecutions}
+
+  alias ClusterMurmur.Repo.Migrations.{
+    CreateEventDedupeMarkers,
+    CreateEvents,
+    CreateTriggerExecutions
+  }
+
   alias ClusterMurmur.Triggers.{EventTrigger, EventTriggerExecutionPlanner}
 
   @events_version 20_260_804_180_500
   @executions_version 20_260_804_200_000
+  @markers_version 20_260_809_020_000
 
   setup_all do
     assert Ecto.Migrator.up(Repo, @events_version, CreateEvents,
@@ -24,7 +39,19 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStoreTest do
              log_migrator_sql: false
            ) == :ok
 
+    assert Ecto.Migrator.up(Repo, @markers_version, CreateEventDedupeMarkers,
+             log: false,
+             log_migrations_sql: false,
+             log_migrator_sql: false
+           ) == :ok
+
     on_exit(fn ->
+      Ecto.Migrator.down(Repo, @markers_version, CreateEventDedupeMarkers,
+        log: false,
+        log_migrations_sql: false,
+        log_migrator_sql: false
+      )
+
       Ecto.Migrator.down(Repo, @executions_version, CreateTriggerExecutions,
         log: false,
         log_migrations_sql: false,
@@ -43,6 +70,7 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStoreTest do
 
   setup do
     Ecto.Adapters.SQL.query!(Repo, "DELETE FROM trigger_executions", [], log: false)
+    Ecto.Adapters.SQL.query!(Repo, "DELETE FROM event_dedupe_markers", [], log: false)
     Ecto.Adapters.SQL.query!(Repo, "DELETE FROM events", [], log: false)
     :ok
   end
@@ -145,6 +173,78 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStoreTest do
 
     assert execution.event_id == "event-3"
     assert Repo.aggregate(TriggerExecution, :count) == 2
+  end
+
+  test "atomically suppresses different events inside one dedupe window" do
+    policy = %EventPolicy{dedupe_window_ms: 300_000, retention_ms: 7_776_000_000}
+    key = "observation.failed:example-target"
+    first = event(id: "dedupe-event-1", dedupe_key: key)
+    repeated = event(id: "dedupe-event-2", dedupe_key: key)
+    boundary = event(id: "dedupe-event-3", dedupe_key: key)
+
+    for event <- [first, repeated, boundary] do
+      assert {:ok, _record} = EventStore.insert(event)
+    end
+
+    first_plan = plan!(first, ~U[2026-08-04 12:00:00.000000Z], "dedupe-trigger", policy)
+    assert {:ok, _execution} = TriggerExecutionStore.start(first_plan)
+    assert TriggerExecutionStore.start(first_plan) == {:skip, :execution_in_progress}
+
+    assert repeated
+           |> plan!(~U[2026-08-04 12:04:59.999999Z], "dedupe-trigger", policy)
+           |> TriggerExecutionStore.start() == {:skip, :dedupe_window}
+
+    assert Repo.get!(EventDedupeMarker, key).event_id == first.id
+
+    assert {:ok, _execution} =
+             boundary
+             |> plan!(~U[2026-08-04 12:05:00.000000Z], "dedupe-trigger", policy)
+             |> TriggerExecutionStore.start()
+
+    persisted = Repo.get!(EventDedupeMarker, key)
+    assert persisted.event_id == boundary.id
+    assert persisted.accepted_at == ~U[2026-08-04 12:05:00.000000Z]
+  end
+
+  test "does not claim a dedupe key when durable cooldown skips the event" do
+    baseline = event(id: "cooldown-baseline")
+    keyed = event(id: "cooldown-keyed", dedupe_key: "observation.failed:example-target")
+
+    for event <- [baseline, keyed], do: assert({:ok, _record} = EventStore.insert(event))
+
+    assert {:ok, _execution} =
+             baseline
+             |> plan!(~U[2026-08-04 12:00:00.000000Z])
+             |> TriggerExecutionStore.start()
+
+    assert keyed
+           |> plan!(~U[2026-08-04 12:00:59.999999Z])
+           |> TriggerExecutionStore.start() == {:skip, :cooldown}
+
+    assert Repo.aggregate(EventDedupeMarker, :count) == 0
+  end
+
+  test "rejects a marker that is not correlated with its immutable event" do
+    key = "observation.failed:example-target"
+    marker_event = event(id: "marker-event", dedupe_key: "different-key")
+    candidate = event(id: "candidate-event", dedupe_key: key)
+
+    for event <- [marker_event, candidate], do: assert({:ok, _record} = EventStore.insert(event))
+
+    assert {:ok, _marker} =
+             %EventDedupeMarker{}
+             |> EventDedupeMarker.changeset(%ClusterMurmur.Events.DedupeEvaluator.Marker{
+               dedupe_key: key,
+               event_id: marker_event.id,
+               accepted_at: ~U[2026-08-04 12:00:00.000000Z]
+             })
+             |> Repo.insert()
+
+    assert candidate
+           |> plan!(~U[2026-08-04 12:01:00.000000Z])
+           |> TriggerExecutionStore.start() == {:error, :invalid_execution}
+
+    assert Repo.aggregate(TriggerExecution, :count) == 0
   end
 
   test "rejects malformed plans before accessing storage" do
@@ -382,9 +482,20 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStoreTest do
     execution
   end
 
-  defp plan!(event, executed_at, trigger_id \\ "failure-conversation") do
+  defp plan!(
+         event,
+         executed_at,
+         trigger_id \\ "failure-conversation",
+         event_policy \\ EventPolicy.default()
+       ) do
     assert {:ok, plan} =
-             EventTriggerExecutionPlanner.plan(trigger(trigger_id), event, nil, executed_at)
+             EventTriggerExecutionPlanner.plan(
+               trigger(trigger_id),
+               event,
+               nil,
+               executed_at,
+               event_policy
+             )
 
     plan
   end

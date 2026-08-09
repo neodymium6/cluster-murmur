@@ -110,7 +110,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchSchedulerTest do
     def claim(_candidate, _now), do: :unused
     def complete(_claim, _now), do: :unused
     def fetch(_event_id), do: :unused
-    def authorize(_trigger, _event, _now), do: :unused
+    def authorize(_trigger, _event, _now, _event_policy), do: :unused
 
     def consume(_plan), do: :unused
     def generate(_request, _settings, _transport), do: :unused

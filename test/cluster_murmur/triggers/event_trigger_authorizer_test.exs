@@ -1,6 +1,7 @@
 defmodule ClusterMurmur.Triggers.EventTriggerAuthorizerTest do
   use ExUnit.Case, async: true
 
+  alias ClusterMurmur.Config.EventPolicy
   alias ClusterMurmur.Events.{Event, Matcher}
   alias ClusterMurmur.Events.Matcher.Predicate
   alias ClusterMurmur.Persistence.TriggerExecution
@@ -63,6 +64,29 @@ defmodule ClusterMurmur.Triggers.EventTriggerAuthorizerTest do
     refute inspected =~ "2026"
   end
 
+  test "carries an explicit event policy through authorization and validation" do
+    policy = %EventPolicy{dedupe_window_ms: 90_000, retention_ms: 2_592_000_000}
+
+    assert {:ok, %Authorization{plan: %{event_policy: ^policy}} = authorization} =
+             EventTriggerAuthorizer.authorize(
+               trigger(),
+               event(),
+               @executed_at,
+               policy,
+               FakeStore
+             )
+
+    assert EventTriggerAuthorizer.validate(authorization) == :ok
+
+    assert EventTriggerAuthorizer.authorize(
+             trigger(),
+             event(),
+             @executed_at,
+             %{policy | dedupe_window_ms: 0},
+             FakeStore
+           ) == {:error, :invalid_event_policy}
+  end
+
   test "returns stable skips for nonmatches, cooldowns, and existing pairs" do
     nonmatching = %{event() | type: "observation.recovered"}
 
@@ -73,6 +97,7 @@ defmodule ClusterMurmur.Triggers.EventTriggerAuthorizerTest do
 
     for {response, expected} <- [
           {{:skip, :cooldown}, {:skip, :cooldown}},
+          {{:skip, :dedupe_window}, {:skip, :dedupe_window}},
           {{:skip, :execution_in_progress}, {:skip, :execution_in_progress}},
           {{:skip, :already_terminal}, {:skip, :already_terminal}}
         ] do

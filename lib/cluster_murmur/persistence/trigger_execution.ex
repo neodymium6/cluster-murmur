@@ -10,6 +10,7 @@ defmodule ClusterMurmur.Persistence.TriggerExecution do
 
   import Ecto.Changeset
 
+  alias ClusterMurmur.Config.EventPolicy
   alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.Events.{MatcherEvaluator, Validator}
   alias ClusterMurmur.Triggers.EventTriggerValidator
@@ -75,6 +76,7 @@ defmodule ClusterMurmur.Persistence.TriggerExecution do
     exact_plan?(plan) and
       EventTriggerValidator.validate(plan.trigger) == :ok and
       Validator.validate(plan.event) == :ok and
+      EventPolicy.validate(plan.event_policy) == :ok and
       MatcherEvaluator.match(plan.trigger.matcher, plan.event) == {:ok, true} and
       valid_datetime?(plan.executed_at) and
       valid_datetime?(plan.cooldown_until) and

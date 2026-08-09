@@ -3,15 +3,26 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
   Atomically records one validated event-trigger execution lifecycle.
 
   The transaction requires the immutable event to be committed unchanged,
-  rejects a previously started trigger/event pair, and rechecks the latest
-  durable cooldown before inserting a started record. Exact compare-and-set
-  transitions then finish it once. The store never runs the action.
+  rejects a previously started trigger/event pair, rechecks the latest durable
+  cooldown, and atomically advances the event dedupe marker before inserting a
+  started record. Exact compare-and-set transitions then finish it once. The
+  store never runs the action.
   """
 
   import Ecto.Query, only: [from: 2]
 
   alias ClusterMurmur.DateTimeValidator
-  alias ClusterMurmur.Persistence.{EventStore, TriggerExecution, TriggerExecutionValidator}
+  alias ClusterMurmur.Events.DedupeEvaluator
+  alias ClusterMurmur.Events.DedupeEvaluator.Marker
+
+  alias ClusterMurmur.Persistence.{
+    EventDedupeMarker,
+    EventDedupeMarkerValidator,
+    EventStore,
+    TriggerExecution,
+    TriggerExecutionValidator
+  }
+
   alias ClusterMurmur.Repo
   alias ClusterMurmur.Triggers.TriggerExecutionRecovery
   alias ClusterMurmur.Triggers.EventTriggerExecutionPlanner.Plan
@@ -43,7 +54,7 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
           | :invalid_execution
           | :storage_unavailable
 
-  @type skip_reason :: :already_terminal | :cooldown | :execution_in_progress
+  @type skip_reason :: :already_terminal | :cooldown | :dedupe_window | :execution_in_progress
 
   @doc "Starts one plan when its event, deduplication key, and durable cooldown permit it."
   @spec start(term()) ::
@@ -133,11 +144,11 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
         {:ok, execution}
 
       {:error, {:skip, reason}}
-      when reason in [:already_terminal, :cooldown, :execution_in_progress] ->
+      when reason in [:already_terminal, :cooldown, :dedupe_window, :execution_in_progress] ->
         {:skip, reason}
 
       {:error, reason}
-      when reason in [:event_conflict, :event_not_found, :execution_conflict] ->
+      when reason in [:event_conflict, :event_not_found, :execution_conflict, :invalid_execution] ->
         {:error, reason}
 
       _failure ->
@@ -149,6 +160,7 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
     with :ok <- require_identical_event(plan),
          :ok <- reject_existing_pair(candidate),
          :ok <- require_expired_cooldown(candidate),
+         :ok <- accept_dedupe_marker(plan),
          {:ok, %TriggerExecution{} = execution} <- Repo.insert(changeset) do
       execution
     else
@@ -223,6 +235,82 @@ defmodule ClusterMurmur.Persistence.TriggerExecutionStore do
         if DateTime.compare(cooldown_until, candidate.executed_at) == :gt,
           do: {:error, {:skip, :cooldown}},
           else: :ok
+    end
+  end
+
+  defp accept_dedupe_marker(%Plan{event: %{dedupe_key: nil}}), do: :ok
+
+  defp accept_dedupe_marker(%Plan{} = plan) do
+    with {:ok, persisted, marker} <- load_dedupe_marker(plan.event.dedupe_key),
+         {:ok, decision} <-
+           DedupeEvaluator.evaluate(plan.event, marker, plan.event_policy, plan.executed_at) do
+      persist_dedupe_decision(decision, persisted)
+    else
+      {:error, :storage_unavailable} = error -> error
+      {:error, :invalid_event_dedupe_marker} -> {:error, :invalid_execution}
+      _failure -> {:error, :invalid_execution}
+    end
+  end
+
+  defp load_dedupe_marker(dedupe_key) do
+    case Repo.get(EventDedupeMarker, dedupe_key) do
+      nil ->
+        {:ok, nil, nil}
+
+      %EventDedupeMarker{} = persisted ->
+        with :ok <- EventDedupeMarkerValidator.validate(persisted),
+             {:ok, marker_event} <- EventStore.fetch(persisted.event_id),
+             true <- marker_event.dedupe_key === persisted.dedupe_key do
+          {:ok, persisted,
+           %Marker{
+             dedupe_key: persisted.dedupe_key,
+             event_id: persisted.event_id,
+             accepted_at: persisted.accepted_at
+           }}
+        else
+          {:error, :storage_unavailable} = error -> error
+          _failure -> {:error, :invalid_event_dedupe_marker}
+        end
+    end
+  end
+
+  defp persist_dedupe_decision({:skip, :dedupe_window}, _persisted),
+    do: {:error, {:skip, :dedupe_window}}
+
+  defp persist_dedupe_decision({:accept, nil}, nil), do: :ok
+
+  defp persist_dedupe_decision({:accept, %Marker{} = marker}, nil) do
+    changeset = EventDedupeMarker.changeset(%EventDedupeMarker{}, marker)
+
+    case Repo.insert(changeset) do
+      {:ok, %EventDedupeMarker{}} -> :ok
+      _failure -> {:error, :invalid_execution}
+    end
+  end
+
+  defp persist_dedupe_decision({:accept, %Marker{} = marker}, persisted) do
+    current = %Marker{
+      dedupe_key: persisted.dedupe_key,
+      event_id: persisted.event_id,
+      accepted_at: persisted.accepted_at
+    }
+
+    if marker === current, do: :ok, else: replace_dedupe_marker(persisted, marker)
+  end
+
+  defp persist_dedupe_decision(_decision, _persisted), do: {:error, :invalid_execution}
+
+  defp replace_dedupe_marker(persisted, marker) do
+    query =
+      from stored in EventDedupeMarker,
+        where:
+          stored.dedupe_key == ^persisted.dedupe_key and
+            stored.event_id == ^persisted.event_id and
+            stored.accepted_at == ^persisted.accepted_at
+
+    case Repo.update_all(query, set: [event_id: marker.event_id, accepted_at: marker.accepted_at]) do
+      {1, nil} -> :ok
+      _failure -> {:error, :invalid_execution}
     end
   end
 
