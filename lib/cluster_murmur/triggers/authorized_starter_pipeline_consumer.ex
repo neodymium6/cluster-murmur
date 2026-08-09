@@ -77,7 +77,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer do
              plan.executed_at,
              context.adapters,
              configuration,
-             MapSet.new()
+             %{}
            ) do
       :ok
     else
@@ -108,7 +108,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer do
              plan.executed_at,
              context.adapters,
              configuration,
-             MapSet.new()
+             %{}
            ) do
       :ok
     else
@@ -170,7 +170,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer do
          true <- entry.executed_at === executed_at,
          true <- correlated_input?(input, entry),
          true <- input.configuration === configuration,
-         false <- MapSet.member?(conversation_ids, input.conversation_id),
+         false <- Map.has_key?(conversation_ids, input.conversation_id),
          true <- not_before_match?(input.generated_at, event, executed_at),
          :ok <- AuthorizedStarterPipeline.validate_shared_input(input, adapters) do
       validate_entries(
@@ -179,7 +179,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer do
         executed_at,
         adapters,
         configuration,
-        MapSet.put(conversation_ids, input.conversation_id)
+        Map.put(conversation_ids, input.conversation_id, true)
       )
     else
       _failure -> {:error, :invalid_starter_context}

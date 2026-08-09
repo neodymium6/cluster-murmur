@@ -24,7 +24,7 @@ defmodule ClusterMurmur.Observers.TargetCatalog do
   @doc "Normalizes one bounded adapter target list into stable ID order."
   @spec parse(term()) :: {:ok, t()} | {:error, error()}
   def parse(targets) when is_list(targets) do
-    case collect(targets, MapSet.new(), [], 0, 0) do
+    case collect(targets, %{}, [], 0, 0) do
       {:ok, normalized} ->
         catalog = %__MODULE__{targets: Enum.sort_by(normalized, & &1.id)}
 
@@ -48,7 +48,7 @@ defmodule ClusterMurmur.Observers.TargetCatalog do
   @spec validate(term()) :: :ok | {:error, error()}
   def validate(%__MODULE__{} = catalog) do
     with true <- exact_catalog?(catalog),
-         {:ok, ids} <- validate_targets(catalog.targets, MapSet.new(), [], 0, 0),
+         {:ok, ids} <- validate_targets(catalog.targets, %{}, [], 0, 0),
          true <- ids == Enum.sort(ids) do
       :ok
     else
@@ -66,12 +66,12 @@ defmodule ClusterMurmur.Observers.TargetCatalog do
 
   defp collect([raw | remaining], seen, targets, count, bytes) when count < @max_targets do
     with {:ok, target} <- Target.parse(raw),
-         false <- MapSet.member?(seen, target.id),
+         false <- Map.has_key?(seen, target.id),
          next_bytes = bytes + byte_size(target.id),
          true <- next_bytes <= @max_total_id_bytes do
       collect(
         remaining,
-        MapSet.put(seen, target.id),
+        Map.put(seen, target.id, true),
         [target | targets],
         count + 1,
         next_bytes
@@ -89,12 +89,12 @@ defmodule ClusterMurmur.Observers.TargetCatalog do
   defp validate_targets([target | remaining], seen, ids, count, bytes)
        when count < @max_targets do
     with :ok <- Target.validate(target),
-         false <- MapSet.member?(seen, target.id),
+         false <- Map.has_key?(seen, target.id),
          next_bytes = bytes + byte_size(target.id),
          true <- next_bytes <= @max_total_id_bytes do
       validate_targets(
         remaining,
-        MapSet.put(seen, target.id),
+        Map.put(seen, target.id, true),
         [target.id | ids],
         count + 1,
         next_bytes
