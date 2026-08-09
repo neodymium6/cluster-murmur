@@ -127,4 +127,8 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand("../priv/repo/migrations/20260809062000_create_schedule_states.exs", __DIR__)
+)
+
 ExUnit.start()
