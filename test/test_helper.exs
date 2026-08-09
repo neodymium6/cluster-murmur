@@ -113,4 +113,11 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand(
+    "../priv/repo/migrations/20260809050000_add_event_retention_lookup_indexes.exs",
+    __DIR__
+  )
+)
+
 ExUnit.start()
