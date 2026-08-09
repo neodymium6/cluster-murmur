@@ -184,10 +184,14 @@ and an injected UTC instant without reading storage or a clock. A narrow store
 can prune at most 100 dedupe markers at or before that cutoff without returning
 their values. One explicit cycle validates the complete configuration and an
 injected UTC instant before planning and invoking exactly one such store batch,
-and returns only the aggregate count. Event-record retention and deployment
-wiring remain future work. An opt-in worker can schedule these
+and returns only the aggregate count. Referenced-lifecycle retention and
+deployment wiring remain future work. An opt-in worker can schedule these
 cycles without overlap and retains only redacted aggregate status; it is not
 installed automatically.
+A separate bounded sweep can scan at most 100 expired events, delete only
+records with no trigger-execution, conversation, dispatch, or dedupe-marker
+reference, and advance a durable redacted cursor past referenced rows. It does
+not cascade lifecycle data.
 Observer
 target responses now pass a closed 256-entry and 64 KiB
 identity catalog that rejects duplicates and sorts accepted redacted targets

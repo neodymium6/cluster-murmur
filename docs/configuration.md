@@ -84,7 +84,8 @@ optionally accepts exact `state_tracking`, `conversation_defaults`, and
 `event_policy` mappings. Omitting `event_policy` uses a five-minute dedupe
 window and 90-day retention. Both event durations must be positive, no longer
 than 365 days, and retention must be at least the dedupe window. Trigger
-authorization enforces the dedupe window; retained data is not yet deleted.
+authorization enforces the dedupe window. Fixed bounded retention paths can
+delete expired markers and unreferenced event records.
 Omitting `state_tracking` uses the fixed two-failure and two-success defaults.
 All five include categories must be present, even when a category has no
 patterns. Every other field or category is invalid. Category values are lists
@@ -224,15 +225,15 @@ lease, advance the next run, and update its local-date counter atomically. Lease
 claim candidates are evaluated purely against active hours and a persisted
 counter normalized to the calculated current local date. Renewal, early
 release, external execution, exactly-once delivery, other schemas and stores,
-automatic migration execution, event-record deletion, and retention-worker
-deployment remain later stages. A
+automatic migration execution, and retention-worker deployment remain later
+stages. A
 separate bounded event store validates complete events before storage, inserts
 immutable event IDs idempotently, and rejects conflicting reuse without
 replacing committed facts. Its primary-key-only read restores at most one event
 through the shared bounded validator. The startup configuration normalizes
 bounded event retention and dedupe-window durations, and trigger authorization
-enforces durable dedupe markers. Event listing, event-record retention, and
-retention-worker deployment remain later stages. A
+enforces durable dedupe markers. Event listing, referenced-lifecycle retention,
+and retention-worker deployment remain later stages. A
 narrow observation-ingestion transaction restores prior entity state, applies
 the pure debounce and event plan, and commits the next state with its optional
 event atomically. It performs no observer call or trigger action.
@@ -353,7 +354,10 @@ indexed for a later bounded event-record cleanup store. These indexes do not
 enable deletion, cascade related lifecycle records, or expose stored values.
 A constrained singleton sweep row can later retain a redacted ordered cursor
 across restarts so referenced events cannot starve later cleanup candidates.
-The row remains inert until the fixed event-retention store is implemented.
+A fixed store transaction now uses that cursor to scan at most 100 expired
+events and delete only records with no trigger-execution, conversation,
+dispatch, or dedupe-marker reference. Referenced records remain until a later
+lifecycle-specific retention decision removes those references.
 
 Complete LLM payload retention remains disabled by default. Enabling it does
 not permit credentials, private endpoints, or unrelated source data to be
