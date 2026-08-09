@@ -230,9 +230,6 @@ defmodule ClusterMurmur.Conversations.StarterReplyFinisher do
     end
   end
 
-  defp apply_decision(_decision, _recorded, _configuration, _cooldowns, _settings, _store),
-    do: {:error, :invalid_starter_completion}
-
   defp resolve_group(recorded, configuration) do
     binding = recorded.published.started.plan.persisted.generated.plan.started.plan.binding
 
