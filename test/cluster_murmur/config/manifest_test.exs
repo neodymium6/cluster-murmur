@@ -97,14 +97,30 @@ defmodule ClusterMurmur.Config.ManifestTest do
       valid_document()
       |> Map.put("state_tracking", %{
         "failures_required" => 3,
-        "successes_required" => 4
+        "successes_required" => 4,
+        "overrides" => [
+          %{
+            "source" => "observer.example",
+            "subject" => "target-a",
+            "failures_required" => 5,
+            "successes_required" => 6
+          }
+        ]
       })
 
     assert {:ok,
             %Manifest{
               state_tracking: %StateTracking{
                 failures_required: 3,
-                successes_required: 4
+                successes_required: 4,
+                overrides: %{
+                  {"observer.example", "target-a"} => %StateTracking.Override{
+                    source: "observer.example",
+                    subject: "target-a",
+                    failures_required: 5,
+                    successes_required: 6
+                  }
+                }
               }
             }} = Manifest.parse(document)
   end

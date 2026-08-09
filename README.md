@@ -127,10 +127,12 @@ restore path decodes records through the same bounded domain validator. One
 atomic observation-ingestion store now restores prior state, delegates the
 factual debounce and event decision to the pure planner, and commits the next
 state with its optional event or rolls both back. A closed state-tracking
-configuration value now validates the fixed failure and success counts and
-projects them to the only runtime debounce policy shape. The startup manifest
-and complete public configuration carry either those defaults or one exact
-explicit mapping before any worker construction. Standard
+configuration value now validates fixed default failure and success counts plus
+at most 256 complete source or source-subject overrides. It resolves exact
+subject, then source, then default precedence to the only runtime debounce-policy
+shape without exposing selectors through inspection. The startup manifest and
+complete public configuration normalize the complete mapping before any worker
+construction. Standard
 five-field schedule-trigger and bounded
 shifted-exponential stochastic-trigger validation use a reviewed, embedded IANA
 timezone snapshot without runtime updates. Pure shifted-exponential next-run
