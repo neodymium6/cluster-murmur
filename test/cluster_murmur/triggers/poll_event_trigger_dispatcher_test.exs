@@ -18,7 +18,7 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcherTest do
   @executed_at ~U[2026-08-07 02:00:00.000000Z]
 
   defmodule FakeAuthorizer do
-    def authorize(trigger, event, executed_at) do
+    def authorize(trigger, event, executed_at, event_policy) do
       Process.put({__MODULE__, :calls}, calls() ++ [{event.id, trigger.id}])
       record({:authorize, {event.id, trigger.id}})
 
@@ -28,6 +28,7 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcherTest do
             trigger,
             event,
             executed_at,
+            event_policy,
             ClusterMurmur.Triggers.PollEventTriggerDispatcherTest.FakeStore
           )
 
@@ -53,6 +54,8 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcherTest do
 
   defmodule FakeStore do
     def start(plan) do
+      Process.put({__MODULE__, :policies}, [plan.event_policy | policies()])
+
       {:ok,
        %ClusterMurmur.Persistence.TriggerExecution{
          trigger_id: plan.trigger.id,
@@ -64,6 +67,8 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcherTest do
        }
        |> Ecto.put_meta(state: :loaded)}
     end
+
+    defp policies, do: Process.get({__MODULE__, :policies}, [])
   end
 
   defmodule FakeConsumer do
@@ -109,6 +114,7 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcherTest do
     Process.put({FakeAuthorizer, :responses}, %{})
     Process.put({FakeConsumer, :calls}, [])
     Process.put({FakeConsumer, :responses}, %{})
+    Process.put({FakeStore, :policies}, [])
     Process.put({__MODULE__, :trace}, [])
     :ok
   end
@@ -152,6 +158,9 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcherTest do
 
     assert Process.get({FakeAuthorizer, :calls}) == expected
     assert Process.get({FakeConsumer, :calls}) == Enum.with_index(expected, &{&2, &1})
+
+    assert Process.get({FakeStore, :policies}) ==
+             List.duplicate(configuration.event_policy, 3)
 
     assert Process.get({__MODULE__, :trace}) == [
              :preflight,

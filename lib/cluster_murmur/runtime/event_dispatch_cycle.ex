@@ -103,6 +103,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
         :attempted_match_count,
         :dispatched_count,
         :skipped_count,
+        :dedupe_suppressed_count,
         :dispatch_failure_count
       ]
     }
@@ -126,7 +127,8 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
       :attempted_match_count,
       :dispatched_count,
       :skipped_count,
-      :dispatch_failure_count
+      :dispatch_failure_count,
+      dedupe_suppressed_count: 0
     ]
 
     @type t :: %__MODULE__{
@@ -138,6 +140,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
             attempted_match_count: non_neg_integer(),
             dispatched_count: non_neg_integer(),
             skipped_count: non_neg_integer(),
+            dedupe_suppressed_count: non_neg_integer(),
             dispatch_failure_count: non_neg_integer()
           }
   end
@@ -147,7 +150,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
   @claim_lease_seconds 60
   @claim_token_bytes 32
   @validation_at ~U[2026-01-01 00:00:00.000000Z]
-  @terminal_skip_reasons [:already_terminal, :cooldown]
+  @terminal_skip_reasons [:already_terminal, :cooldown, :dedupe_window]
   @nonterminal_skip_reasons [:execution_in_progress]
   @failure_reasons [
     :authorization_failed,
@@ -238,7 +241,15 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
          {:ok, %Plan{} = plan} <- plan(candidates, events, configuration, now),
          {:ok, consumer, consumer_context} <- build_consumer_context(plan, context, now),
          :ok <- preflight_consumer(consumer, plan, configuration, consumer_context),
-         result <- execute(plan, now, consumer, consumer_context, adapters),
+         result <-
+           execute(
+             plan,
+             configuration.event_policy,
+             now,
+             consumer,
+             consumer_context,
+             adapters
+           ),
          :ok <- validate_result(result) do
       {:ok, result}
     else
@@ -273,6 +284,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
             result.attempted_match_count == result.planned_match_count) and
          result.attempted_match_count ==
            result.dispatched_count + result.skipped_count + result.dispatch_failure_count and
+         result.dedupe_suppressed_count <= result.skipped_count and
          (result.completed_count < result.claimed_count or result.dispatch_failure_count == 0) do
       :ok
     else
@@ -299,7 +311,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
     with true <- exact_adapters?(adapters),
          true <- valid_module?(adapters.dispatches, list_available: 1, claim: 2, complete: 2),
          true <- valid_module?(adapters.events, fetch: 1),
-         true <- valid_module?(adapters.authorizer, authorize: 3) do
+         true <- valid_module?(adapters.authorizer, authorize: 4) do
       :ok
     else
       _failure -> {:error, :invalid_event_dispatch_cycle}
@@ -498,7 +510,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
     _kind, _reason -> {:error, :invalid_event_dispatch_cycle}
   end
 
-  defp execute(plan, now, consumer, consumer_context, adapters) do
+  defp execute(plan, event_policy, now, consumer, consumer_context, adapters) do
     initial = %Result{
       candidate_count: plan.candidate_count,
       claimed_count: 0,
@@ -508,7 +520,8 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
       attempted_match_count: 0,
       dispatched_count: 0,
       skipped_count: 0,
-      dispatch_failure_count: 0
+      dispatch_failure_count: 0,
+      dedupe_suppressed_count: 0
     }
 
     {result, _next_index} =
@@ -517,6 +530,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
           entry,
           match_index,
           result,
+          event_policy,
           now,
           consumer,
           consumer_context,
@@ -527,7 +541,16 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
     result
   end
 
-  defp execute_entry(entry, match_index, result, now, consumer, consumer_context, adapters) do
+  defp execute_entry(
+         entry,
+         match_index,
+         result,
+         event_policy,
+         now,
+         consumer,
+         consumer_context,
+         adapters
+       ) do
     next_index = match_index + length(entry.triggers)
 
     case claim(adapters.dispatches, entry.candidate, now) do
@@ -537,6 +560,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
             entry,
             match_index,
             %{result | claimed_count: result.claimed_count + 1},
+            event_policy,
             now,
             consumer,
             consumer_context,
@@ -557,11 +581,29 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
     end
   end
 
-  defp dispatch_matches(entry, match_index, result, now, consumer, context, authorizer) do
+  defp dispatch_matches(
+         entry,
+         match_index,
+         result,
+         event_policy,
+         now,
+         consumer,
+         context,
+         authorizer
+       ) do
     entry.triggers
     |> Enum.with_index(match_index)
     |> Enum.reduce({result, true}, fn {trigger, index}, {result, terminal?} ->
-      case authorize_and_consume(authorizer, consumer, context, entry.event, trigger, now, index) do
+      case authorize_and_consume(
+             authorizer,
+             consumer,
+             context,
+             entry.event,
+             trigger,
+             event_policy,
+             now,
+             index
+           ) do
         :dispatched ->
           {%{
              result
@@ -569,11 +611,13 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
                dispatched_count: result.dispatched_count + 1
            }, terminal?}
 
-        :skipped ->
+        {:skipped, reason} ->
           {%{
              result
              | attempted_match_count: result.attempted_match_count + 1,
-               skipped_count: result.skipped_count + 1
+               skipped_count: result.skipped_count + 1,
+               dedupe_suppressed_count:
+                 result.dedupe_suppressed_count + if(reason == :dedupe_window, do: 1, else: 0)
            }, terminal?}
 
         :failed ->
@@ -586,15 +630,24 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
     end)
   end
 
-  defp authorize_and_consume(authorizer, consumer, context, event, trigger, now, index) do
-    case authorizer.authorize(trigger, event, now) do
+  defp authorize_and_consume(
+         authorizer,
+         consumer,
+         context,
+         event,
+         trigger,
+         event_policy,
+         now,
+         index
+       ) do
+    case authorizer.authorize(trigger, event, now, event_policy) do
       {:ok, %Authorization{} = authorization} ->
-        if valid_authorization?(authorization, event, trigger, now),
+        if valid_authorization?(authorization, event, trigger, event_policy, now),
           do: consume(consumer, authorization, index, context),
           else: :failed
 
       {:skip, reason} when reason in @terminal_skip_reasons ->
-        :skipped
+        {:skipped, reason}
 
       {:skip, reason} when reason in @nonterminal_skip_reasons ->
         :failed
@@ -622,9 +675,10 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
     _kind, _reason -> :failed
   end
 
-  defp valid_authorization?(authorization, event, trigger, now) do
+  defp valid_authorization?(authorization, event, trigger, event_policy, now) do
     EventTriggerAuthorizer.validate(authorization) == :ok and
       authorization.plan.event === event and authorization.plan.trigger === trigger and
+      authorization.plan.event_policy === event_policy and
       authorization.plan.executed_at === now
   end
 

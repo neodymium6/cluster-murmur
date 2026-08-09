@@ -43,7 +43,7 @@ defmodule ClusterMurmur.Triggers.EventTriggerBatchAuthorizer do
       :failures
     ]
 
-    @type skip_reason :: :already_terminal | :cooldown | :execution_in_progress
+    @type skip_reason :: :already_terminal | :cooldown | :dedupe_window | :execution_in_progress
     @type failure_reason ::
             :authorization_failed
             | :event_conflict
@@ -69,7 +69,7 @@ defmodule ClusterMurmur.Triggers.EventTriggerBatchAuthorizer do
   @max_triggers 256
   @result_keys Result.__struct__() |> Map.keys()
   @result_key_count length(@result_keys)
-  @skip_reasons [:already_terminal, :cooldown, :execution_in_progress]
+  @skip_reasons [:already_terminal, :cooldown, :dedupe_window, :execution_in_progress]
   @failure_reasons [
     :authorization_failed,
     :event_conflict,

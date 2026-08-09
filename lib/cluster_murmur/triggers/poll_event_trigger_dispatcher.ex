@@ -30,6 +30,7 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcher do
             :already_terminal
             | :authorization_failed
             | :cooldown
+            | :dedupe_window
             | :dispatch_failed
             | :event_conflict
             | :event_not_found
@@ -75,7 +76,7 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcher do
           }
   end
 
-  @skip_reasons [:already_terminal, :cooldown, :execution_in_progress]
+  @skip_reasons [:already_terminal, :cooldown, :dedupe_window, :execution_in_progress]
   @failure_reasons [
     :authorization_failed,
     :event_conflict,
@@ -111,7 +112,14 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcher do
          :ok <- validate_authorizer(authorizer),
          :ok <- validate_consumer(consumer),
          :ok <- preflight_consumer(consumer, plan, poll_result, configuration, consumer_context) do
-      {:ok, dispatch_matches(plan, authorizer, consumer, consumer_context)}
+      {:ok,
+       dispatch_matches(
+         plan,
+         configuration.event_policy,
+         authorizer,
+         consumer,
+         consumer_context
+       )}
     else
       _failure -> {:error, :invalid_poll_event_dispatch}
     end
@@ -132,7 +140,7 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcher do
       do: {:error, :invalid_poll_event_dispatch}
 
   defp validate_authorizer(authorizer) do
-    if Code.ensure_loaded?(authorizer) and function_exported?(authorizer, :authorize, 3),
+    if Code.ensure_loaded?(authorizer) and function_exported?(authorizer, :authorize, 4),
       do: :ok,
       else: {:error, :invalid_poll_event_dispatch}
   end
@@ -155,7 +163,7 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcher do
     _kind, _reason -> {:error, :invalid_poll_event_dispatch}
   end
 
-  defp dispatch_matches(plan, authorizer, consumer, consumer_context) do
+  defp dispatch_matches(plan, event_policy, authorizer, consumer, consumer_context) do
     outcomes =
       plan.entries
       |> expected_matches()
@@ -168,6 +176,7 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcher do
           event,
           trigger,
           plan.executed_at,
+          event_policy,
           index
         )
       end)
@@ -190,19 +199,20 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcher do
          event,
          trigger,
          executed_at,
+         event_policy,
          index
        ) do
-    case authorize_one(authorizer, event, trigger, executed_at) do
+    case authorize_one(authorizer, event, trigger, executed_at, event_policy) do
       {:ok, authorization} -> consume_one(consumer, authorization, index, consumer_context)
       {:skip, reason} -> %Outcome{status: :skipped, reason: reason}
       {:error, reason} -> %Outcome{status: :failed, reason: reason}
     end
   end
 
-  defp authorize_one(authorizer, event, trigger, executed_at) do
-    case authorizer.authorize(trigger, event, executed_at) do
+  defp authorize_one(authorizer, event, trigger, executed_at, event_policy) do
+    case authorizer.authorize(trigger, event, executed_at, event_policy) do
       {:ok, %Authorization{} = authorization} ->
-        if valid_authorization?(authorization, event, trigger, executed_at),
+        if valid_authorization?(authorization, event, trigger, event_policy, executed_at),
           do: {:ok, authorization},
           else: {:error, :authorization_failed}
 
@@ -232,9 +242,10 @@ defmodule ClusterMurmur.Triggers.PollEventTriggerDispatcher do
     _kind, _reason -> %Outcome{status: :failed, reason: :dispatch_failed}
   end
 
-  defp valid_authorization?(authorization, event, trigger, executed_at) do
+  defp valid_authorization?(authorization, event, trigger, event_policy, executed_at) do
     EventTriggerAuthorizer.validate(authorization) == :ok and
       authorization.plan.event === event and authorization.plan.trigger === trigger and
+      authorization.plan.event_policy === event_policy and
       same_datetime?(authorization.plan.executed_at, executed_at)
   end
 

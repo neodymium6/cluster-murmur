@@ -8,6 +8,7 @@ defmodule ClusterMurmur.Triggers.EventTriggerAuthorizer do
   started capability for later action orchestration and performs no action.
   """
 
+  alias ClusterMurmur.Config.EventPolicy
   alias ClusterMurmur.Persistence.{TriggerExecution, TriggerExecutionStore}
   alias ClusterMurmur.Persistence.TriggerExecutionValidator
   alias ClusterMurmur.Triggers.EventTriggerExecutionPlanner
@@ -31,25 +32,40 @@ defmodule ClusterMurmur.Triggers.EventTriggerAuthorizer do
   @plan_keys Plan.__struct__() |> Map.keys()
   @plan_key_count length(@plan_keys)
 
-  @type skip_reason :: :already_terminal | :cooldown | :execution_in_progress | :not_matched
+  @type skip_reason ::
+          :already_terminal | :cooldown | :dedupe_window | :execution_in_progress | :not_matched
   @type error ::
           :event_conflict
           | :event_not_found
           | :invalid_authorization
           | :invalid_datetime
           | :invalid_event
+          | :invalid_event_policy
           | :invalid_execution
           | :invalid_trigger
           | :invalid_trigger_matcher
           | :storage_unavailable
 
   @doc "Plans and durably starts one trigger without executing its action."
-  @spec authorize(term(), term(), term(), module()) ::
+  @spec authorize(term(), term(), term(), term()) ::
           {:ok, Authorization.t()} | {:skip, skip_reason()} | {:error, error()}
-  def authorize(trigger, event, executed_at, store \\ TriggerExecutionStore)
+  def authorize(trigger, event, executed_at),
+    do: authorize(trigger, event, executed_at, EventPolicy.default(), TriggerExecutionStore)
+
+  def authorize(trigger, event, executed_at, %EventPolicy{} = event_policy),
+    do: authorize(trigger, event, executed_at, event_policy, TriggerExecutionStore)
 
   def authorize(trigger, event, executed_at, store) when is_atom(store) do
-    case EventTriggerExecutionPlanner.plan(trigger, event, nil, executed_at) do
+    authorize(trigger, event, executed_at, EventPolicy.default(), store)
+  end
+
+  def authorize(_trigger, _event, _executed_at, _store),
+    do: {:error, :invalid_authorization}
+
+  @spec authorize(term(), term(), term(), term(), term()) ::
+          {:ok, Authorization.t()} | {:skip, skip_reason()} | {:error, error()}
+  def authorize(trigger, event, executed_at, event_policy, store) when is_atom(store) do
+    case EventTriggerExecutionPlanner.plan(trigger, event, nil, executed_at, event_policy) do
       {:ok, %Plan{} = plan} -> authorize_plan(plan, store)
       {:skip, :not_matched} = skip -> skip
       {:error, _reason} = error -> error
@@ -61,7 +77,7 @@ defmodule ClusterMurmur.Triggers.EventTriggerAuthorizer do
     _kind, _reason -> {:error, :invalid_authorization}
   end
 
-  def authorize(_trigger, _event, _executed_at, _store),
+  def authorize(_trigger, _event, _executed_at, _event_policy, _store),
     do: {:error, :invalid_authorization}
 
   @doc "Revalidates one exact redacted authorization before action orchestration."
@@ -103,7 +119,7 @@ defmodule ClusterMurmur.Triggers.EventTriggerAuthorizer do
         build_authorization(plan, execution)
 
       {:skip, reason} = skip
-      when reason in [:already_terminal, :cooldown, :execution_in_progress] ->
+      when reason in [:already_terminal, :cooldown, :dedupe_window, :execution_in_progress] ->
         skip
 
       {:error, reason} when reason in [:event_conflict, :event_not_found, :invalid_execution] ->
@@ -131,7 +147,13 @@ defmodule ClusterMurmur.Triggers.EventTriggerAuthorizer do
   end
 
   defp replan(plan) do
-    EventTriggerExecutionPlanner.plan(plan.trigger, plan.event, nil, plan.executed_at)
+    EventTriggerExecutionPlanner.plan(
+      plan.trigger,
+      plan.event,
+      nil,
+      plan.executed_at,
+      plan.event_policy
+    )
   end
 
   defp correlated_execution?(execution, plan) do

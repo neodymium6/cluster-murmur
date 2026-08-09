@@ -20,6 +20,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedConversationPipelineTest do
   alias ClusterMurmur.Repo.Migrations.{
     AddPublicationAttemptDispatching,
     CreateConversations,
+    CreateEventDedupeMarkers,
     CreateEvents,
     CreateMessages,
     CreatePersonaCooldowns,
@@ -49,6 +50,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedConversationPipelineTest do
   @attempts_version 20_260_805_230_000
   @dispatching_version 20_260_805_231_000
   @responder_claims_version 20_260_808_060_000
+  @markers_version 20_260_809_020_000
   @executed_at ~U[2026-08-07 02:00:00.000000Z]
 
   defmodule FakeProvider do
@@ -88,7 +90,8 @@ defmodule ClusterMurmur.Triggers.AuthorizedConversationPipelineTest do
       {@cooldowns_version, CreatePersonaCooldowns},
       {@attempts_version, CreatePublicationAttempts},
       {@dispatching_version, AddPublicationAttemptDispatching},
-      {@responder_claims_version, CreateResponderGenerationClaims}
+      {@responder_claims_version, CreateResponderGenerationClaims},
+      {@markers_version, CreateEventDedupeMarkers}
     ]
 
     for {version, migration} <- migrations do
@@ -120,6 +123,7 @@ defmodule ClusterMurmur.Triggers.AuthorizedConversationPipelineTest do
           "messages",
           "conversations",
           "trigger_executions",
+          "event_dedupe_markers",
           "events"
         ] do
       Ecto.Adapters.SQL.query!(Repo, "DELETE FROM #{table}", [], log: false)
