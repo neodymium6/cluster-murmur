@@ -53,6 +53,14 @@ version: 1
 state_tracking:
   failures_required: 2
   successes_required: 2
+  overrides:
+    - source: observer.example
+      failures_required: 3
+      successes_required: 3
+    - source: observer.example
+      subject: target-a
+      failures_required: 4
+      successes_required: 2
 
 event_policy:
   dedupe_window: 5m
@@ -323,14 +331,18 @@ retention:
     retention: 7d
 ```
 
-`state_tracking` may be overridden for a known source or subject. Overrides use
-the same bounded positive-integer fields and are resolved by semantic
-validation. The exact override syntax will be added to version 1 before the
-observation adapter is considered complete.
+`state_tracking.overrides` accepts at most 256 complete threshold mappings. A
+source is required and a subject is optional. Selector strings are bounded,
+nonempty UTF-8 without NUL bytes; duplicate selectors and partial or unknown
+fields are rejected. Exact source-and-subject matches take precedence over a
+source-only match, which takes precedence over the global counts. Selectors in
+real deployments may reveal infrastructure inventory and belong in private
+configuration. Normalized inspection omits them.
 
 The startup manifest and complete configuration normalize the two fixed default
-counts or an exact explicit mapping to the runtime debounce policy. Override
-precedence remains later configuration work.
+counts and every override before worker construction. Resolution returns only
+the fixed runtime debounce-policy shape; observation polling integration remains
+a separate boundary.
 
 The startup manifest and complete configuration also normalize the exact event
 policy shown above. These values are application-owned limits; they do not add
