@@ -191,6 +191,4 @@ defmodule ClusterMurmur.Personas.StarterCandidateProjector do
 
   defp valid_weight?(weight) when is_float(weight),
     do: weight == weight and weight >= 0 and weight <= @max_float
-
-  defp valid_weight?(_weight), do: false
 end
