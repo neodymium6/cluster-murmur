@@ -130,8 +130,10 @@ state with its optional event or rolls both back. A closed state-tracking
 configuration value now validates fixed default failure and success counts plus
 at most 256 complete source or source-subject overrides. It resolves exact
 subject, then source, then default precedence to the only runtime debounce-policy
-shape without exposing selectors through inspection. The startup manifest and
-complete public configuration normalize the complete mapping before any worker
+shape without exposing selectors through inspection. The bounded poller
+validates the complete mapping before observer access and applies the selected
+policy only after validating each correlated observation. The startup manifest
+and complete public configuration normalize the mapping before any worker
 construction. Standard
 five-field schedule-trigger and bounded
 shifted-exponential stochastic-trigger validation use a reviewed, embedded IANA

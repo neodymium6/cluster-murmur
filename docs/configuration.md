@@ -340,9 +340,11 @@ real deployments may reveal infrastructure inventory and belong in private
 configuration. Normalized inspection omits them.
 
 The startup manifest and complete configuration normalize the two fixed default
-counts and every override before worker construction. Resolution returns only
-the fixed runtime debounce-policy shape; observation polling integration remains
-a separate boundary.
+counts and every override before worker construction. A poll validates the
+complete configuration before any observer call, then resolves the exact
+source-and-subject, source-only, or default policy from each validated
+observation before atomic ingestion. Resolution returns only the fixed runtime
+debounce-policy shape.
 
 The startup manifest and complete configuration also normalize the exact event
 policy shown above. These values are application-owned limits; they do not add

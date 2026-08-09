@@ -4,9 +4,9 @@ defmodule ClusterMurmur.Observers.Poller do
 
   A poll validates startup-owned debounce settings before calling an injected
   observer, normalizes its target catalog, observes each target once in stable
-  order, and delegates accepted observations to the atomic ingestion store. It
-  does not schedule another poll, expose transport operations, or execute an
-  event trigger.
+  order, selects the application-owned policy for each accepted observation,
+  and delegates it to the atomic ingestion store. It does not schedule another
+  poll, expose transport operations, or execute an event trigger.
   """
 
   alias ClusterMurmur.Config.StateTracking
@@ -86,11 +86,12 @@ defmodule ClusterMurmur.Observers.Poller do
 
   def poll_once(%Client{} = observer_client, state_tracking, ingestion_store)
       when is_atom(ingestion_store) do
-    with {:ok, policy} <- StateTracking.to_debounce_policy(state_tracking),
+    with :ok <- StateTracking.validate(state_tracking),
          :ok <- validate_dependencies(observer_client, ingestion_store),
          {:ok, raw_targets} <- list_targets(observer_client),
          {:ok, catalog} <- TargetCatalog.parse(raw_targets),
-         {:ok, result} <- poll_targets(catalog.targets, observer_client, ingestion_store, policy),
+         {:ok, result} <-
+           poll_targets(catalog.targets, observer_client, ingestion_store, state_tracking),
          :ok <- validate_result(result) do
       {:ok, result}
     else
@@ -146,10 +147,10 @@ defmodule ClusterMurmur.Observers.Poller do
     _kind, _reason -> {:error, {:observer, :unavailable}}
   end
 
-  defp poll_targets(targets, observer_client, ingestion_store, policy) do
+  defp poll_targets(targets, observer_client, ingestion_store, state_tracking) do
     targets
     |> Enum.reduce({0, [], []}, fn target, {ingested, events, failures} ->
-      case observe_and_ingest(target.id, observer_client, ingestion_store, policy) do
+      case observe_and_ingest(target.id, observer_client, ingestion_store, state_tracking) do
         {:ok, nil} -> {ingested + 1, events, failures}
         {:ok, %Event{} = event} -> {ingested + 1, [event | events], failures}
         {:error, failure} -> {ingested, events, [failure | failures]}
@@ -171,9 +172,11 @@ defmodule ClusterMurmur.Observers.Poller do
     end)
   end
 
-  defp observe_and_ingest(target_id, observer_client, ingestion_store, policy) do
+  defp observe_and_ingest(target_id, observer_client, ingestion_store, state_tracking) do
     with {:ok, observation} <- observe_target(observer_client, target_id),
          :ok <- validate_observation_target(observation, target_id),
+         {:ok, policy} <-
+           StateTracking.resolve(state_tracking, observation.source, observation.subject),
          {:ok, plan} <- ingest(ingestion_store, observation, policy) do
       {:ok, plan.event}
     end
