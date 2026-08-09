@@ -10,6 +10,7 @@ defmodule ClusterMurmur.MixProject do
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      dialyzer: [ignore_warnings: ".dialyzer_ignore.exs", list_unused_filters: true],
       escript: [main_module: ClusterMurmur.CLI, name: "cluster-murmur", app: nil],
       releases: [cluster_murmur: []]
     ]
@@ -26,6 +27,7 @@ defmodule ClusterMurmur.MixProject do
     [
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:crontab, "~> 1.2"},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ecto_sqlite3, "~> 0.24.1"},
       {:ex_json_schema, "~> 0.11.4"},
       {:time_zone_info, "~> 0.7"},
