@@ -31,6 +31,7 @@
         fileset = nixpkgs.lib.fileset.unions [
           ./.github
           ./.credo.exs
+          ./.dialyzer_ignore.exs
           ./.markdownlint.yaml
           ./.formatter.exs
           ./AGENTS.md
@@ -188,7 +189,7 @@
             inherit version;
             src = source;
             mixEnv = "test";
-            hash = "sha256-spYdVjRl7NKMiJLmIsL/DcnKmuS6miw1BBUH7QzXAQY=";
+            hash = "sha256-sNrFtv/n7dztH6rZVnHQy/k7vKEnHjGT3ax5nNFdGzk=";
           };
         in
         {
@@ -222,6 +223,7 @@
                 mix format --check-formatted
                 mix compile --warnings-as-errors
                 mix credo --strict
+                mix dialyzer --format short
                 mix test
                 mix escript.build
                 test "$(escript ./cluster-murmur --version)" = "$(tr -d '\n' < VERSION)"

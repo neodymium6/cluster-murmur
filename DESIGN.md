@@ -357,9 +357,11 @@ tests, Credo, Dialyzer, schema and example validation, an OCI build, and a
 dependency audit. Current CI runs Credo's correctness and safety warnings,
 including its opt-in environment-leak, unsafe-atom, and unsafe-execution checks.
 It excludes the same-value operation check because the bounded float validators
-intentionally use self-comparison as a NaN guard. Style and complexity policy,
-Dialyzer, schema and example validation, and dependency auditing remain separate
-incremental gates.
+intentionally use self-comparison as a NaN guard. Dialyzer rejects new warnings
+and stale baseline entries; its line-specific baseline records existing type
+debt for incremental removal without hiding a new warning of the same class in
+the same file. Style and complexity policy, schema and example validation, and
+dependency auditing remain separate incremental gates.
 
 ## Implementation phases
 
