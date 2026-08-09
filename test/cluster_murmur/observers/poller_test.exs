@@ -31,6 +31,10 @@ defmodule ClusterMurmur.Observers.PollerTest do
       calls = Process.get({__MODULE__, :calls}, [])
       Process.put({__MODULE__, :calls}, calls ++ [observation.subject])
 
+      policies = Process.get({__MODULE__, :policies}, [])
+      selected = {observation.source, observation.subject, policy}
+      Process.put({__MODULE__, :policies}, policies ++ [selected])
+
       case Map.fetch(Process.get({__MODULE__, :plans}, %{}), observation.subject) do
         {:ok, plan} ->
           {:ok, plan}
@@ -50,9 +54,62 @@ defmodule ClusterMurmur.Observers.PollerTest do
     Process.put({FakeClient, :targets}, {:ok, []})
     Process.put({FakeClient, :observations}, %{})
     Process.put({FakeIngestionStore, :calls}, [])
+    Process.put({FakeIngestionStore, :policies}, [])
     Process.put({FakeIngestionStore, :failures}, [])
     Process.put({FakeIngestionStore, :plans}, %{})
     :ok
+  end
+
+  test "selects exact, source-only, and default policies per accepted observation" do
+    Process.put(
+      {FakeClient, :targets},
+      {:ok,
+       [
+         %{id: "example-target-c"},
+         %{id: "example-target-a"},
+         %{id: "example-target-b"}
+       ]}
+    )
+
+    Process.put(
+      {FakeClient, :observations},
+      %{
+        "example-target-a" => {:ok, observation("example-target-a", 0)},
+        "example-target-b" => {:ok, observation("example-target-b", 1)},
+        "example-target-c" => {:ok, observation("example-target-c", 2, "other-observer")}
+      }
+    )
+
+    assert {:ok, state_tracking} =
+             StateTracking.parse(%{
+               "failures_required" => 2,
+               "successes_required" => 3,
+               "overrides" => [
+                 %{
+                   "source" => "example-observer",
+                   "failures_required" => 4,
+                   "successes_required" => 5
+                 },
+                 %{
+                   "source" => "example-observer",
+                   "subject" => "example-target-a",
+                   "failures_required" => 6,
+                   "successes_required" => 7
+                 }
+               ]
+             })
+
+    assert {:ok, %Result{ingested_count: 3, event_count: 0}} =
+             Poller.poll_once(client(), state_tracking, FakeIngestionStore)
+
+    assert Process.get({FakeIngestionStore, :policies}) == [
+             {"example-observer", "example-target-a",
+              %DebouncePolicy{healthy_threshold: 7, unhealthy_threshold: 6}},
+             {"example-observer", "example-target-b",
+              %DebouncePolicy{healthy_threshold: 5, unhealthy_threshold: 4}},
+             {"other-observer", "example-target-c",
+              %DebouncePolicy{healthy_threshold: 3, unhealthy_threshold: 2}}
+           ]
   end
 
   test "polls a normalized catalog once in stable order and returns committed events" do
@@ -274,9 +331,9 @@ defmodule ClusterMurmur.Observers.PollerTest do
              "#ClusterMurmur.Observers.Poller.Result<target_count: 0, ingested_count: 0, event_count: 0, failure_count: 0, ...>"
   end
 
-  defp observation(subject, offset) do
+  defp observation(subject, offset, source \\ "example-observer") do
     %Observation{
-      source: "example-observer",
+      source: source,
       subject: subject,
       state: :unhealthy,
       observed_at: DateTime.add(~U[2026-08-06 17:00:00.000000Z], offset, :second),
