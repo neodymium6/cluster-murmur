@@ -199,6 +199,9 @@
 
                 mkdir -p "$TMPDIR/release"
                 chmod 0700 "$TMPDIR/release"
+                probe_nondistributed \
+                  "RELEASE_DISTRIBUTION=sname" \
+                  "RELEASE_NODE=injected_release"
                 probe_nondistributed "ELIXIR_ERL_OPTIONS=-sname injected_elixir"
                 probe_nondistributed "ERL_AFLAGS=-sname injected_aflags"
                 probe_nondistributed "ERL_FLAGS=-sname injected_flags"
