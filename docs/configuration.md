@@ -610,6 +610,11 @@ and only an exact bounded, correlated aggregate result is retained. Status
 inspection excludes configuration and event details. The worker is not
 installed in the public application supervision tree automatically.
 
+Recurring cron triggers now have a separate constrained durable state table
+for ordered next/previous runs and one opaque claim lease. The table remains
+inert until its fixed store and execution cycle are implemented; stochastic
+state is not reused.
+
 The persistence layer also provides a dedicated event-dispatch outbox for the
 crash-safe handoff that follows event commit. It accepts only exact immutable
 events already in the event store and returns a claim-free enqueue receipt. It
