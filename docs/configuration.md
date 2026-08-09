@@ -348,6 +348,10 @@ immutable events, or read a clock. An opt-in worker can supply a validated UTC
 clock and schedule these cycles without overlap while retaining only redacted
 aggregate status. No retention worker is installed automatically.
 
+The event table's retention order and every child-table event reference are
+indexed for a later bounded event-record cleanup store. These indexes do not
+enable deletion, cascade related lifecycle records, or expose stored values.
+
 Complete LLM payload retention remains disabled by default. Enabling it does
 not permit credentials, private endpoints, or unrelated source data to be
 stored, and deployments must treat retained payloads as sensitive.
