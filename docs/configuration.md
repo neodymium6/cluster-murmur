@@ -337,6 +337,10 @@ retain the stable reason and durable dispatch reports a redacted aggregate
 suppression count. The broader `retention` mapping remains an intended future
 contract and does not duplicate the implemented event retention field.
 
+The normalized event retention duration can be projected into one exact cutoff
+from an injected canonical UTC instant. This pure plan does not list or delete
+records; storage cleanup remains a separate explicit runtime action.
+
 Complete LLM payload retention remains disabled by default. Enabling it does
 not permit credentials, private endpoints, or unrelated source data to be
 stored, and deployments must treat retained payloads as sensitive.
