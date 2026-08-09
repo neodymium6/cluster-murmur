@@ -5,6 +5,7 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
     Configuration,
     ConversationDefaults,
     DocumentSet,
+    EventPolicy,
     LLM,
     LoadedDocument,
     Manifest
@@ -36,6 +37,7 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
     assert configuration.llm == llm()
     assert configuration.state_tracking == StateTracking.default()
     assert configuration.conversation_defaults == ConversationDefaults.default()
+    assert configuration.event_policy == EventPolicy.default()
     assert Configuration.validate(configuration) == :ok
   end
 
@@ -61,6 +63,17 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
              )
   end
 
+  test "carries explicit event policy into complete configuration", context do
+    policy = %EventPolicy{dedupe_window_ms: 90_000, retention_ms: 2_592_000_000}
+    manifest = %{manifest() | event_policy: policy}
+
+    assert {:ok, %Configuration{event_policy: ^policy}} =
+             Configuration.parse(
+               context.config,
+               %DocumentSet{manifest: manifest, documents: valid_documents(context)}
+             )
+  end
+
   test "revalidates exact category values and catalog references", context do
     assert {:ok, configuration} = Configuration.parse(context.config, document_set(context))
 
@@ -72,7 +85,8 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
           :routing,
           :llm,
           :state_tracking,
-          :conversation_defaults
+          :conversation_defaults,
+          :event_policy
         ] do
       assert configuration
              |> Map.put(field, nil)
@@ -104,6 +118,10 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
                 configuration.conversation_defaults
                 | no_reply_weight: 0
               }
+          },
+          %{
+            configuration
+            | event_policy: %{configuration.event_policy | retention_ms: 1}
           }
         ] do
       assert Configuration.validate(invalid) == {:error, :invalid_configuration}

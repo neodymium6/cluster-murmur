@@ -5,6 +5,7 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
     Bindings,
     Configuration,
     ConversationDefaults,
+    EventPolicy,
     EventGroups,
     LLM,
     Personas
@@ -38,6 +39,7 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
          true <- configuration.version === 1,
          :ok <- validate_state_tracking(configuration.state_tracking),
          :ok <- validate_conversation_defaults(configuration.conversation_defaults),
+         :ok <- validate_event_policy(configuration.event_policy),
          :ok <- validate_event_groups(configuration.event_groups),
          :ok <- validate_personas(configuration.personas),
          :ok <- validate_bindings(configuration.bindings),
@@ -71,6 +73,13 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
     case ConversationDefaults.validate(defaults) do
       :ok -> :ok
       {:error, :invalid_conversation_defaults} -> {:error, :invalid_configuration}
+    end
+  end
+
+  defp validate_event_policy(policy) do
+    case EventPolicy.validate(policy) do
+      :ok -> :ok
+      {:error, :invalid_event_policy} -> {:error, :invalid_configuration}
     end
   end
 

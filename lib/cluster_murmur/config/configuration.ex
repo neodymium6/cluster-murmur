@@ -12,6 +12,7 @@ defmodule ClusterMurmur.Config.Configuration do
     Catalog,
     ConversationDefaults,
     DocumentSet,
+    EventPolicy,
     EventGroups,
     LLM
   }
@@ -20,6 +21,7 @@ defmodule ClusterMurmur.Config.Configuration do
   alias ClusterMurmur.Triggers.{EventTrigger, ScheduleTrigger, StochasticTrigger}
 
   @default_conversation_defaults ConversationDefaults.default()
+  @default_event_policy EventPolicy.default()
 
   @derive {Inspect, only: [:version]}
   @enforce_keys [
@@ -41,7 +43,8 @@ defmodule ClusterMurmur.Config.Configuration do
     :routing,
     :llm,
     :state_tracking,
-    conversation_defaults: @default_conversation_defaults
+    conversation_defaults: @default_conversation_defaults,
+    event_policy: @default_event_policy
   ]
 
   @type t :: %__MODULE__{
@@ -53,7 +56,8 @@ defmodule ClusterMurmur.Config.Configuration do
           routing: Routing.t(),
           llm: LLM.t(),
           state_tracking: StateTracking.t(),
-          conversation_defaults: ConversationDefaults.t()
+          conversation_defaults: ConversationDefaults.t(),
+          event_policy: EventPolicy.t()
         }
 
   @type error ::
@@ -83,7 +87,8 @@ defmodule ClusterMurmur.Config.Configuration do
          routing: routing,
          llm: document_set.manifest.llm,
          state_tracking: document_set.manifest.state_tracking,
-         conversation_defaults: document_set.manifest.conversation_defaults
+         conversation_defaults: document_set.manifest.conversation_defaults,
+         event_policy: document_set.manifest.event_policy
        }}
     end
   end

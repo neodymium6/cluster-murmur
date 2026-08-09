@@ -20,8 +20,9 @@ decoding of the included YAML documents are implemented. A value-free Draft 7
 validation adapter for application-owned schemas and bounded event-group, persona,
 binding, routing, LLM-provider, and event-trigger validation, cross-category
 character catalog assembly, and complete startup configuration assembly are
-implemented. The top-level startup value also normalizes fixed state-tracking
-defaults or one exact explicit mapping. A fixed
+implemented. The top-level startup value also normalizes fixed state-tracking,
+conversation, and event-policy defaults or one exact explicit mapping for each.
+A fixed
 top-level file includes files by category:
 
 ```text
@@ -53,6 +54,10 @@ state_tracking:
   failures_required: 2
   successes_required: 2
 
+event_policy:
+  dedupe_window: 5m
+  retention: 90d
+
 llm:
   provider: openai_compatible
   base_url_env: CLUSTER_MURMUR_LLM_BASE_URL
@@ -75,11 +80,16 @@ includes:
 ```
 
 The version 1 manifest requires exactly `version`, `llm`, and `includes`, and
-optionally accepts the `state_tracking` mapping shown above. Omitting it uses
-the fixed two-failure and two-success defaults. All five include categories
-must be present, even when a category has no patterns. Every other field or
-category is invalid. Category values are lists of strings. The 64-pattern limit
-applies to the sum across every category, not separately to each resolver call.
+optionally accepts exact `state_tracking`, `conversation_defaults`, and
+`event_policy` mappings. Omitting `event_policy` uses a five-minute dedupe
+window and 90-day retention. Both event durations must be positive, no longer
+than 365 days, and retention must be at least the dedupe window. This
+normalization does not yet suppress duplicate events or delete retained data.
+Omitting `state_tracking` uses the fixed two-failure and two-success defaults.
+All five include categories must be present, even when a category has no
+patterns. Every other field or category is invalid. Category values are lists
+of strings. The 64-pattern limit applies to the sum across every category, not
+separately to each resolver call.
 
 Relative paths are resolved from the directory containing the top-level file.
 Version 1 include paths use portable ASCII characters and support only
@@ -218,8 +228,9 @@ automatic migration execution, and retention behavior remain later stages. A
 separate bounded event store validates complete events before storage, inserts
 immutable event IDs idempotently, and rejects conflicting reuse without
 replacing committed facts. Its primary-key-only read restores at most one event
-through the shared bounded validator. Event listing, event retention,
-dedupe-window suppression, and trigger bookkeeping remain later stages. A
+through the shared bounded validator. The startup configuration normalizes
+bounded event retention and dedupe-window durations, but event listing,
+enforcement of that policy, and trigger bookkeeping remain later stages. A
 narrow observation-ingestion transaction restores prior entity state, applies
 the pure debounce and event plan, and commits the next state with its optional
 event atomically. It performs no observer call or trigger action.
@@ -286,6 +297,10 @@ conversation_defaults:
     no_reply_weight: 1.0
     random_jitter: 0.2
 
+event_policy:
+  dedupe_window: 5m
+  retention: 90d
+
 memory:
   current_conversation_messages: 12
   recent_persona_messages: 6
@@ -294,7 +309,6 @@ memory:
 
 retention:
   entity_states: forever
-  events: 90d
   conversations: 30d
   messages: 30d
   trigger_executions: 30d
@@ -311,6 +325,12 @@ observation adapter is considered complete.
 The startup manifest and complete configuration normalize the two fixed default
 counts or an exact explicit mapping to the runtime debounce policy. Override
 precedence remains later configuration work.
+
+The startup manifest and complete configuration also normalize the exact event
+policy shown above. These values are application-owned limits; they do not add
+storage passthrough, configure a cleanup worker, or activate dedupe enforcement.
+The broader `retention` mapping remains an intended future contract and does not
+duplicate the implemented event retention field.
 
 Complete LLM payload retention remains disabled by default. Enabling it does
 not permit credentials, private endpoints, or unrelated source data to be

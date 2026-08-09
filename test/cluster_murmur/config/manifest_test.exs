@@ -1,7 +1,14 @@
 defmodule ClusterMurmur.Config.ManifestTest do
   use ExUnit.Case, async: true
 
-  alias ClusterMurmur.Config.{ConversationDefaults, DocumentDecoder, LLM, Manifest, StateTracking}
+  alias ClusterMurmur.Config.{
+    ConversationDefaults,
+    DocumentDecoder,
+    EventPolicy,
+    LLM,
+    Manifest,
+    StateTracking
+  }
 
   test "accepts the bounded decoder output" do
     yaml = """
@@ -37,6 +44,10 @@ defmodule ClusterMurmur.Config.ManifestTest do
                 allow_persona_reentry: true,
                 no_reply_weight: 1.0,
                 random_jitter: 0.2
+              },
+              event_policy: %EventPolicy{
+                dedupe_window_ms: 300_000,
+                retention_ms: 7_776_000_000
               }
             }} =
              Manifest.parse(document)
@@ -130,6 +141,26 @@ defmodule ClusterMurmur.Config.ManifestTest do
 
     assert Manifest.parse(Map.put(valid_document(), "conversation_defaults", %{})) ==
              {:error, {:conversation_defaults, :invalid_conversation_defaults}}
+  end
+
+  test "normalizes optional explicit event policy" do
+    document =
+      valid_document()
+      |> Map.put("event_policy", %{
+        "dedupe_window" => "90s",
+        "retention" => "30d"
+      })
+
+    assert {:ok,
+            %Manifest{
+              event_policy: %EventPolicy{
+                dedupe_window_ms: 90_000,
+                retention_ms: 2_592_000_000
+              }
+            }} = Manifest.parse(document)
+
+    assert Manifest.parse(Map.put(valid_document(), "event_policy", %{})) ==
+             {:error, {:event_policy, :invalid_event_policy}}
   end
 
   test "allows present categories to have no include patterns" do
