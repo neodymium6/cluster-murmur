@@ -2,11 +2,18 @@ defmodule ClusterMurmur.Persistence.EventDedupeMarkerMigrationTest do
   use ExUnit.Case, async: false
 
   alias ClusterMurmur.Repo
-  alias ClusterMurmur.Repo.Migrations.{CreateEventDedupeMarkers, CreateEvents}
+
+  alias ClusterMurmur.Repo.Migrations.{
+    AddEventDedupeMarkerPruneIndex,
+    CreateEventDedupeMarkers,
+    CreateEvents
+  }
+
   alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   @events_version 20_260_804_180_500
   @marker_version 20_260_809_020_000
+  @prune_index_version 20_260_809_043_000
 
   test "migrates a constrained event dedupe marker table" do
     root = PrivateTmpDir.create!("cluster-murmur-event-dedupe-marker-migration")
@@ -34,6 +41,18 @@ defmodule ClusterMurmur.Persistence.EventDedupeMarkerMigrationTest do
       end
 
       assert_constraint(fn -> insert_marker(pid, %{}) end)
+
+      migrate(pid, :up, @prune_index_version, AddEventDedupeMarkerPruneIndex)
+
+      refute "event_dedupe_markers_accepted_at_index" in indexes(pid)
+
+      assert index_columns(pid, "event_dedupe_markers_accepted_at_dedupe_key_index") ==
+               ["accepted_at", "dedupe_key"]
+
+      migrate(pid, :down, @prune_index_version, AddEventDedupeMarkerPruneIndex)
+
+      assert "event_dedupe_markers_accepted_at_index" in indexes(pid)
+      refute "event_dedupe_markers_accepted_at_dedupe_key_index" in indexes(pid)
 
       migrate(pid, :down, @marker_version, CreateEventDedupeMarkers)
       refute "event_dedupe_markers" in tables(pid)
@@ -118,6 +137,13 @@ defmodule ClusterMurmur.Persistence.EventDedupeMarkerMigrationTest do
       Ecto.Adapters.SQL.query!(repo, "PRAGMA index_list(event_dedupe_markers)", [], log: false)
 
     Enum.map(rows, &Enum.at(&1, 1))
+  end
+
+  defp index_columns(repo, index) do
+    %{rows: rows} =
+      Ecto.Adapters.SQL.query!(repo, "PRAGMA index_info(\"#{index}\")", [], log: false)
+
+    Enum.map(rows, &Enum.at(&1, 2))
   end
 
   defp assert_constraint(fun) do

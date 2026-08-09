@@ -106,4 +106,11 @@ Code.require_file(
   )
 )
 
+Code.require_file(
+  Path.expand(
+    "../priv/repo/migrations/20260809043000_add_event_dedupe_marker_prune_index.exs",
+    __DIR__
+  )
+)
+
 ExUnit.start()

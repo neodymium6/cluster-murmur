@@ -338,8 +338,9 @@ suppression count. The broader `retention` mapping remains an intended future
 contract and does not duplicate the implemented event retention field.
 
 The normalized event retention duration can be projected into one exact cutoff
-from an injected canonical UTC instant. This pure plan does not list or delete
-records; storage cleanup remains a separate explicit runtime action.
+from an injected canonical UTC instant. A fixed store operation can use only
+that exact plan to delete at most 100 expired dedupe markers without returning
+their values. It does not delete immutable events or schedule cleanup.
 
 Complete LLM payload retention remains disabled by default. Enabling it does
 not permit credentials, private endpoints, or unrelated source data to be
