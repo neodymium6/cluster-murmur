@@ -174,7 +174,9 @@ fully terminal handoffs while retaining failed claims for lease-based retry.
 An opt-in worker can schedule those cycles without overlap while retaining only
 redacted aggregate status. No event-dispatch scheduler is installed
 automatically.
-Event retention and dedupe-window policy also remain future work. Observer
+The startup configuration now normalizes bounded event dedupe-window and
+retention durations, but durable suppression and retention cleanup remain
+future work. Observer
 target responses now pass a closed 256-entry and 64 KiB
 identity catalog that rejects duplicates and sorts accepted redacted targets
 before polling. One injected, sequential poll lists that catalog once, observes

@@ -16,10 +16,18 @@ defmodule ClusterMurmur.Config.Manifest do
   ]
   @category_names Enum.map(@categories, &elem(&1, 0))
   @required_fields ["includes", "llm", "version"]
-  @fields ["conversation_defaults", "includes", "llm", "state_tracking", "version"]
+  @fields [
+    "conversation_defaults",
+    "event_policy",
+    "includes",
+    "llm",
+    "state_tracking",
+    "version"
+  ]
   @max_patterns 64
   @default_state_tracking ClusterMurmur.Config.StateTracking.default()
   @default_conversation_defaults ClusterMurmur.Config.ConversationDefaults.default()
+  @default_event_policy ClusterMurmur.Config.EventPolicy.default()
 
   @derive {Inspect, only: [:version]}
   @enforce_keys [:version, :includes, :llm]
@@ -28,7 +36,8 @@ defmodule ClusterMurmur.Config.Manifest do
     :includes,
     :llm,
     state_tracking: @default_state_tracking,
-    conversation_defaults: @default_conversation_defaults
+    conversation_defaults: @default_conversation_defaults,
+    event_policy: @default_event_policy
   ]
 
   @type category :: :event_groups | :personas | :bindings | :triggers | :routing
@@ -46,7 +55,8 @@ defmodule ClusterMurmur.Config.Manifest do
           includes: includes(),
           llm: ClusterMurmur.Config.LLM.t(),
           state_tracking: ClusterMurmur.Config.StateTracking.t(),
-          conversation_defaults: ClusterMurmur.Config.ConversationDefaults.t()
+          conversation_defaults: ClusterMurmur.Config.ConversationDefaults.t(),
+          event_policy: ClusterMurmur.Config.EventPolicy.t()
         }
 
   @type error ::
@@ -62,6 +72,7 @@ defmodule ClusterMurmur.Config.Manifest do
           | :unsupported_config_version
           | {:llm, ClusterMurmur.Config.LLM.error()}
           | {:conversation_defaults, ClusterMurmur.Config.ConversationDefaults.error()}
+          | {:event_policy, ClusterMurmur.Config.EventPolicy.error()}
           | {:state_tracking, ClusterMurmur.Config.StateTracking.error()}
 
   @doc "Validates a decoded top-level configuration document."
@@ -72,14 +83,16 @@ defmodule ClusterMurmur.Config.Manifest do
          {:ok, includes} <- validate_includes(document["includes"]),
          {:ok, llm} <- parse_llm(document["llm"]),
          {:ok, state_tracking} <- parse_state_tracking(document),
-         {:ok, conversation_defaults} <- parse_conversation_defaults(document) do
+         {:ok, conversation_defaults} <- parse_conversation_defaults(document),
+         {:ok, event_policy} <- parse_event_policy(document) do
       {:ok,
        %__MODULE__{
          version: version,
          includes: includes,
          llm: llm,
          state_tracking: state_tracking,
-         conversation_defaults: conversation_defaults
+         conversation_defaults: conversation_defaults,
+         event_policy: event_policy
        }}
     end
   end
@@ -115,6 +128,19 @@ defmodule ClusterMurmur.Config.Manifest do
         case ClusterMurmur.Config.ConversationDefaults.parse(value) do
           {:ok, defaults} -> {:ok, defaults}
           {:error, reason} -> {:error, {:conversation_defaults, reason}}
+        end
+    end
+  end
+
+  defp parse_event_policy(document) do
+    case Map.fetch(document, "event_policy") do
+      :error ->
+        {:ok, ClusterMurmur.Config.EventPolicy.default()}
+
+      {:ok, value} ->
+        case ClusterMurmur.Config.EventPolicy.parse(value) do
+          {:ok, event_policy} -> {:ok, event_policy}
+          {:error, reason} -> {:error, {:event_policy, reason}}
         end
     end
   end
