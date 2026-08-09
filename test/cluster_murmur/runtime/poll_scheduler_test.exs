@@ -2,12 +2,15 @@ defmodule ClusterMurmur.Runtime.PollSchedulerTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Config.StateTracking
+  alias ClusterMurmur.DomainLimits
   alias ClusterMurmur.Observations.{IngestionPlanner, Observation}
   alias ClusterMurmur.Observers.Client
   alias ClusterMurmur.Runtime.{PollScheduler, PollStarterCycle}
   alias ClusterMurmur.Runtime.PollScheduler.{Options, Status}
   alias ClusterMurmur.TestSupport.RuntimeFixture
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.{Adapters, SharedInput}
+
+  @receive_timeout 5_000
 
   defmodule BlockingObserver do
     def list_targets(test_pid), do: {:ok, [%{id: observer_target(test_pid)}]}
@@ -61,18 +64,29 @@ defmodule ClusterMurmur.Runtime.PollSchedulerTest do
   end
 
   test "runs one cycle at a time and schedules the next only after completion" do
-    options = options(self(), 1_000)
+    scheduler_delay_ms = DomainLimits.max_interval_ms()
+
+    options =
+      self()
+      |> options(scheduler_delay_ms)
+      |> Map.put(:initial_delay_ms, scheduler_delay_ms)
+
     assert {:ok, scheduler} = PollScheduler.start_link(options)
     on_exit(fn -> if Process.alive?(scheduler), do: GenServer.stop(scheduler) end)
 
-    assert_receive :listed_targets
-    assert_receive {:cycle_started, ^scheduler}
+    assert {^options, %Status{cycle_count: 0}, initial_timer_token} = :sys.get_state(scheduler)
+    assert is_reference(initial_timer_token)
+
+    send(scheduler, {:poll, initial_timer_token})
+
+    assert_receive :listed_targets, @receive_timeout
+    assert_receive {:cycle_started, ^scheduler}, @receive_timeout
 
     send(scheduler, :poll)
     send(scheduler, {:poll, make_ref()})
     send(scheduler, {:poll, make_ref()})
 
-    refute_receive {:cycle_started, ^scheduler}, 50
+    refute_received {:cycle_started, ^scheduler}
 
     send(scheduler, :release_cycle)
 
@@ -81,11 +95,25 @@ defmodule ClusterMurmur.Runtime.PollSchedulerTest do
     assert status.last_error == nil
     assert status.last_result.event_count == 0
     refute inspect(status) =~ "private fact"
-    refute_receive {:cycle_started, ^scheduler}, 100
+    refute_received {:cycle_started, ^scheduler}
 
     send(scheduler, :poll)
     send(scheduler, {:poll, make_ref()})
-    refute_receive {:cycle_started, ^scheduler}, 100
+
+    assert {:ok, ^status} = PollScheduler.status(scheduler)
+    refute_received {:cycle_started, ^scheduler}
+
+    assert {^options, ^status, next_timer_token} = :sys.get_state(scheduler)
+    assert is_reference(next_timer_token)
+
+    send(scheduler, {:poll, next_timer_token})
+
+    assert_receive :listed_targets, @receive_timeout
+    assert_receive {:cycle_started, ^scheduler}, @receive_timeout
+
+    send(scheduler, :release_cycle)
+
+    assert {:ok, %Status{cycle_count: 2, last_error: nil}} = PollScheduler.status(scheduler)
   end
 
   test "rejects malformed dependencies before starting observation" do
