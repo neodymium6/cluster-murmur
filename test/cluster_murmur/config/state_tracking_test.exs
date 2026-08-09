@@ -89,6 +89,7 @@ defmodule ClusterMurmur.Config.StateTrackingTest do
       [%{override | "source" => <<255>>}],
       [%{override | "failures_required" => 0}],
       [Map.put(override, "subject", 1)],
+      [Map.put(override, "subject", nil)],
       [override, override],
       Enum.map(0..256, fn index ->
         %{override | "source" => "observer-#{index}.example"}

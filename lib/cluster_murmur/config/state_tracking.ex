@@ -199,7 +199,7 @@ defmodule ClusterMurmur.Config.StateTracking do
          true <- Enum.all?(Map.keys(attributes), &(&1 in allowed)),
          true <- valid_selector?(attributes["source"]),
          subject = Map.get(attributes, "subject"),
-         true <- is_nil(subject) or valid_selector?(subject),
+         true <- not Map.has_key?(attributes, "subject") or valid_selector?(subject),
          true <- valid_threshold?(attributes["failures_required"]),
          true <- valid_threshold?(attributes["successes_required"]) do
       {:ok,
