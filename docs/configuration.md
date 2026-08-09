@@ -629,6 +629,13 @@ dispatch handoff, and completes the exact live schedule claim. Any conflict
 rolls back all new event, outbox, and schedule changes. It does not dispatch the
 event or execute external actions.
 
+A recurring-schedule cycle prevalidates and correlates at most 256 due states
+with the exact current configuration before taking its first claim. It then
+claims, plans, projects, and atomically commits each state in durable order,
+continuing after individual conflicts and returning aggregate counts only. The
+cycle reads no clock, performs no external action, and is not installed in the
+public application supervision tree.
+
 The persistence layer also provides a dedicated event-dispatch outbox for the
 crash-safe handoff that follows event commit. It accepts only exact immutable
 events already in the event store and returns a claim-free enqueue receipt. It
