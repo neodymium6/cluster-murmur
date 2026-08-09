@@ -161,6 +161,22 @@ defmodule ClusterMurmur.Runtime.RecurringScheduleInitializerTest do
     assert Process.get({__MODULE__, :trace}) == [{:retire, []}]
   end
 
+  test "validates only exact bounded aggregate results" do
+    valid = %Result{schedule_count: 2}
+    assert RecurringScheduleInitializer.validate_result(valid) == :ok
+
+    for result <- [
+          %{valid | schedule_count: -1},
+          %{valid | schedule_count: 257},
+          %{valid | schedule_count: "private"},
+          Map.put(valid, :private, true),
+          nil
+        ] do
+      assert RecurringScheduleInitializer.validate_result(result) ==
+               {:error, :invalid_recurring_schedule_initialization_result}
+    end
+  end
+
   defp configuration(schedule_triggers) do
     base = RuntimeFixture.configuration()
 

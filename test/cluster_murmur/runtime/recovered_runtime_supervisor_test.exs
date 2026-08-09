@@ -1,7 +1,7 @@
 defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
   use ExUnit.Case, async: true
 
-  alias ClusterMurmur.Config.StateTracking
+  alias ClusterMurmur.Config.{StateTracking, Triggers}
   alias ClusterMurmur.Observers.Client
   alias ClusterMurmur.Persistence.PublicationAttemptRecord
 
@@ -10,17 +10,22 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
     EventDispatchScheduler,
     PollScheduler,
     PollStarterCycle,
+    RecurringScheduleCycle,
+    RecurringScheduleInitializer,
+    RecurringScheduleScheduler,
     RecoveredRuntimeSupervisor
   }
 
   alias ClusterMurmur.Runtime.EventDispatchCycle.{Adapters, Context}
   alias ClusterMurmur.Runtime.EventDispatchScheduler.Options, as: DispatchOptions
   alias ClusterMurmur.Runtime.PollScheduler.Options, as: PollOptions
+  alias ClusterMurmur.Runtime.RecurringScheduleScheduler.Options, as: RecurringOptions
   alias ClusterMurmur.Runtime.RecoveredRuntimeSupervisor.Options
   alias ClusterMurmur.Runtime.Recovery.Stores
   alias ClusterMurmur.TestSupport.RuntimeFixture
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.SharedInput
+  alias ClusterMurmur.Triggers.{EmittedEvent, ScheduleTrigger}
 
   @started_at ~U[2026-08-08 18:30:00.000000Z]
 
@@ -134,15 +139,43 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
     end
   end
 
+  defmodule Initializer do
+    alias ClusterMurmur.Runtime.RecurringScheduleInitializer.Result
+    alias ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest, as: Test
+
+    def run(_configuration, initialized_at) do
+      trace({:initialize_recurring, initialized_at})
+
+      if sink = Process.whereis(Test.RecoverySink),
+        do: send(sink, {:recurring_initialized, initialized_at})
+
+      Process.get(
+        {Test, :initialization},
+        {:ok, %Result{schedule_count: 1}}
+      )
+    end
+
+    defp trace(entry) do
+      key = {Test, :trace}
+      Process.put(key, Process.get(key, []) ++ [entry])
+    end
+  end
+
   setup do
     Process.put({__MODULE__, :clock_count}, 0)
     Process.put({__MODULE__, :trace}, [])
     Process.put({__MODULE__, :executions}, {:ok, []})
     Process.put({__MODULE__, :publications}, {:ok, []})
+
+    Process.put(
+      {__MODULE__, :initialization},
+      {:ok, %RecurringScheduleInitializer.Result{schedule_count: 1}}
+    )
+
     :ok
   end
 
-  test "recovers once before starting both schedulers" do
+  test "recovers and initializes once before starting all schedulers" do
     assert {:ok, supervisor} = RecoveredRuntimeSupervisor.start_link(options(), stores())
     Process.unlink(supervisor)
     on_exit(fn -> if Process.alive?(supervisor), do: Supervisor.stop(supervisor) end)
@@ -152,16 +185,18 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
     assert Process.get({__MODULE__, :trace}) == [
              {:executions, @started_at},
              {:conversations, @started_at},
-             {:publications, @started_at}
+             {:publications, @started_at},
+             {:initialize_recurring, @started_at}
            ]
 
     children = Supervisor.which_children(supervisor)
     assert child_pid(children, PollScheduler) |> Process.alive?()
     assert child_pid(children, EventDispatchScheduler) |> Process.alive?()
+    assert child_pid(children, RecurringScheduleScheduler) |> Process.alive?()
     assert inspect(options()) == "#ClusterMurmur.Runtime.RecoveredRuntimeSupervisor.Options<...>"
   end
 
-  test "stops both schedulers and reruns recovery before replacing either one" do
+  test "stops all schedulers and reruns both gates before replacing any one" do
     Process.register(self(), ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest.RecoverySink)
 
     child = %{
@@ -176,23 +211,29 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
     on_exit(fn -> if Process.alive?(parent), do: Supervisor.stop(parent) end)
 
     assert_recovery_loaded()
+    assert_receive {:recurring_initialized, @started_at}
     recovered = supervisor_child(parent)
     original_children = Supervisor.which_children(recovered)
     poll = child_pid(original_children, PollScheduler)
     dispatch = child_pid(original_children, EventDispatchScheduler)
+    recurring = child_pid(original_children, RecurringScheduleScheduler)
 
     Process.exit(dispatch, :kill)
     assert_recovery_loaded()
+    assert_receive {:recurring_initialized, @started_at}
 
     replacement = supervisor_child(parent)
     refute replacement == recovered
     replacement_children = Supervisor.which_children(replacement)
     replacement_poll = child_pid(replacement_children, PollScheduler)
     replacement_dispatch = child_pid(replacement_children, EventDispatchScheduler)
+    replacement_recurring = child_pid(replacement_children, RecurringScheduleScheduler)
 
     refute replacement_poll == poll
     refute replacement_dispatch == dispatch
+    refute replacement_recurring == recurring
     refute Process.alive?(poll)
+    refute Process.alive?(recurring)
   end
 
   test "requires another startup pass after a saturated recovery page" do
@@ -205,7 +246,7 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
     assert length(Process.get({__MODULE__, :trace})) == 103
   end
 
-  test "starts neither scheduler while one recovery mutation is incomplete" do
+  test "starts no scheduler while one recovery mutation is incomplete" do
     publication =
       %PublicationAttemptRecord{
         message_id: 1,
@@ -229,6 +270,32 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
            ]
   end
 
+  test "starts no scheduler when recurring initialization is incomplete" do
+    malformed =
+      %RecurringScheduleInitializer.Result{schedule_count: 1}
+      |> Map.put(:private, true)
+
+    for response <- [
+          {:error, :invalid_recurring_schedule_initialization},
+          {:ok, malformed},
+          {:ok, %RecurringScheduleInitializer.Result{schedule_count: 0}},
+          {:ok, :not_an_initialization_result}
+        ] do
+      Process.put({__MODULE__, :trace}, [])
+      Process.put({__MODULE__, :initialization}, response)
+
+      assert RecoveredRuntimeSupervisor.start_link(options(), stores()) ==
+               {:error, :invalid_recovered_runtime_supervisor}
+
+      assert Process.get({__MODULE__, :trace}) == [
+               {:executions, @started_at},
+               {:conversations, @started_at},
+               {:publications, @started_at},
+               {:initialize_recurring, @started_at}
+             ]
+    end
+  end
+
   test "rejects all scheduler and recovery adapters before reading the clock" do
     valid = options()
     valid_stores = stores()
@@ -238,6 +305,27 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
       {%{
          valid
          | event_dispatch_scheduler: %{valid.event_dispatch_scheduler | interval_ms: 0}
+       }, valid_stores},
+      {%{
+         valid
+         | recurring_schedule_scheduler: %{
+             valid.recurring_schedule_scheduler
+             | interval_ms: 0
+           }
+       }, valid_stores},
+      {%{valid | recurring_schedule_initializer: String}, valid_stores},
+      {%{
+         valid
+         | recurring_schedule_scheduler: %{
+             valid.recurring_schedule_scheduler
+             | configuration: %{
+                 valid.recurring_schedule_scheduler.configuration
+                 | event_policy: %{
+                     valid.recurring_schedule_scheduler.configuration.event_policy
+                     | dedupe_window_ms: 60_000
+                   }
+               }
+           }
        }, valid_stores},
       {%{valid | clock: String}, valid_stores},
       {%{valid | clock: OtherClock}, valid_stores},
@@ -256,12 +344,26 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
   end
 
   defp options do
-    configuration =
+    base_configuration =
       RuntimeFixture.configuration()
       |> Map.put(
         :state_tracking,
         %StateTracking{failures_required: 2, successes_required: 2}
       )
+
+    schedule_trigger = recurring_trigger()
+
+    configuration = %{
+      base_configuration
+      | triggers: %Triggers{
+          triggers:
+            Map.put(
+              base_configuration.triggers.triggers,
+              schedule_trigger.id,
+              schedule_trigger
+            )
+        }
+    }
 
     {:ok, observer_client} = Client.new(Observer, :unused)
     shared = shared_input(configuration)
@@ -293,7 +395,15 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
         clock: FixedClock,
         interval_ms: 60_000,
         initial_delay_ms: 60_000
-      }
+      },
+      recurring_schedule_scheduler: %RecurringOptions{
+        configuration: configuration,
+        cycle: RecurringScheduleCycle,
+        clock: FixedClock,
+        interval_ms: 60_000,
+        initial_delay_ms: 60_000
+      },
+      recurring_schedule_initializer: Initializer
     }
   end
 
@@ -305,6 +415,22 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
       webhook_settings: RuntimeFixture.webhook_settings(),
       generation_transport: fn _request -> :unused end,
       publication_transport: fn _request -> :unused end
+    }
+  end
+
+  defp recurring_trigger do
+    {:ok, expression} = Crontab.CronExpression.Parser.parse("0 * * * *", false)
+
+    %ScheduleTrigger{
+      id: "hourly",
+      cron: expression,
+      timezone: "Etc/UTC",
+      action: :emit_event,
+      event: %EmittedEvent{
+        type: "schedule.fired",
+        group: "operations",
+        subject: "hourly"
+      }
     }
   end
 
