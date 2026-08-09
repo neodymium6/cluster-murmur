@@ -290,6 +290,17 @@ Enter the pinned development environment:
 nix develop
 ```
 
+Build the immutable production release with:
+
+```bash
+nix build .#cluster-murmur
+```
+
+The release is intentionally nondistributed and contains no generated Erlang
+cookie. It still requires an approved absolute `CLUSTER_MURMUR_DATABASE_PATH`
+whose existing parent directory is private. Runtime configuration, secrets,
+external transports, and worker assembly remain deployment-owned inputs.
+
 Fetch the locked Mix dependencies:
 
 ```bash

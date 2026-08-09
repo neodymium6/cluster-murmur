@@ -13,6 +13,19 @@
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
       pkgsFor = forAllSystems (system: import nixpkgs { inherit system; });
+      version = nixpkgs.lib.strings.removeSuffix "\n" (builtins.readFile ./VERSION);
+      releaseSource = nixpkgs.lib.fileset.toSource {
+        root = ./.;
+        fileset = nixpkgs.lib.fileset.unions [
+          ./config
+          ./lib
+          ./mix.exs
+          ./mix.lock
+          ./priv
+          ./rel
+          ./VERSION
+        ];
+      };
       source = nixpkgs.lib.fileset.toSource {
         root = ./.;
         fileset = nixpkgs.lib.fileset.unions [
@@ -31,9 +44,37 @@
           ./mix.exs
           ./mix.lock
           ./priv
+          ./rel
           ./test
         ];
       };
+      releaseFor =
+        system:
+        let
+          pkgs = pkgsFor.${system};
+        in
+        pkgs.beamPackages.mixRelease {
+          pname = "cluster-murmur";
+          inherit version;
+          src = releaseSource;
+
+          mixFodDeps = pkgs.beamPackages.fetchMixDeps {
+            pname = "cluster-murmur-prod-deps";
+            inherit version;
+            src = releaseSource;
+            hash = "sha256-EKELmjAs8BwUzMq+ToC3SRpo7DI0cPUvHVIxfRtXMAE=";
+          };
+
+          EXQLITE_USE_SYSTEM = "1";
+          buildInputs = [ pkgs.sqlite ];
+
+          meta = {
+            description = "Bounded observation-to-conversation orchestrator";
+            homepage = "https://github.com/neodymium6/cluster-murmur";
+            license = nixpkgs.lib.licenses.asl20;
+            mainProgram = "cluster_murmur";
+          };
+        };
     in
     {
       devShells = forAllSystems (
@@ -66,13 +107,19 @@
         }
       );
 
+      packages = forAllSystems (system: {
+        default = releaseFor system;
+        cluster-murmur = releaseFor system;
+      });
+
       checks = forAllSystems (
         system:
         let
           pkgs = pkgsFor.${system};
+          productionRelease = releaseFor system;
           mixDeps = pkgs.beamPackages.fetchMixDeps {
             pname = "cluster-murmur-test-deps";
-            version = pkgs.lib.strings.removeSuffix "\n" (builtins.readFile ./VERSION);
+            inherit version;
             src = source;
             mixEnv = "test";
             hash = "sha256-EKELmjAs8BwUzMq+ToC3SRpo7DI0cPUvHVIxfRtXMAE=";
@@ -111,14 +158,61 @@
                 mix test
                 mix escript.build
                 test "$(escript ./cluster-murmur --version)" = "$(tr -d '\n' < VERSION)"
+                touch "$out"
+              '';
 
-                export MIX_ENV=prod
-                mix release --overwrite
-                release_bin="$MIX_BUILD_PATH/rel/cluster_murmur/bin/cluster_murmur"
+          production-release =
+            pkgs.runCommand "cluster-murmur-production-release-check"
+              {
+                nativeBuildInputs = [
+                  pkgs.coreutils
+                  pkgs.sqlite
+                ];
+              }
+              ''
+                release_bin="${productionRelease}/bin/cluster_murmur"
                 migration_root="$TMPDIR/migration-success"
                 migration_database="$migration_root/cluster-murmur.sqlite3"
                 mkdir -p "$migration_root"
                 chmod 0700 "$migration_root"
+
+                test -x "$release_bin"
+                test ! -e "${productionRelease}/releases/COOKIE"
+                test "$(CLUSTER_MURMUR_DATABASE_PATH="$migration_database" \
+                  "$release_bin" eval \
+                  'IO.write("#{Application.spec(:cluster_murmur, :vsn)}:#{Node.alive?()}")')" \
+                  = "${version}:false"
+
+                probe_nondistributed() {
+                  probe_output="$(env \
+                    CLUSTER_MURMUR_DATABASE_PATH="$migration_database" \
+                    RELEASE_TMP="$TMPDIR/release" \
+                    "$@" \
+                    "$release_bin" start_iex <<'EOF'
+                IO.puts("PROBE_NODE_ALIVE=#{Node.alive?()}")
+                System.stop(0)
+                EOF
+                  )"
+
+                  grep -Fq "PROBE_NODE_ALIVE=false" <<< "$probe_output"
+                }
+
+                mkdir -p "$TMPDIR/release"
+                chmod 0700 "$TMPDIR/release"
+                probe_nondistributed \
+                  "RELEASE_DISTRIBUTION=sname" \
+                  "RELEASE_NODE=injected_release"
+                probe_nondistributed "ELIXIR_ERL_OPTIONS=-sname injected_elixir"
+                probe_nondistributed "ERL_AFLAGS=-sname injected_aflags"
+                probe_nondistributed "ERL_FLAGS=-sname injected_flags"
+                probe_nondistributed "ERL_ZFLAGS=-sname injected_zflags"
+
+                adversarial_vm_args="$TMPDIR/adversarial.vm.args"
+                cp "${productionRelease}/releases/${version}/vm.args" "$adversarial_vm_args"
+                chmod 0600 "$adversarial_vm_args"
+                echo "-sname injected_vm_args" >> "$adversarial_vm_args"
+                probe_nondistributed "RELEASE_VM_ARGS=$adversarial_vm_args"
+
                 CLUSTER_MURMUR_DATABASE_PATH="$migration_database" \
                   "$release_bin" eval 'ClusterMurmur.Release.migrate!()'
                 test "$(sqlite3 "$migration_database" \
