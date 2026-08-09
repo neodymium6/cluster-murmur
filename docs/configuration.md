@@ -616,7 +616,10 @@ or initialize state, list at most 100 due schedules in deterministic cursor
 order without claim material, and atomically grant one fixed 60-second opaque
 lease for an exact due version. The store does not calculate recurrence,
 complete claims, execute actions, or emit events; no recurring execution cycle
-is installed. Stochastic state is not reused.
+is installed. A pure planner can correlate a claim with its exact trigger and
+claim-free due projection, preserve only application-supplied event facts, and
+calculate the next cron run strictly after an injected execution instant. It
+does not perform persistence or I/O. Stochastic state is not reused.
 
 The persistence layer also provides a dedicated event-dispatch outbox for the
 crash-safe handoff that follows event commit. It accepts only exact immutable
