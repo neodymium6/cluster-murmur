@@ -610,10 +610,13 @@ and only an exact bounded, correlated aggregate result is retained. Status
 inspection excludes configuration and event details. The worker is not
 installed in the public application supervision tree automatically.
 
-Recurring cron triggers now have a separate constrained durable state table
-for ordered next/previous runs and one opaque claim lease. The table remains
-inert until its fixed store and execution cycle are implemented; stochastic
-state is not reused.
+Recurring cron triggers have a separate constrained durable state table for
+ordered next/previous runs and one opaque claim lease. A fixed store can restore
+or initialize state, list at most 100 due schedules in deterministic cursor
+order without claim material, and atomically grant one fixed 60-second opaque
+lease for an exact due version. The store does not calculate recurrence,
+complete claims, execute actions, or emit events; no recurring execution cycle
+is installed. Stochastic state is not reused.
 
 The persistence layer also provides a dedicated event-dispatch outbox for the
 crash-safe handoff that follows event commit. It accepts only exact immutable
