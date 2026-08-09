@@ -87,14 +87,14 @@ defmodule ClusterMurmur.Config.DocumentDecoder do
     ]
 
     try do
+      content_marker = :atomics.new(1, signed: false)
       constructor = :yamerl_constr.new(:cluster_murmur_config, options)
       constructor_fun = :yamerl_parser.get_token_fun(constructor)
-      guarded_fun = wrap_constructor(constructor_fun, initial_state())
+      guarded_fun = wrap_constructor(constructor_fun, initial_state(), content_marker)
       guarded_constructor = :yamerl_parser.set_token_fun(constructor, guarded_fun)
+      documents = :yamerl_constr.last_chunk(guarded_constructor, contents)
 
-      guarded_constructor
-      |> :yamerl_constr.last_chunk(contents)
-      |> convert_documents()
+      convert_documents(documents, :atomics.get(content_marker, 1) == 1)
     catch
       :throw, {__MODULE__, reason} -> {:error, reason}
       _kind, _reason -> {:error, :invalid_yaml}
@@ -103,25 +103,31 @@ defmodule ClusterMurmur.Config.DocumentDecoder do
 
   defp initial_state, do: %{content?: false, depth: 0, documents: 0, nodes: 0}
 
-  defp wrap_constructor(constructor_fun, state) do
+  defp wrap_constructor(constructor_fun, state, content_marker) do
     fn token ->
       case token do
         :get_docs ->
-          {constructor_fun.(token), state}
+          constructor_fun.(token)
 
         :get_constr ->
           constructor_fun.(token)
 
         _token ->
           state = validate_token(token, state)
+          mark_content(content_marker, state)
 
           case constructor_fun.(token) do
-            {:ok, next_fun} -> {:ok, wrap_constructor(next_fun, state)}
+            {:ok, next_fun} -> {:ok, wrap_constructor(next_fun, state, content_marker)}
             other -> other
           end
       end
     end
   end
+
+  defp mark_content(content_marker, %{content?: true}),
+    do: :atomics.put(content_marker, 1, 1)
+
+  defp mark_content(_content_marker, _state), do: :ok
 
   defp validate_token({:yamerl_doc_start, _line, _column, {1, 2}, _tags}, state) do
     documents = state.documents + 1
@@ -214,15 +220,15 @@ defmodule ClusterMurmur.Config.DocumentDecoder do
 
   defp reject(reason), do: throw({__MODULE__, reason})
 
-  defp convert_documents({_documents, %{content?: false}}), do: {:error, :empty_document}
+  defp convert_documents(_documents, false), do: {:error, :empty_document}
 
-  defp convert_documents({[{:yamerl_doc, {:yamerl_map, _, _, _, _} = root}], _state}) do
+  defp convert_documents([{:yamerl_doc, {:yamerl_map, _, _, _, _} = root}], true) do
     convert_map(root)
   end
 
-  defp convert_documents({[{:yamerl_doc, _root}], _state}), do: {:error, :invalid_document_root}
-  defp convert_documents({[], _state}), do: {:error, :empty_document}
-  defp convert_documents({_documents, _state}), do: {:error, :multiple_documents}
+  defp convert_documents([{:yamerl_doc, _root}], true), do: {:error, :invalid_document_root}
+  defp convert_documents([], true), do: {:error, :empty_document}
+  defp convert_documents(_documents, true), do: {:error, :multiple_documents}
 
   defp convert({:yamerl_map, _, _, _, _} = node), do: convert_map(node)
 
