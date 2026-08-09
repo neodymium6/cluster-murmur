@@ -217,6 +217,135 @@ defmodule ClusterMurmur.Persistence.ScheduleStateStoreTest do
     assert Enum.count(attempts, &(&1 == {:error, :schedule_conflict})) == 1
   end
 
+  test "records one exact claimed execution and clears its lease" do
+    assert {:ok, _state} = ScheduleStateStore.restore_or_initialize("daily-summary", @due)
+    assert {:ok, claim} = ScheduleStateStore.claim_due("daily-summary", @due, @due)
+
+    executed_at = DateTime.add(@due, 1, :second)
+    recorded_at = DateTime.add(@due, 2, :second)
+    next_run_at = DateTime.add(@due, 1, :hour)
+
+    assert {:ok, completed} =
+             ScheduleStateStore.record_execution(claim, executed_at, recorded_at, next_run_at)
+
+    assert %ScheduleState{
+             trigger_id: "daily-summary",
+             last_run_at: ^executed_at,
+             next_run_at: ^next_run_at,
+             claim_token: nil,
+             claim_started_at: nil,
+             claim_expires_at: nil
+           } = completed
+
+    assert Repo.get!(ScheduleState, "daily-summary") == completed
+    refute inspect(completed) =~ "daily-summary"
+    refute inspect(completed) =~ claim.token
+    refute inspect(completed) =~ "2026"
+
+    assert ScheduleStateStore.record_execution(claim, executed_at, recorded_at, next_run_at) ==
+             {:error, :schedule_conflict}
+  end
+
+  test "normalizes valid second-precision query and completion inputs" do
+    due = DateTime.truncate(@due, :second)
+    assert {:ok, _state} = ScheduleStateStore.restore_or_initialize("daily-summary", due)
+    assert {:ok, [_available]} = ScheduleStateStore.list_due(due)
+    assert {:ok, []} = ScheduleStateStore.list_due_after(due, {due, "daily-summary"})
+    assert {:ok, claim} = ScheduleStateStore.claim_due("daily-summary", due, due)
+
+    assert claim.expected_next_run_at.microsecond == {0, 6}
+    assert claim.started_at.microsecond == {0, 6}
+    assert claim.expires_at.microsecond == {0, 6}
+
+    executed_at = DateTime.add(due, 1, :second)
+    recorded_at = DateTime.add(due, 2, :second)
+    next_run_at = DateTime.add(due, 1, :hour)
+
+    assert {:ok, completed} =
+             ScheduleStateStore.record_execution(claim, executed_at, recorded_at, next_run_at)
+
+    assert completed.last_run_at.microsecond == {0, 6}
+    assert completed.next_run_at.microsecond == {0, 6}
+  end
+
+  test "authorizes only one concurrent completion" do
+    assert {:ok, _state} = ScheduleStateStore.restore_or_initialize("daily-summary", @due)
+    assert {:ok, claim} = ScheduleStateStore.claim_due("daily-summary", @due, @due)
+    executed_at = DateTime.add(@due, 1, :second)
+    recorded_at = DateTime.add(@due, 2, :second)
+    next_run_at = DateTime.add(@due, 1, :hour)
+
+    attempts =
+      1..2
+      |> Enum.map(fn _attempt ->
+        Task.async(fn ->
+          ScheduleStateStore.record_execution(claim, executed_at, recorded_at, next_run_at)
+        end)
+      end)
+      |> Task.await_many()
+
+    assert Enum.count(attempts, &match?({:ok, %ScheduleState{}}, &1)) == 1
+    assert Enum.count(attempts, &(&1 == {:error, :schedule_conflict})) == 1
+  end
+
+  test "prevents an expired claim from completing a replacement lease" do
+    assert {:ok, _state} = ScheduleStateStore.restore_or_initialize("daily-summary", @due)
+    assert {:ok, first} = ScheduleStateStore.claim_due("daily-summary", @due, @due)
+
+    assert {:ok, replacement} =
+             ScheduleStateStore.claim_due("daily-summary", @due, DateTime.add(@due, 60, :second))
+
+    assert ScheduleStateStore.record_execution(
+             first,
+             DateTime.add(@due, 1, :second),
+             DateTime.add(@due, 2, :second),
+             DateTime.add(@due, 1, :hour)
+           ) == {:error, :schedule_conflict}
+
+    persisted = Repo.get!(ScheduleState, "daily-summary")
+    assert persisted.claim_token == replacement.token
+    assert persisted.claim_started_at == replacement.started_at
+    assert persisted.claim_expires_at == replacement.expires_at
+  end
+
+  test "rejects invalid completions before storage and classifies unavailable writes" do
+    Repo.put_dynamic_repo(:missing_schedule_state_repo)
+    claim = claim_fixture()
+    executed_at = DateTime.add(@due, 1, :second)
+    recorded_at = DateTime.add(@due, 2, :second)
+    next_run_at = DateTime.add(@due, 1, :hour)
+
+    invalid = [
+      {nil, executed_at, recorded_at, next_run_at},
+      {%{claim | trigger_id: "bad id"}, executed_at, recorded_at, next_run_at},
+      {%{claim | token: "invalid"}, executed_at, recorded_at, next_run_at},
+      {%{claim | token: String.duplicate("A", 1_000_000)}, executed_at, recorded_at, next_run_at},
+      {%{claim | started_at: %{@due | hour: 24}}, executed_at, recorded_at, next_run_at},
+      {%{claim | expires_at: DateTime.add(@due, 59, :second)}, executed_at, recorded_at,
+       next_run_at},
+      {%{claim | expected_next_run_at: DateTime.add(@due, 1, :second)}, executed_at, recorded_at,
+       next_run_at},
+      {Map.put(claim, :private, "private"), executed_at, recorded_at, next_run_at},
+      {claim, nil, recorded_at, next_run_at},
+      {claim, DateTime.add(@due, -1, :second), recorded_at, next_run_at},
+      {claim, executed_at, @due, next_run_at},
+      {claim, executed_at, executed_at, executed_at},
+      {claim, executed_at, claim.expires_at, next_run_at}
+    ]
+
+    for arguments <- invalid do
+      assert apply(ScheduleStateStore, :record_execution, Tuple.to_list(arguments)) ==
+               {:error, :invalid_schedule}
+    end
+
+    result =
+      ScheduleStateStore.record_execution(claim, executed_at, recorded_at, next_run_at)
+
+    assert result == {:error, :storage_unavailable}
+    refute inspect(result) =~ "daily-summary"
+    refute inspect(result) =~ claim.token
+  end
+
   test "rejects invalid claims before storage and classifies unavailable writes" do
     Repo.put_dynamic_repo(:missing_schedule_state_repo)
 
@@ -233,5 +362,15 @@ defmodule ClusterMurmur.Persistence.ScheduleStateStoreTest do
     result = ScheduleStateStore.claim_due("private-trigger", @due, @due)
     assert result == {:error, :storage_unavailable}
     refute inspect(result) =~ "private"
+  end
+
+  defp claim_fixture do
+    %ScheduleStateClaim{
+      trigger_id: "daily-summary",
+      expected_next_run_at: @due,
+      token: Base.url_encode64(<<1::256>>, padding: false),
+      started_at: @due,
+      expires_at: DateTime.add(@due, 60, :second)
+    }
   end
 end

@@ -614,9 +614,11 @@ Recurring cron triggers have a separate constrained durable state table for
 ordered next/previous runs and one opaque claim lease. A fixed store can restore
 or initialize state, list at most 100 due schedules in deterministic cursor
 order without claim material, and atomically grant one fixed 60-second opaque
-lease for an exact due version. The store does not calculate recurrence,
-complete claims, execute actions, or emit events; no recurring execution cycle
-is installed. A pure planner can correlate a claim with its exact trigger and
+lease for an exact due version. It can complete only that exact live claim,
+recording the execution, advancing the next run, and clearing the lease in one
+transaction. The store does not calculate recurrence, execute actions, or emit
+events; no recurring execution cycle is installed. A pure planner can
+correlate a claim with its exact trigger and
 claim-free due projection, preserve only application-supplied event facts, and
 calculate the next cron run strictly after an injected execution instant. It
 does not perform persistence or I/O. Stochastic state is not reused.
