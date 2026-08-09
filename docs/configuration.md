@@ -224,14 +224,15 @@ lease, advance the next run, and update its local-date counter atomically. Lease
 claim candidates are evaluated purely against active hours and a persisted
 counter normalized to the calculated current local date. Renewal, early
 release, external execution, exactly-once delivery, other schemas and stores,
-automatic migration execution, and retention behavior remain later stages. A
+automatic migration execution, event-record deletion, and cleanup scheduling
+remain later stages. A
 separate bounded event store validates complete events before storage, inserts
 immutable event IDs idempotently, and rejects conflicting reuse without
 replacing committed facts. Its primary-key-only read restores at most one event
 through the shared bounded validator. The startup configuration normalizes
 bounded event retention and dedupe-window durations, and trigger authorization
-enforces durable dedupe markers. Event listing and retention cleanup remain
-later stages. A
+enforces durable dedupe markers. Event listing, event-record retention, and
+automated cleanup remain later stages. A
 narrow observation-ingestion transaction restores prior entity state, applies
 the pure debounce and event plan, and commits the next state with its optional
 event atomically. It performs no observer call or trigger action.
@@ -340,7 +341,10 @@ contract and does not duplicate the implemented event retention field.
 The normalized event retention duration can be projected into one exact cutoff
 from an injected canonical UTC instant. A fixed store operation can use only
 that exact plan to delete at most 100 expired dedupe markers without returning
-their values. It does not delete immutable events or schedule cleanup.
+their values. An explicit runtime cycle validates the complete configuration
+and injected instant before planning and invoking exactly one fixed store
+batch. It returns only the aggregate count; it does not repeat cleanup, delete
+immutable events, read a clock, or schedule cleanup.
 
 Complete LLM payload retention remains disabled by default. Enabling it does
 not permit credentials, private endpoints, or unrelated source data to be
