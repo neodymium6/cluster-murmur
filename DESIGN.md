@@ -354,8 +354,12 @@ conversation bounds, cooldown exclusion, and the stochastic minimum interval.
 
 The mature CI target includes formatting, warnings-as-errors compilation,
 tests, Credo, Dialyzer, schema and example validation, an OCI build, and a
-dependency audit. The bootstrap CI currently runs only checks supported by the
-files and dependencies already present.
+dependency audit. Current CI runs Credo's correctness and safety warnings,
+including its opt-in environment-leak, unsafe-atom, and unsafe-execution checks.
+It excludes the same-value operation check because the bounded float validators
+intentionally use self-comparison as a NaN guard. Style and complexity policy,
+Dialyzer, schema and example validation, and dependency auditing remain separate
+incremental gates.
 
 ## Implementation phases
 

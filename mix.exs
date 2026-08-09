@@ -24,6 +24,7 @@ defmodule ClusterMurmur.MixProject do
 
   defp deps do
     [
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:crontab, "~> 1.2"},
       {:ecto_sqlite3, "~> 0.24.1"},
       {:ex_json_schema, "~> 0.11.4"},
