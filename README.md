@@ -179,7 +179,9 @@ retention durations. A pure evaluator defines first acceptance, exact retry,
 active suppression, and expiry-boundary behavior. A constrained redacted table
 holds durable markers, and trigger authorization now advances those markers in
 the same transaction as execution starts across poll and durable dispatch.
-Retention cleanup remains future work. Observer
+A pure planner derives one exact retention cutoff from the normalized policy
+and an injected UTC instant without reading storage or a clock. Retention
+cleanup remains future work. Observer
 target responses now pass a closed 256-entry and 64 KiB
 identity catalog that rejects duplicates and sorts accepted redacted targets
 before polling. One injected, sequential poll lists that catalog once, observes
