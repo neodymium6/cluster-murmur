@@ -14,8 +14,12 @@ fmt:
   mix format
   nix fmt -- flake.nix
 
-# Run all checks available for the current bootstrap stage.
-check:
+# Reject retired dependencies and versions with published security advisories.
+audit:
+  mix hex.audit
+
+# Run all repository checks.
+check: audit
   pre-commit run --all-files
   mix format --check-formatted
   MIX_ENV=test mix compile --warnings-as-errors

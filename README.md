@@ -357,10 +357,16 @@ Install repository hooks after cloning:
 just init
 ```
 
-Run all bootstrap checks:
+Run all repository checks:
 
 ```bash
 just check
+```
+
+Run only the locked-dependency retirement and security-advisory gate with:
+
+```bash
+just audit
 ```
 
 Build and inspect the bootstrap CLI:
