@@ -2,18 +2,21 @@
 
 ## Status
 
-This document is the initial architecture baseline. The repository is at the
-early foundation stage: core domain values, external dependency behaviours,
-deterministic observation state-transition classification, and common scalar
-configuration validation are present. Bounded configuration include resolution,
-YAML document decoding, and strict top-level manifest validation are also
-implemented. The remaining runtime behavior described here is not implemented
-yet.
+This document began as the architecture baseline. The repository is now a
+public alpha engine candidate: its bounded domain, persistence, orchestration,
+recovery, and opt-in scheduling components are implemented and exercised with
+fake adapters; release and container artifacts have isolated Nix checks. The
+default OTP application intentionally starts only the repository. The live
+transports, automatic OTP assembly, health endpoints, and Kubernetes deployment
+described below remain target architecture owned by a later standalone-service
+milestone.
 
 The normative public configuration surface is documented in
 [`docs/configuration.md`](docs/configuration.md). Testable MVP invariants,
 persistence fields, and acceptance criteria are documented in
-[`docs/mvp-contract.md`](docs/mvp-contract.md).
+[`docs/mvp-contract.md`](docs/mvp-contract.md). The narrower public alpha
+completion boundary is documented in
+[`docs/public-alpha.md`](docs/public-alpha.md).
 
 ## Overview
 

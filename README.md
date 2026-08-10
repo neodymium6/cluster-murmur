@@ -6,7 +6,7 @@ persona-driven Discord messages and bounded conversations.
 
 ## Status
 
-Early foundation. The repository contains a minimal Elixir/OTP application,
+Public alpha engine candidate. The repository contains a composable Elixir/OTP application,
 pinned development environment, CI entry point, architecture baseline, core
 domain values, external dependency behaviours, and deterministic observation
 state-transition classification. Version 1 duration and common scalar
@@ -258,6 +258,23 @@ recovery page and remain absent from the default application tree. Do not deploy
 this revision or connect it to infrastructure, model providers, or Discord
 without explicit review of that private assembly.
 
+### Public alpha boundary
+
+The public alpha is the environment-neutral engine, not a standalone live
+deployment. It includes the bounded domain and persistence boundaries, explicit
+runtime cycles, opt-in schedulers, restart recovery, release packaging, and
+fake-adapter integration coverage. The default OTP application intentionally
+starts only the repository.
+
+Live MCP, model-provider, and Discord transports, concrete endpoints and
+credentials, and assembly of the opt-in supervisors and workers remain
+deployment-owned. Event retention remains conservative: the public engine
+deletes only events that have no lifecycle references and does not cascade
+through conversations, executions, dispatches, or dedupe records.
+
+The exact completion criteria and deferred standalone-service work are recorded
+in [docs/public-alpha.md](docs/public-alpha.md).
+
 ## Boundary
 
 Cluster Murmur will own:
@@ -279,8 +296,8 @@ or arbitrary PromQL access, and it will never perform autonomous remediation.
 See [DESIGN.md](DESIGN.md) for the architecture,
 [docs/configuration.md](docs/configuration.md) for the intended public
 configuration contract, [docs/mvp-contract.md](docs/mvp-contract.md) for
-testable MVP requirements, and [SECURITY.md](SECURITY.md) for the security
-boundary.
+testable MVP requirements, [docs/public-alpha.md](docs/public-alpha.md) for the
+public alpha boundary, and [SECURITY.md](SECURITY.md) for the security boundary.
 
 ## Development
 
