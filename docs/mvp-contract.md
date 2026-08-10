@@ -8,9 +8,9 @@ decisions; this document defines testable runtime invariants and completion
 criteria.
 
 The keywords **must**, **must not**, **should**, and **may** are normative. The
-repository is a public alpha engine candidate. This document describes the
-complete standalone MVP target; [`public-alpha.md`](public-alpha.md) identifies
-the implemented, environment-neutral engine subset and the work deliberately
+repository is a public alpha engine. This document describes the complete
+standalone MVP target; [`public-alpha.md`](public-alpha.md) identifies the
+implemented, environment-neutral engine subset and the work deliberately
 deferred to a later standalone-service milestone.
 
 ## System boundary

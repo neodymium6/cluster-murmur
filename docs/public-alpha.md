@@ -67,6 +67,33 @@ The public alpha is ready when:
 6. README, design, security, and configuration documentation agree on the
    public/private boundary.
 
+## Readiness evidence
+
+The public alpha engine satisfies these criteria through repository-owned,
+environment-neutral checks:
+
+- `just check` runs the dependency audit, formatting, warnings-as-errors
+  compilation, Credo, Dialyzer, tests, and every Nix check without live
+  infrastructure.
+- `mix hex.audit` checks the complete locked dependency graph for retirements
+  and published security advisories before the remaining checks.
+- Dialyxir rejects both new warnings and unused exact filters; every retained
+  filter has a concrete rationale in
+  [`dialyzer-boundaries.md`](dialyzer-boundaries.md).
+- the production-release Nix check verifies packaged migrations, isolated
+  database permissions, start and stop behavior, redacted migration failure,
+  and disabled distribution;
+- the container-image Nix check verifies OCI metadata, runtime-closure
+  completeness, read-only-compatible paths, an isolated migration, and
+  extracted Tini/release start and stop behavior; and
+- the status and boundary language in README, design, security, configuration,
+  and the MVP contract distinguishes this engine from the deferred standalone
+  service.
+
+This readiness statement does not authorize a deployment or connection to live
+infrastructure. The deployment-owned inputs and deferred work below still
+apply.
+
 ## Deferred standalone-service work
 
 Live transports, automatic runtime assembly, health endpoints, deployment

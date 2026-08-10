@@ -3,11 +3,10 @@
 ## Status and scope
 
 This document defines the public configuration contract targeted by the MVP.
-The repository is a public alpha engine candidate: loading, validation, and
-startup-input preparation are implemented, while live transports and automatic
-runtime assembly remain deployment-owned. Examples describe the normative
-contract; [`public-alpha.md`](public-alpha.md) identifies the implemented alpha
-boundary.
+The repository is a public alpha engine: loading, validation, and startup-input
+preparation are implemented, while live transports and automatic runtime
+assembly remain deployment-owned. Examples describe the normative contract;
+[`public-alpha.md`](public-alpha.md) identifies the implemented alpha boundary.
 
 Configuration controls observations, event policy, personas, bindings,
 triggers, generation limits, and outbound routing. It must never contain
@@ -370,13 +369,13 @@ clock and schedule these cycles without overlap while retaining only redacted
 aggregate status. No retention worker is installed automatically.
 
 The event table's retention order and every child-table event reference are
-indexed for a later bounded event-record cleanup store. These indexes do not
-enable deletion, cascade related lifecycle records, or expose stored values.
-A constrained singleton sweep row can later retain a redacted ordered cursor
+indexed for the bounded event-record cleanup store. These indexes support its
+fixed queries but do not cascade related lifecycle records or expose stored
+values. A constrained singleton sweep row retains a redacted ordered cursor
 across restarts so referenced events cannot starve later cleanup candidates.
-A fixed store transaction now uses that cursor to scan at most 100 expired
-events and delete only records with no trigger-execution, conversation,
-dispatch, or dedupe-marker reference. Referenced records remain until a later
+One fixed store transaction uses that cursor to scan at most 100 expired events
+and delete only records with no trigger-execution, conversation, dispatch, or
+dedupe-marker reference. Referenced records remain until a later
 lifecycle-specific retention decision removes those references.
 
 Complete LLM payload retention remains disabled by default. Enabling it does
