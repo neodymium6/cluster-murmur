@@ -3,7 +3,7 @@
 ## Status
 
 This document began as the architecture baseline. The repository is now a
-public alpha engine candidate: its bounded domain, persistence, orchestration,
+public alpha engine: its bounded domain, persistence, orchestration,
 recovery, and opt-in scheduling components are implemented and exercised with
 fake adapters; release and container artifacts have isolated Nix checks. The
 default OTP application intentionally starts only the repository. The live

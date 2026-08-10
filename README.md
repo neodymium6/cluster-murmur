@@ -6,10 +6,10 @@ persona-driven Discord messages and bounded conversations.
 
 ## Status
 
-Public alpha engine candidate. The repository contains a composable Elixir/OTP application,
-pinned development environment, CI entry point, architecture baseline, core
-domain values, external dependency behaviours, and deterministic observation
-state-transition classification. Version 1 duration and common scalar
+Public alpha engine. The repository contains a composable Elixir/OTP
+application, pinned development environment, CI entry point, architecture
+baseline, core domain values, external dependency behaviours, and deterministic
+observation state-transition classification. Version 1 duration and common scalar
 configuration validation, category-aware bounded include resolution, bounded
 YAML document decoding, strict top-level manifest validation, deterministic
 manifest load-plan construction, and categorized included-document decoding are
