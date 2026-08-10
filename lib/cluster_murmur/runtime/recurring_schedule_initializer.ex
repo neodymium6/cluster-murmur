@@ -144,9 +144,6 @@ defmodule ClusterMurmur.Runtime.RecurringScheduleInitializer do
     end
   end
 
-  defp calculate_versions(_triggers, _initialized_at, _versions),
-    do: {:error, :invalid_recurring_schedule_initialization}
-
   defp restore_versions(versions, states) do
     Enum.reduce_while(versions, :ok, fn {trigger_id, next_run_at}, :ok ->
       case states.restore_or_initialize(trigger_id, next_run_at) do

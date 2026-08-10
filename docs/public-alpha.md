@@ -57,7 +57,8 @@ The public alpha is ready when:
 1. all repository checks pass without live infrastructure;
 2. dependency retirement and vulnerability checks are reproducible in CI;
 3. every Dialyzer baseline entry is exact, current, and retained for a
-   documented fail-closed boundary rather than convenience;
+   [documented fail-closed boundary](dialyzer-boundaries.md) rather than
+   convenience;
 4. the production release starts, stops, and migrates an isolated temporary
    database without distribution or credentials;
 5. the OCI image has the documented non-root, read-only-compatible metadata and

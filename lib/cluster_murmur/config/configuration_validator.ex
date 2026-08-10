@@ -265,6 +265,4 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
 
   defp exact_keys?(value, keys) when is_map(value),
     do: map_size(value) == length(keys) and Enum.all?(keys, &Map.has_key?(value, &1))
-
-  defp exact_keys?(_value, _keys), do: false
 end
