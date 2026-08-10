@@ -326,13 +326,22 @@
               expectedCommand = "${productionRelease}/bin/cluster_murmur";
               expectedEntrypoint = "${pkgs.tini}/bin/tini";
               expectedCertificate = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+              runtimeClosure = pkgs.closureInfo {
+                rootPaths = [
+                  productionRelease
+                  pkgs.tini
+                  pkgs.cacert
+                ];
+              };
             in
             pkgs.runCommand "cluster-murmur-container-image-check"
               {
                 nativeBuildInputs = [
+                  pkgs.coreutils
                   pkgs.gnutar
                   pkgs.gzip
                   pkgs.jq
+                  pkgs.sqlite
                 ];
               }
               ''
@@ -404,6 +413,48 @@
                 test -d "$rootfs/var/lib/cluster-murmur"
                 test -x "$rootfs${expectedEntrypoint}"
                 test -x "$rootfs${expectedCommand}"
+                while IFS= read -r store_path; do
+                  test -e "$rootfs$store_path"
+                done < ${runtimeClosure}/store-paths
+
+                chmod -R a-w "$rootfs"
+                chmod u+w "$rootfs/tmp" "$rootfs/var/lib/cluster-murmur"
+                test ! -w "$rootfs/etc"
+                test ! -w "$rootfs/nix"
+                test -w "$rootfs/tmp"
+                test -w "$rootfs/var/lib/cluster-murmur"
+
+                runtime_tmp="$rootfs/tmp"
+                runtime_database="$rootfs/var/lib/cluster-murmur/smoke.sqlite3"
+                mkdir -p "$runtime_tmp/release"
+                chmod 0700 "$runtime_tmp/release"
+
+                container_env=(
+                  "CLUSTER_MURMUR_DATABASE_PATH=$runtime_database"
+                  "HOME=$runtime_tmp"
+                  "LANG=C.UTF-8"
+                  "LC_ALL=C.UTF-8"
+                  "RELEASE_TMP=$runtime_tmp/release"
+                  "SSL_CERT_FILE=${expectedCertificate}"
+                  "TMPDIR=$runtime_tmp"
+                )
+
+                env "''${container_env[@]}" \
+                  "$rootfs${expectedCommand}" eval \
+                  'ClusterMurmur.Release.migrate!()'
+                test "$(sqlite3 "$runtime_database" \
+                  "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'stochastic_schedules'")" \
+                  = "stochastic_schedules"
+
+                smoke_output="$(env "''${container_env[@]}" \
+                  timeout 30 \
+                  "$rootfs${expectedEntrypoint}" -- \
+                  "$rootfs${expectedCommand}" start_iex <<'EOF'
+                IO.puts("CONTAINER_SMOKE=#{Application.spec(:cluster_murmur, :vsn)}:#{Node.alive?()}")
+                System.stop(0)
+                EOF
+                )"
+                grep -Fq "CONTAINER_SMOKE=${version}:false" <<< "$smoke_output"
                 touch "$out"
               '';
         }
