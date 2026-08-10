@@ -302,8 +302,6 @@ defmodule ClusterMurmur.Persistence.EventDispatchStore do
       validate_time(candidate.enqueued_at) == :ok
   end
 
-  defp valid_candidate_shape?(_candidate), do: false
-
   defp valid_claim?(%EventDispatchClaim{} = claim) do
     map_size(claim) == @claim_key_count and Enum.all?(@claim_keys, &Map.has_key?(claim, &1)) and
       Validator.validate_id(claim.event_id) == :ok and validate_time(claim.enqueued_at) == :ok and
