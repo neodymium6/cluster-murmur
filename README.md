@@ -328,8 +328,12 @@ docker image load -i result
 The scratch-based image uses the OCI image configuration and standard OCI
 labels, runs as numeric user and group `65532:65532`, starts the nondistributed
 release through Tini, declares no ports or volumes, and contains no deployment
-configuration or credentials. Running it requires all of the following
-deployment-owned controls:
+configuration or credentials. The flake check extracts the image, verifies this
+metadata and complete runtime closure, removes write permission except from the
+two intended writable paths, and smoke-runs the extracted Tini and release
+against an isolated temporary database. This archive-level check does not apply
+container-runtime mount, identity, or privilege controls. Running the image
+requires all of the following deployment-owned controls:
 
 - make the root filesystem read-only;
 - drop every Linux capability and disable privilege escalation;

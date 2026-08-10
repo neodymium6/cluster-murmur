@@ -356,8 +356,10 @@ Property tests prove non-negative weights, empty-candidate behavior, hard
 conversation bounds, cooldown exclusion, and the stochastic minimum interval.
 
 CI includes formatting, warnings-as-errors compilation, tests, Credo, Dialyzer,
-an OCI build, and a dependency audit. The audit runs Hex's pinned-dependency
-retirement and security-advisory check before the remaining repository checks.
+an OCI build with closure and metadata validation plus an extracted-entrypoint
+smoke test against isolated temporary storage, and a dependency audit. The audit
+runs Hex's pinned-dependency retirement and security-advisory check before the
+remaining repository checks.
 Credo enables correctness and safety warnings, including its opt-in
 environment-leak, unsafe-atom, and unsafe-execution checks. It excludes the
 same-value operation check because the bounded float validators intentionally

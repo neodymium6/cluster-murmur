@@ -61,8 +61,9 @@ The public alpha is ready when:
    convenience;
 4. the production release starts, stops, and migrates an isolated temporary
    database without distribution or credentials;
-5. the OCI image has the documented non-root, read-only-compatible metadata and
-   passes an isolated smoke test; and
+5. the OCI image has the documented non-root, read-only-compatible metadata,
+   contains its runtime closure, and its extracted entrypoint passes a smoke
+   test against isolated temporary storage; and
 6. README, design, security, and configuration documentation agree on the
    public/private boundary.
 
