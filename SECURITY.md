@@ -2,8 +2,9 @@
 
 ## Supported versions
 
-There are no supported releases yet. The current repository is a bootstrap
-and must not be connected to production or sensitive systems.
+There are no supported releases yet. The current repository is a public alpha
+engine candidate, not a standalone service, and must not be connected to
+production or sensitive systems.
 
 ## Security boundary
 

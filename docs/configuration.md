@@ -3,8 +3,11 @@
 ## Status and scope
 
 This document defines the public configuration contract targeted by the MVP.
-The runtime is at the early foundation stage, so examples describe intended
-behavior unless a capability is explicitly identified as implemented.
+The repository is a public alpha engine candidate: loading, validation, and
+startup-input preparation are implemented, while live transports and automatic
+runtime assembly remain deployment-owned. Examples describe the normative
+contract; [`public-alpha.md`](public-alpha.md) identifies the implemented alpha
+boundary.
 
 Configuration controls observations, event policy, personas, bindings,
 triggers, generation limits, and outbound routing. It must never contain
