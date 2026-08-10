@@ -18,6 +18,18 @@ facts into persona-specific language. Tool access must remain disabled by
 default and, if introduced later, must use application-enforced allowlists and
 strict call, round, timeout, and concurrency limits.
 
+## Dependency auditing
+
+`mix.lock` fixes the complete Hex dependency graph and `flake.lock` fixes the
+development and CI toolchain. `just audit` runs `mix hex.audit`, which fails for
+any locked package version that Hex reports as retired or affected by a
+published security advisory. `just check` and CI run this audit before the
+remaining repository checks.
+
+There are no ignored advisories or retirements. Any future exception must name
+one exact advisory or package version, explain why the project is unaffected,
+and be removed when the lock file no longer contains the finding.
+
 Runtime deployments must:
 
 - read webhook URLs, API keys, MCP credentials, and private endpoints from

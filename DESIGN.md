@@ -355,16 +355,17 @@ restart restoration. Replay tests inject identical clocks and random sequences.
 Property tests prove non-negative weights, empty-candidate behavior, hard
 conversation bounds, cooldown exclusion, and the stochastic minimum interval.
 
-The mature CI target includes formatting, warnings-as-errors compilation,
-tests, Credo, Dialyzer, schema and example validation, an OCI build, and a
-dependency audit. Current CI runs Credo's correctness and safety warnings,
-including its opt-in environment-leak, unsafe-atom, and unsafe-execution checks.
-It excludes the same-value operation check because the bounded float validators
-intentionally use self-comparison as a NaN guard. Dialyzer rejects new warnings
-and stale baseline entries; its line-specific baseline records existing type
-debt for incremental removal without hiding a new warning of the same class in
-the same file. Style and complexity policy, schema and example validation, and
-dependency auditing remain separate incremental gates.
+CI includes formatting, warnings-as-errors compilation, tests, Credo, Dialyzer,
+an OCI build, and a dependency audit. The audit runs Hex's pinned-dependency
+retirement and security-advisory check before the remaining repository checks.
+Credo enables correctness and safety warnings, including its opt-in
+environment-leak, unsafe-atom, and unsafe-execution checks. It excludes the
+same-value operation check because the bounded float validators intentionally
+use self-comparison as a NaN guard. Dialyzer rejects new warnings and stale
+baseline entries; every retained exact filter is classified in
+[`docs/dialyzer-boundaries.md`](docs/dialyzer-boundaries.md). Style and
+complexity policy and standalone schema/example fixtures remain later
+incremental gates.
 
 ## Implementation phases
 
