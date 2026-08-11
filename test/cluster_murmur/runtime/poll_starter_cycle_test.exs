@@ -4,6 +4,7 @@ defmodule ClusterMurmur.Runtime.PollStarterCycleTest do
   alias ClusterMurmur.Config.StateTracking
   alias ClusterMurmur.Observations.{IngestionPlanner, Observation}
   alias ClusterMurmur.Observers.Client
+  alias ClusterMurmur.Persistence.PersonaCooldownRecord
   alias ClusterMurmur.Runtime.PollStarterCycle
   alias ClusterMurmur.Runtime.PollStarterCycle.Result
   alias ClusterMurmur.Runtime.ResponderTurnSchedule
@@ -15,7 +16,19 @@ defmodule ClusterMurmur.Runtime.PollStarterCycleTest do
   alias ClusterMurmur.Triggers.AuthorizedConversationPipeline.Adapters,
     as: ConversationAdapters
 
+  alias ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer,
+    as: ConversationConsumer
+
+  alias ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer.Context,
+    as: ConversationConsumerContext
+
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.{Adapters, SharedInput}
+
+  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer,
+    as: StarterConsumer
+
+  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.Context,
+    as: StarterConsumerContext
 
   @executed_at ~U[2026-08-07 02:00:00.000000Z]
 
@@ -41,6 +54,7 @@ defmodule ClusterMurmur.Runtime.PollStarterCycleTest do
 
   defmodule AdaptersStub do
     def consume(_plan), do: :unused
+
     def generate(_request, _settings, _transport), do: :unused
     def append(_message, _conversation), do: :unused
     def append_reserved(_conversation, _message), do: :unused
@@ -49,6 +63,12 @@ defmodule ClusterMurmur.Runtime.PollStarterCycleTest do
     def succeed(_id, _message_id, _completed_at, _external_id), do: :unused
     def fail(_id, _completed_at, _reason), do: :unused
     def mark_ambiguous(_id, _completed_at), do: :unused
+
+    def fetch(persona_id) do
+      record({:fetch_cooldown, persona_id})
+      Process.get({__MODULE__, :cooldown, persona_id}, {:ok, nil})
+    end
+
     def record_spoken(_persona_id, _spoken_at, _cooldown_until), do: :unused
     def complete(_conversation_id, _completed_at), do: :unused
     def wait(_conversation), do: :unused
@@ -57,10 +77,15 @@ defmodule ClusterMurmur.Runtime.PollStarterCycleTest do
     def confirm_completed(_conversation), do: :unused
     def weighted_choice(_choices), do: :unused
     def uniform, do: :unused
+
+    defp record(call) do
+      Process.put({__MODULE__, :calls}, Process.get({__MODULE__, :calls}, []) ++ [call])
+    end
   end
 
   setup do
     Process.put({FakeObserver, :calls}, [])
+    Process.put({AdaptersStub, :calls}, [])
     Process.put({FakeObserver, :targets}, {:ok, [%{id: "example-target"}]})
 
     Process.put(
@@ -112,8 +137,83 @@ defmodule ClusterMurmur.Runtime.PollStarterCycleTest do
              {:observe_target, "example-target"}
            ]
 
+    assert Process.get({AdaptersStub, :calls}) == [{:fetch_cooldown, "caretaker"}]
+
     refute inspect(result) =~ "example-target"
     refute inspect(result) =~ "private fact"
+  end
+
+  test "fails before observation when the current cooldown snapshot cannot load" do
+    configuration = RuntimeFixture.configuration()
+    assert {:ok, client} = Client.new(FakeObserver, :process_dictionary)
+    Process.put({AdaptersStub, :cooldown, "caretaker"}, {:error, :storage_unavailable})
+
+    assert PollStarterCycle.run(
+             client,
+             configuration,
+             @executed_at,
+             context(configuration),
+             FakeIngestionStore
+           ) == {:error, :poll_failed}
+
+    assert Process.get({AdaptersStub, :calls}) == [{:fetch_cooldown, "caretaker"}]
+    assert Process.get({FakeObserver, :calls}) == []
+  end
+
+  test "applies changed fetched cooldowns on every starter and conversation cycle" do
+    assert {:ok, client} = Client.new(FakeObserver, :process_dictionary)
+
+    for {configuration, build_context, consumer} <- [
+          {RuntimeFixture.configuration(), &context/1, StarterConsumer},
+          {RuntimeFixture.responder_configuration(),
+           &conversation_context(&1, responder_schedule()), ConversationConsumer}
+        ] do
+      configuration = immediate_state_changes(configuration)
+      persona_ids = configuration.personas.personas |> Map.keys() |> Enum.sort()
+      fetch_calls = Enum.map(persona_ids, &{:fetch_cooldown, &1})
+
+      Enum.each(persona_ids, &Process.delete({AdaptersStub, :cooldown, &1}))
+      Process.put({AdaptersStub, :calls}, [])
+
+      {result, consumer_context} =
+        capture_consumer_context(consumer, fn ->
+          PollStarterCycle.run(
+            client,
+            configuration,
+            @executed_at,
+            build_context.(configuration),
+            FakeIngestionStore
+          )
+        end)
+
+      assert {:ok, %Result{event_count: 1, match_count: 1}} = result
+      assert consumer_cooldowns(consumer_context) == %{}
+      assert Process.get({AdaptersStub, :calls}) == fetch_calls
+
+      refreshed_cooldowns =
+        Map.new(persona_ids, fn persona_id ->
+          record = cooldown(persona_id, @executed_at)
+          Process.put({AdaptersStub, :cooldown, persona_id}, {:ok, record})
+          {persona_id, record}
+        end)
+
+      Process.put({AdaptersStub, :calls}, [])
+
+      {result, consumer_context} =
+        capture_consumer_context(consumer, fn ->
+          PollStarterCycle.run(
+            client,
+            configuration,
+            @executed_at,
+            build_context.(configuration),
+            FakeIngestionStore
+          )
+        end)
+
+      assert {:ok, %Result{event_count: 1, match_count: 1}} = result
+      assert consumer_cooldowns(consumer_context) == refreshed_cooldowns
+      assert Process.get({AdaptersStub, :calls}) == fetch_calls
+    end
   end
 
   test "rejects invalid configuration before observing and collapses observer failures" do
@@ -252,5 +352,69 @@ defmodule ClusterMurmur.Runtime.PollStarterCycleTest do
       generation_transport: fn _request -> :unused end,
       publication_transport: fn _request -> :unused end
     }
+  end
+
+  defp immediate_state_changes(configuration) do
+    %{
+      configuration
+      | state_tracking: %StateTracking{failures_required: 1, successes_required: 1}
+    }
+  end
+
+  defp capture_consumer_context(consumer, run_cycle) do
+    owner = self()
+    trace_ref = make_ref()
+    tracer = spawn(fn -> forward_traces(owner, trace_ref) end)
+
+    Code.ensure_loaded!(consumer)
+    :erlang.trace(self(), true, [:call, {:tracer, tracer}])
+    :erlang.trace_pattern({consumer, :preflight, 4}, true, [])
+
+    try do
+      result = run_cycle.()
+
+      consumer_context =
+        receive do
+          {^trace_ref,
+           {:trace, pid, :call,
+            {^consumer, :preflight, [_plan, _poll_result, _configuration, context]}}}
+          when pid == self() ->
+            context
+        after
+          1_000 -> flunk("consumer preflight was not called")
+        end
+
+      {result, consumer_context}
+    after
+      :erlang.trace_pattern({consumer, :preflight, 4}, false, [])
+      :erlang.trace(self(), false, [:call])
+      send(tracer, :stop)
+    end
+  end
+
+  defp forward_traces(owner, trace_ref) do
+    receive do
+      :stop ->
+        :ok
+
+      message ->
+        send(owner, {trace_ref, message})
+        forward_traces(owner, trace_ref)
+    end
+  end
+
+  defp consumer_cooldowns(%StarterConsumerContext{entries: [entry]}),
+    do: entry.input.cooldowns
+
+  defp consumer_cooldowns(%ConversationConsumerContext{entries: [entry]}),
+    do: entry.input.starter.cooldowns
+
+  defp cooldown(persona_id, spoken_at) do
+    %PersonaCooldownRecord{
+      persona_id: persona_id,
+      last_spoken_at: spoken_at,
+      cooldown_until: DateTime.add(spoken_at, 60, :second)
+    }
+    |> Ecto.put_meta(state: :loaded)
   end
 end

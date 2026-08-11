@@ -56,6 +56,7 @@ defmodule ClusterMurmur.Runtime.PollSchedulerTest do
     def succeed(_id, _message_id, _completed_at, _external_id), do: :unused
     def fail(_id, _completed_at, _reason), do: :unused
     def mark_ambiguous(_id, _completed_at), do: :unused
+    def fetch(_persona_id), do: {:ok, nil}
     def record_spoken(_persona_id, _spoken_at, _cooldown_until), do: :unused
     def complete(_conversation_id, _completed_at), do: :unused
     def wait(_conversation), do: :unused
