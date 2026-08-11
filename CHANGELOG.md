@@ -47,6 +47,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   selection, with fail-closed storage handling.
 - Per-dispatch refresh of durable persona cooldowns before outbox reads or
   claims, shared by starter-only and bounded-conversation consumers.
+- Explicit bounded responder schedule timing settings loaded during startup,
+  with ordered per-turn delays and no live defaults.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 

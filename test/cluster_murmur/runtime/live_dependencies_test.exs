@@ -5,7 +5,7 @@ defmodule ClusterMurmur.Runtime.LiveDependenciesTest do
   alias ClusterMurmur.Generation.{OpenAICompatibleProvider, ProviderSettings}
   alias ClusterMurmur.Observers.{Client, MCPClient, MCPSettings}
   alias ClusterMurmur.Runtime.LiveDependencies
-  alias ClusterMurmur.Runtime.SchedulerSettings
+  alias ClusterMurmur.Runtime.{ResponderScheduleSettings, SchedulerSettings}
   alias ClusterMurmur.RuntimeSettings
   alias ClusterMurmur.Startup.Prepared
   alias ClusterMurmur.TestSupport.RuntimeFixture
@@ -78,6 +78,12 @@ defmodule ClusterMurmur.Runtime.LiveDependenciesTest do
         recurring_interval_ms: 10_000,
         stochastic_interval_ms: 15_000,
         event_retention_interval_ms: 3_600_000
+      },
+      responder_schedule_settings: %ResponderScheduleSettings{
+        turn_interval_ms: 5_000,
+        generation_delay_ms: 0,
+        publication_start_delay_ms: 1_000,
+        publication_complete_delay_ms: 2_000
       },
       runtime_settings: %RuntimeSettings{
         observer_settings: %MCPSettings{
