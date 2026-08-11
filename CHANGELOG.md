@@ -53,6 +53,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   deployment timings, and explicit narrow transports.
 - Fixed, cross-validated production starter and responder adapter bundles with
   no deployment-selected persistence or policy modules.
+- Effect-free assembly and preflight of shared production poll and durable
+  event conversation contexts from one validated startup value.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 
