@@ -94,6 +94,7 @@ jobs:
       contents: read
       packages: read
     env:
+      CONTAINERS_REGISTRIES_CONF: ${{ github.workspace }}/.github/containers-registries.conf
       RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
       SOURCE_REVISION: ${{ needs.resolve.outputs.revision }}
       VERSION: ${{ needs.resolve.outputs.version }}
