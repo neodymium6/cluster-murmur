@@ -1,5 +1,9 @@
 # ADR 0118: Prepare Runtime Inputs Before Startup
 
+## Status
+
+Accepted; amended by ADR 0202.
+
 ## Context
 
 Configuration loading and deployment-setting resolution are independently

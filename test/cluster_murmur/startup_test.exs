@@ -23,12 +23,14 @@ defmodule ClusterMurmur.StartupTest do
     """)
 
     api_key_path = write(root, "api-key", "clearly-fake-api-key\n")
+    observer_token_path = write(root, "observer-token", "clearly-fake-observer-token\n")
     webhook_path = write(root, "webhook", webhook_url() <> "\n")
     on_exit(fn -> File.rm_rf!(root) end)
 
     %{
       api_key_path: api_key_path,
       config_path: config_path,
+      observer_token_path: observer_token_path,
       webhook_path: webhook_path
     }
   end
@@ -48,6 +50,8 @@ defmodule ClusterMurmur.StartupTest do
 
     for hidden <- [
           "clearly-fake-api-key",
+          "clearly-fake-observer-token",
+          "https://observer.example.invalid/mcp",
           "example-model",
           webhook_url(),
           context.api_key_path,
@@ -69,6 +73,14 @@ defmodule ClusterMurmur.StartupTest do
   end
 
   test "labels runtime settings failures after configuration succeeds", context do
+    missing_observer =
+      context
+      |> environment_values()
+      |> Map.delete("CLUSTER_MURMUR_OBSERVER_MCP_URL")
+
+    assert Startup.prepare(context.config_path, environment(missing_observer)) ==
+             {:error, {:runtime_settings, {:observer, :missing_mcp_endpoint}}}
+
     missing_model = context |> environment_values() |> Map.delete("LLM_MODEL")
 
     assert Startup.prepare(context.config_path, environment(missing_model)) ==
@@ -99,8 +111,14 @@ defmodule ClusterMurmur.StartupTest do
     end
   end
 
-  defp environment(%{api_key_path: _api_key_path, webhook_path: _webhook_path} = context),
-    do: context |> environment_values() |> environment()
+  defp environment(
+         %{
+           api_key_path: _api_key_path,
+           observer_token_path: _observer_token_path,
+           webhook_path: _webhook_path
+         } = context
+       ),
+       do: context |> environment_values() |> environment()
 
   defp environment(values) when is_map(values) do
     fn name -> Map.fetch(values, name) end
@@ -108,6 +126,8 @@ defmodule ClusterMurmur.StartupTest do
 
   defp environment_values(context) do
     %{
+      "CLUSTER_MURMUR_OBSERVER_MCP_URL" => "https://observer.example.invalid/mcp",
+      "CLUSTER_MURMUR_OBSERVER_MCP_TOKEN_FILE" => context.observer_token_path,
       "LLM_BASE_URL" => "https://llm.example.invalid/v1",
       "LLM_MODEL" => "example-model",
       "LLM_API_KEY_FILE" => context.api_key_path,
