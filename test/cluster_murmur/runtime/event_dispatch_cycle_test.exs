@@ -1,12 +1,37 @@
 defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
   use ExUnit.Case, async: true
 
-  alias ClusterMurmur.Persistence.{EventDispatch, EventDispatchCandidate, EventDispatchClaim}
+  alias ClusterMurmur.Persistence.{
+    EventDispatch,
+    EventDispatchCandidate,
+    EventDispatchClaim,
+    PersonaCooldownRecord
+  }
+
   alias ClusterMurmur.Runtime.EventDispatchCycle
-  alias ClusterMurmur.Runtime.EventDispatchCycle.{Adapters, Context, Result}
+  alias ClusterMurmur.Runtime.EventDispatchCycle.{Adapters, Context, ConversationRuntime, Result}
+  alias ClusterMurmur.Runtime.ResponderTurnCycle.Adapters, as: ResponderAdapters
+  alias ClusterMurmur.Runtime.ResponderTurnSchedule
+  alias ClusterMurmur.Runtime.ResponderTurnSchedule.Step
   alias ClusterMurmur.TestSupport.RuntimeFixture
+
+  alias ClusterMurmur.Triggers.AuthorizedConversationPipeline.Adapters,
+    as: ConversationAdapters
+
+  alias ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer,
+    as: ConversationConsumer
+
+  alias ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer.Context,
+    as: ConversationConsumerContext
+
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.SharedInput
+
+  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer,
+    as: StarterConsumer
+
+  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.Context,
+    as: StarterConsumerContext
 
   @now ~U[2026-08-08 17:00:00.000000Z]
 
@@ -106,19 +131,34 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
   end
 
   defmodule PipelineAdapters do
+    alias ClusterMurmur.Runtime.EventDispatchCycleTest, as: Test
+
     def consume(_plan), do: :unused
     def generate(_request, _settings, _transport), do: :unused
     def append(_message, _conversation), do: :unused
+    def append_reserved(_conversation, _message), do: :unused
     def start(_message_id, _conversation_id, _persona_id, _started_at, _request_id), do: :unused
     def publish(_started, _settings, _completed_at, _transport, _publisher, _store), do: :unused
     def succeed(_id, _message_id, _completed_at, _external_id), do: :unused
     def fail(_id, _completed_at, _reason), do: :unused
     def mark_ambiguous(_id, _completed_at), do: :unused
+
+    def fetch(persona_id) do
+      trace({:fetch_cooldown, persona_id})
+      Process.get({Test, :cooldown, persona_id}, {:ok, nil})
+    end
+
     def record_spoken(_persona_id, _spoken_at, _cooldown_until), do: :unused
     def complete(_conversation_id, _completed_at), do: :unused
     def wait(_conversation), do: :unused
+    def claim_generation(_conversation, _persona_id), do: :unused
+    def consume_generation(_conversation, _persona_id), do: :unused
+    def confirm_completed(_conversation), do: :unused
     def weighted_choice(_choices), do: :unused
     def uniform, do: :unused
+
+    defp trace(call),
+      do: Process.put({Test, :trace}, Process.get({Test, :trace}, []) ++ [call])
   end
 
   setup do
@@ -156,6 +196,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
     assert result.dispatch_failure_count == 0
 
     assert Process.get({__MODULE__, :trace}) == [
+             {:fetch_cooldown, "caretaker"},
              {:list, @now},
              {:fetch, "event-a"},
              {:claim, "event-a"},
@@ -183,6 +224,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
     assert result.candidate_failure_count == 0
 
     assert Process.get({__MODULE__, :trace}) == [
+             {:fetch_cooldown, "caretaker"},
              {:list, @now},
              {:fetch, "event-a"},
              {:claim, "event-a"},
@@ -236,6 +278,63 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
     end
 
     assert Process.get({__MODULE__, :trace}) == []
+  end
+
+  test "fails before reading the outbox when the current cooldown snapshot cannot load" do
+    configuration = RuntimeFixture.configuration()
+    Process.put({__MODULE__, :cooldown, "caretaker"}, {:error, :storage_unavailable})
+
+    assert EventDispatchCycle.run(configuration, @now, context(configuration), adapters()) ==
+             {:error, :event_dispatch_failed}
+
+    assert Process.get({__MODULE__, :trace}) == [{:fetch_cooldown, "caretaker"}]
+  end
+
+  test "applies changed fetched cooldowns on every starter and conversation cycle" do
+    event = event("event-a", "observation.failed")
+    put_batch([event])
+
+    for {configuration, build_context, consumer} <- [
+          {RuntimeFixture.configuration(), &context/1, StarterConsumer},
+          {RuntimeFixture.responder_configuration(),
+           &conversation_context(&1, responder_schedule()), ConversationConsumer}
+        ] do
+      persona_ids = configuration.personas.personas |> Map.keys() |> Enum.sort()
+      fetch_calls = Enum.map(persona_ids, &{:fetch_cooldown, &1})
+
+      Enum.each(persona_ids, &Process.delete({__MODULE__, :cooldown, &1}))
+      Process.put({__MODULE__, :trace}, [])
+      cycle_context = build_context.(configuration)
+
+      assert EventDispatchCycle.validate_runtime(configuration, cycle_context, adapters()) == :ok
+
+      {result, consumer_context} =
+        capture_consumer_context(consumer, fn ->
+          EventDispatchCycle.run(configuration, @now, cycle_context, adapters())
+        end)
+
+      assert {:ok, %Result{candidate_count: 1, planned_match_count: 1}} = result
+      assert consumer_cooldowns(consumer_context) == %{}
+      assert Enum.take(Process.get({__MODULE__, :trace}), length(fetch_calls)) == fetch_calls
+
+      refreshed_cooldowns =
+        Map.new(persona_ids, fn persona_id ->
+          record = cooldown(persona_id)
+          Process.put({__MODULE__, :cooldown, persona_id}, {:ok, record})
+          {persona_id, record}
+        end)
+
+      Process.put({__MODULE__, :trace}, [])
+
+      {result, consumer_context} =
+        capture_consumer_context(consumer, fn ->
+          EventDispatchCycle.run(configuration, @now, build_context.(configuration), adapters())
+        end)
+
+      assert {:ok, %Result{candidate_count: 1, planned_match_count: 1}} = result
+      assert consumer_cooldowns(consumer_context) == refreshed_cooldowns
+      assert Enum.take(Process.get({__MODULE__, :trace}), length(fetch_calls)) == fetch_calls
+    end
   end
 
   test "accepts storage-normalized completion precision for the same instant" do
@@ -458,16 +557,116 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
 
   defp context(configuration) do
     %Context{
-      shared_input: %SharedInput{
-        configuration: configuration,
-        cooldowns: %{},
-        provider_settings: RuntimeFixture.provider_settings(),
-        webhook_settings: RuntimeFixture.webhook_settings(),
-        generation_transport: fn _request -> :unused end,
-        publication_transport: fn _request -> :unused end
-      },
+      shared_input: shared_input(configuration),
       adapters: pipeline_adapters()
     }
+  end
+
+  defp conversation_context(configuration, schedule) do
+    starter_adapters = pipeline_adapters()
+
+    %Context{
+      shared_input: shared_input(configuration),
+      adapters: starter_adapters,
+      conversation_runtime: %ConversationRuntime{
+        schedule: schedule,
+        adapters: %ConversationAdapters{
+          starter: starter_adapters,
+          responder: %ResponderAdapters{
+            random: PipelineAdapters,
+            conversation_store: PipelineAdapters,
+            provider: PipelineAdapters,
+            message_store: PipelineAdapters,
+            publication_start_store: PipelineAdapters,
+            publisher: PipelineAdapters,
+            publication_terminal_store: PipelineAdapters,
+            cooldown_store: PipelineAdapters
+          }
+        }
+      }
+    }
+  end
+
+  defp shared_input(configuration) do
+    %SharedInput{
+      configuration: configuration,
+      cooldowns: %{},
+      provider_settings: RuntimeFixture.provider_settings(),
+      webhook_settings: RuntimeFixture.webhook_settings(),
+      generation_transport: fn _request -> :unused end,
+      publication_transport: fn _request -> :unused end
+    }
+  end
+
+  defp responder_schedule do
+    %ResponderTurnSchedule{
+      steps: [
+        %Step{
+          planned_after_ms: 0,
+          generated_after_ms: 1_000,
+          publication_started_after_ms: 2_000,
+          publication_completed_after_ms: 3_000,
+          generation_transport: fn _request -> :unused end,
+          publication_transport: fn _request -> :unused end
+        }
+      ]
+    }
+  end
+
+  defp capture_consumer_context(consumer, run_cycle) do
+    owner = self()
+    trace_ref = make_ref()
+    tracer = spawn(fn -> forward_traces(owner, trace_ref) end)
+
+    Code.ensure_loaded!(consumer)
+    :erlang.trace(self(), true, [:call, {:tracer, tracer}])
+    :erlang.trace_pattern({consumer, :preflight, 3}, true, [])
+
+    try do
+      result = run_cycle.()
+
+      consumer_context =
+        receive do
+          {^trace_ref,
+           {:trace, pid, :call, {^consumer, :preflight, [_plan, _configuration, context]}}}
+          when pid == self() ->
+            context
+        after
+          1_000 -> flunk("consumer preflight was not called")
+        end
+
+      {result, consumer_context}
+    after
+      :erlang.trace_pattern({consumer, :preflight, 3}, false, [])
+      :erlang.trace(self(), false, [:call])
+      send(tracer, :stop)
+    end
+  end
+
+  defp forward_traces(owner, trace_ref) do
+    receive do
+      :stop ->
+        :ok
+
+      message ->
+        send(owner, {trace_ref, message})
+        forward_traces(owner, trace_ref)
+    end
+  end
+
+  defp consumer_cooldowns(%StarterConsumerContext{entries: [entry]}),
+    do: entry.input.cooldowns
+
+  defp consumer_cooldowns(%ConversationConsumerContext{entries: [entry]}),
+    do: entry.input.starter.cooldowns
+
+  defp cooldown(persona_id) do
+    %PersonaCooldownRecord{
+      persona_id: persona_id,
+      last_spoken_at: @now,
+      cooldown_until: DateTime.add(@now, 60, :second)
+    }
+    |> Ecto.put_meta(state: :loaded)
   end
 
   defp pipeline_adapters do
