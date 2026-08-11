@@ -3,12 +3,21 @@ defmodule ClusterMurmur.Runtime.ProductionApplication do
   Builds the complete child list for the standalone production application.
 
   Construction performs only bounded configuration and secret-file reads. It
-  does not read a clock, recover state, start a worker, or contact an external
-  service. The returned child order starts the repository before the
-  recovery-gated runtime supervisor.
+  does not read a clock, recover state, start a worker, bind a listener, or
+  contact an external service. The returned child order keeps a fixed health
+  listener available around repository and runtime replacement, and creates a
+  readiness service before persistence and lets the recovery-gated supervisor
+  acquire its lease only after all schedulers start.
   """
 
-  alias ClusterMurmur.Runtime.{ProductionRecoveredRuntimeOptions, RecoveredRuntimeSupervisor}
+  alias ClusterMurmur.Runtime.{
+    HealthServer,
+    HealthSettings,
+    ProductionRecoveredRuntimeOptions,
+    ReadyMarker,
+    RecoveredRuntimeSupervisor
+  }
+
   alias ClusterMurmur.Startup
 
   @config_path_environment "CLUSTER_MURMUR_CONFIG_PATH"
@@ -25,8 +34,15 @@ defmodule ClusterMurmur.Runtime.ProductionApplication do
   def child_specs(environment_reader) when is_function(environment_reader, 1) do
     with {:ok, config_path} <- read_config_path(environment_reader),
          {:ok, prepared} <- Startup.prepare(config_path, environment_reader),
-         {:ok, options} <- ProductionRecoveredRuntimeOptions.build(prepared) do
-      {:ok, [ClusterMurmur.Repo, {RecoveredRuntimeSupervisor, options}]}
+         {:ok, options} <- ProductionRecoveredRuntimeOptions.build(prepared),
+         {:ok, health_settings} <- HealthSettings.load(environment_reader) do
+      {:ok,
+       [
+         {HealthServer, health_settings},
+         {ReadyMarker, :production},
+         ClusterMurmur.Repo,
+         {RecoveredRuntimeSupervisor, options}
+       ]}
     else
       _failure -> {:error, :invalid_production_application}
     end

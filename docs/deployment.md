@@ -9,7 +9,7 @@ or loading an artifact does not authorize connecting it to infrastructure, a
 model provider, or Discord.
 
 A deployment must still supply and review configuration, secret mounts,
-storage, network policy, health integration, telemetry, and rollout policy.
+storage, network policy, probe timing, telemetry, and rollout policy.
 
 ## Build the OTP release
 
@@ -109,14 +109,45 @@ The deployment must provide:
   references;
 - the provider, webhook, scheduler, and responder-timing environment values
   documented in the [configuration reference](configuration.md);
-- health, metrics, logging, and restart integration; and
+- `CLUSTER_MURMUR_HEALTH_PORT` for the fixed private operational probe listener;
+- orchestrator probe timing, metrics, logging, and restart integration; and
 - platform-specific storage, network, and rollout policy.
 
-Startup orders the SQLite repository before one recovery-gated supervisor.
-That supervisor completes global recovery and recurring and stochastic schedule
-initialization before it starts poll, event-dispatch, recurring, stochastic,
-and retention schedulers. Application startup does not run database migrations;
-apply them first as described above.
+Startup binds the fixed probe listener, then orders the SQLite repository before
+one recovery-gated supervisor. That supervisor completes global recovery and
+recurring and stochastic schedule initialization before it starts poll,
+event-dispatch, recurring, stochastic, and retention schedulers. Application
+startup does not run database migrations; apply them first as described above.
+
+Use `GET /startupz` as the startup probe and allow enough failures for bounded
+recovery and schedule initialization. After startup succeeds, `GET /livez`
+reports only listener liveness and `GET /readyz` reports whether the complete
+recovery-gated runtime is currently running. All three successful responses are
+fixed `200` values; readiness and startup return `503` while unavailable. The
+runtime's monitored readiness lease is released before its schedulers drain
+during shutdown or replacement, while the listener remains live during runtime
+replacement and stops last during graceful application shutdown.
+
+Do not expose this port through a public Service or ingress. Network policy must
+limit it to orchestrator probes. The endpoint contains no metrics or diagnostics
+and must not be extended with arbitrary handlers.
+
+## Graceful termination
+
+Set the orchestrator termination grace period to at least 35 seconds. On normal
+shutdown, readiness disappears first. Each scheduler then has its standard
+five-second OTP child shutdown window to finish its current callback before it
+is killed. The five schedulers stop sequentially in reverse order, so those
+windows may consume 25 seconds in total. The repository remains available until
+every runtime child has stopped, so an interrupted SQLite transaction rolls
+back before the database process exits. The health listener stops last.
+
+Shutdown does not retry a model request or Discord publication. If termination
+interrupts internal conversation or trigger work, startup recovery marks that
+work failed. If a Discord request may already have crossed the dispatch
+boundary, recovery records the durable attempt as ambiguous rather than
+publishing again. Operators must preserve the database and allow recovery to
+complete before considering the replacement ready.
 
 These inputs must not introduce generic shell, SSH, `kubectl`, SQL, arbitrary
 PromQL, or arbitrary HTTP passthrough capabilities. See the

@@ -35,6 +35,8 @@ environment, and revision.
   facts, deterministic fallback text, disabled mentions, and redacted errors.
 - Fixed production transports and a recovery-gated runtime entry point, with
   opt-in component boundaries exercised independently using fake adapters.
+- Fixed value-free liveness, readiness, and startup probes for the production
+  runtime without a generic management interface.
 - A nondistributed OTP release, hardened OCI image definition, and CI checks for
   dependencies, source, tests, migrations, release behavior, and image metadata.
 

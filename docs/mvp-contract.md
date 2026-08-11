@@ -562,6 +562,24 @@ allowlisted and excludes facts, labels, state snapshots, participants, and
 messages. Structured logging must still choose only fields justified by the
 specific lifecycle event.
 
+## Operational signals and shutdown
+
+Production exposes only fixed value-free liveness, readiness, and startup probe
+responses. After repository startup, recovery, both schedule initializations,
+and startup of all five schedulers, the final runtime child acquires the
+monitored readiness lease and both probes become successful. That child releases
+the lease before remaining schedulers drain during replacement or graceful
+shutdown. Liveness may stay available while only the runtime is replaced and
+stops last during full application shutdown. Probe responses must not expose
+application data, configuration, endpoints, credentials, prompts, external
+responses, or diagnostics.
+
+Normal shutdown removes readiness first, gives each scheduler its bounded OTP
+child shutdown window, stops the five scheduler children sequentially before
+SQLite, and stops liveness last. An interrupted SQLite transaction rolls back.
+Interrupted provider work is not retried, and publication that may have crossed
+the dispatch boundary is recovered as ambiguous rather than sent again.
+
 ## Verification requirements
 
 Unit tests cover event matching, binding resolution, weighted choice,

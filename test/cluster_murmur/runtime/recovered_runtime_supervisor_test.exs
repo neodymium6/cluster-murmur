@@ -16,6 +16,7 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
     RecurringScheduleInitializer,
     RecurringScheduleScheduler,
     RecoveredRuntimeSupervisor,
+    ReadinessLease,
     StochasticCycle,
     StochasticScheduleInitializer,
     StochasticScheduler
@@ -49,6 +50,10 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
   defmodule OtherClock do
     @behaviour ClusterMurmur.Runtime.Clock
     def utc_now, do: ~U[2026-08-08 18:30:00.000000Z]
+  end
+
+  defmodule ReadinessStub do
+    def acquire(lease) when is_pid(lease), do: :ok
   end
 
   defmodule Observer do
@@ -230,7 +235,33 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
     assert child_pid(children, RecurringScheduleScheduler) |> Process.alive?()
     assert child_pid(children, StochasticScheduler) |> Process.alive?()
     assert child_pid(children, EventRetentionScheduler) |> Process.alive?()
+
+    assert Enum.all?(children, fn {_id, pid, _type, _modules} ->
+             Process.info(pid, :trap_exit) == {:trap_exit, true}
+           end)
+
     assert inspect(options()) == "#ClusterMurmur.Runtime.RecoveredRuntimeSupervisor.Options<...>"
+  end
+
+  test "uses one explicit bounded graceful shutdown window for every scheduler" do
+    assert {:ok, {_flags, child_specs}} = RecoveredRuntimeSupervisor.init(options())
+    assert length(child_specs) == 5
+    assert Enum.all?(child_specs, &(&1.shutdown == 5_000))
+    assert Enum.all?(child_specs, &(&1.restart == :temporary))
+    assert Enum.all?(child_specs, & &1.significant)
+  end
+
+  test "places an optional significant readiness lease after every scheduler" do
+    configured = %{options() | readiness_marker: ReadinessStub}
+    assert {:ok, {_flags, child_specs}} = RecoveredRuntimeSupervisor.init(configured)
+    assert length(child_specs) == 6
+
+    lease = List.last(child_specs)
+    assert lease.id == ReadinessLease
+    assert lease.start == {ReadinessLease, :start_link, [ReadinessStub]}
+    assert lease.restart == :temporary
+    assert lease.shutdown == 1_000
+    assert lease.significant
   end
 
   test "stops all schedulers and reruns both gates before replacing any one" do
@@ -499,7 +530,8 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
         initial_delay_ms: 60_000
       },
       recurring_schedule_initializer: RecurringInitializer,
-      stochastic_schedule_initializer: StochasticInitializer
+      stochastic_schedule_initializer: StochasticInitializer,
+      readiness_marker: nil
     }
   end
 

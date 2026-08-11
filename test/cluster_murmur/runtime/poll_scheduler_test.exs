@@ -133,6 +133,30 @@ defmodule ClusterMurmur.Runtime.PollSchedulerTest do
     refute_receive :listed_targets
   end
 
+  test "gets one bounded shutdown window to finish the current cycle" do
+    scheduler_delay_ms = DomainLimits.max_interval_ms()
+
+    options =
+      self()
+      |> options(scheduler_delay_ms)
+      |> Map.put(:initial_delay_ms, scheduler_delay_ms)
+
+    assert {:ok, supervisor} =
+             Supervisor.start_link([{PollScheduler, options}], strategy: :one_for_one)
+
+    [{PollScheduler, scheduler, :worker, [PollScheduler]}] = Supervisor.which_children(supervisor)
+    assert {:trap_exit, true} = Process.info(scheduler, :trap_exit)
+
+    {_options, _status, timer_token} = :sys.get_state(scheduler)
+    send(scheduler, {:poll, timer_token})
+    assert_receive {:cycle_started, ^scheduler}, @receive_timeout
+
+    stopping = Task.async(fn -> Supervisor.stop(supervisor) end)
+    assert Task.yield(stopping, 50) == nil
+    send(scheduler, :release_cycle)
+    assert Task.await(stopping, @receive_timeout) == :ok
+  end
+
   defp options(test_pid, interval_ms) do
     configuration =
       RuntimeFixture.configuration()

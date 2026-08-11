@@ -7,6 +7,7 @@ defmodule ClusterMurmur.Runtime.ProductionRecoveredRuntimeOptionsTest do
 
   alias ClusterMurmur.Runtime.{
     ProductionRecoveredRuntimeOptions,
+    ReadyMarker,
     RecoveredRuntimeSupervisor,
     RecurringScheduleInitializer,
     ResponderScheduleSettings,
@@ -28,6 +29,7 @@ defmodule ClusterMurmur.Runtime.ProductionRecoveredRuntimeOptionsTest do
     assert options.recurring_schedule_initializer == RecurringScheduleInitializer
     assert options.stochastic_schedule_initializer == StochasticScheduleInitializer
     assert options.clock == SystemClock
+    assert options.readiness_marker == ReadyMarker
 
     schedulers = [
       options.poll_scheduler,
@@ -50,6 +52,7 @@ defmodule ClusterMurmur.Runtime.ProductionRecoveredRuntimeOptionsTest do
       Map.put(options, :private, true),
       %{options | clock: String},
       %{options | recurring_schedule_initializer: String},
+      %{options | readiness_marker: String},
       %{
         options
         | event_retention_scheduler: %{
