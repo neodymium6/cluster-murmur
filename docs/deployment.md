@@ -98,7 +98,9 @@ A live deployment must explicitly assemble the reviewed opt-in supervisors and
 workers with:
 
 - validated public configuration and private configuration paths;
-- mounted credential-file references;
+- `CLUSTER_MURMUR_OBSERVER_MCP_URL` set to the reviewed fixed `/mcp` endpoint;
+- `CLUSTER_MURMUR_OBSERVER_MCP_TOKEN_FILE` and other mounted credential-file
+  references;
 - fixed MCP, model-provider, and Discord transports;
 - a production clock and random source;
 - the narrow public persistence adapters;
