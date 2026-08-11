@@ -70,25 +70,34 @@ checks do not apply container-runtime mount, identity, or privilege controls.
 
 ## Published release artifacts
 
-Publishing a GitHub Release whose tag exactly matches `v` plus `VERSION`
-starts the protected `release` environment workflow. It rebuilds and
-container-smoke-checks the tagged source, then publishes exactly one supported
-platform, `linux/amd64`, to `ghcr.io/neodymium6/cluster-murmur`. The workflow
-does not publish a version tag, `latest`, or another channel alias. The
-registry-only upload alias contains the complete manifest digest, and the
-digest-pinned reference in release metadata is the only supported reference.
-Publication then reads the manifest back from GHCR and requires an exact digest
-match.
+Push one reviewed tag whose name is exactly `v` plus `VERSION` and whose commit
+is on `main`. The tag workflow validates that identity and ancestry, requires
+the matching release-notes file, and reruns the complete repository gate. It
+then rebuilds and container-smoke-checks the tagged source and publishes exactly
+one supported platform, `linux/amd64`, to
+`ghcr.io/neodymium6/cluster-murmur`.
 
-Each GitHub Release receives `release-metadata.json`, the SPDX 2.3 SBOM,
-and `SHA256SUMS`. The metadata records the image name, registry digest,
+The workflow does not publish a version tag, `latest`, or another channel
+alias. Its registry-only upload alias contains the complete manifest digest,
+and the digest-pinned reference in release metadata is the only supported
+reference. Publication reads the manifest back from GHCR and requires an exact
+digest match.
+
+The workflow generates `release-metadata.json`, the SPDX 2.3 SBOM, and
+`SHA256SUMS`. The metadata records the image name, registry digest,
 digest-pinned reference, release tag, version, source revision, and complete
 supported-platform list. GitHub also signs build-provenance and SBOM
 attestations with the workflow's short-lived identity and attaches them to the
-image digest in GHCR.
+image digest in GHCR. Only after every gate succeeds does the workflow create a
+prerelease draft containing the reviewed release notes and those three assets;
+it never publishes the GitHub Release. The artifact job checks out the exact
+commit validated before the build and revalidates the remote tag immediately
+before draft creation. A rerun may resume only a matching draft with no
+unexpected assets and replaces the three generated assets before requiring
+their exact final set.
 
-Configure required reviewers on the repository's `release` environment and
-protect release tags from movement or deletion. GHCR links the package to this
+Protect release tags from movement or deletion and create them only from the
+reviewed `main` revision intended for release. GHCR links the package to this
 repository for access permissions, but its first publication is private and
 does not inherit repository visibility. Consequently, the first workflow run
 stops at its visibility gate after uploading the reviewed digest. An
@@ -96,13 +105,22 @@ administrator must inspect the package and digest, irreversibly change its
 visibility to Public in the package settings, confirm that the digest can be
 inspected without authentication, and rerun the failed workflow. Subsequent
 releases require and anonymously verify public visibility before signing or
-attaching release assets.
+creating a draft.
 
-The workflow persists no registry credential. Its pinned login action exposes
-the job-scoped GitHub token through the standard private Docker authentication
-file used by both Skopeo and the registry-attestation steps, then logs out in
-the job's post phase on both success and failure. The workflow fails if the
-event tag, checked-out revision, and `VERSION` do not agree.
+Review the draft's tag, notes, immutable reference, asset checksums, SBOM, and
+attestations before publishing it. Publication triggers a separate release
+smoke workflow. That workflow downloads the three assets through their public
+release URLs, requires the exact asset and checksum sets, validates all metadata
+against the tag and source revision, anonymously inspects the public image and
+its source and version OCI labels, and verifies both attestations. Both smoke
+jobs pin the resolved release commit rather than continuing from a mutable tag
+name. The workflow also accepts an explicit published tag through
+`workflow_dispatch` for a reviewed rerun.
+
+The tag workflow persists no registry credential. Its pinned login action
+exposes the job-scoped GitHub token through the standard private Docker
+authentication file used by both Skopeo and the registry-attestation steps,
+then logs out in the job's post phase on both success and failure.
 
 Consume the recorded digest rather than the version tag:
 
@@ -117,11 +135,17 @@ this repository:
 gh attestation verify \
   oci://ghcr.io/neodymium6/cluster-murmur@sha256:<digest> \
   --repo neodymium6/cluster-murmur \
+  --signer-workflow neodymium6/cluster-murmur/.github/workflows/release.yml \
+  --source-digest <source-revision> \
+  --source-ref refs/tags/v<version> \
   --bundle-from-oci
 
 gh attestation verify \
   oci://ghcr.io/neodymium6/cluster-murmur@sha256:<digest> \
   --repo neodymium6/cluster-murmur \
+  --signer-workflow neodymium6/cluster-murmur/.github/workflows/release.yml \
+  --source-digest <source-revision> \
+  --source-ref refs/tags/v<version> \
   --predicate-type https://spdx.dev/Document/v2.3 \
   --bundle-from-oci
 ```

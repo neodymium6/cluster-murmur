@@ -1,41 +1,42 @@
-name: Release artifacts
+name: Release
 
 on:
-  release:
-    types:
-      - published
+  push:
+    tags:
+      - "v*.*.*"
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write
-  attestations: write
+  contents: read
 
 concurrency:
-  group: release-${{ github.event.release.tag_name }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  publish:
-    name: Publish immutable OCI artifact
+  validate:
+    name: Validate release tag
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    environment: release
+    timeout-minutes: 30
+    outputs:
+      release_notes: ${{ steps.identity.outputs.release_notes }}
+      release_tag: ${{ steps.identity.outputs.release_tag }}
+      revision: ${{ steps.identity.outputs.revision }}
+      version: ${{ steps.identity.outputs.version }}
 
     steps:
-      - name: Check out the released tag
+      - name: Check out the release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Install Nix
         uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858 # v3.21.9
 
-      - name: Validate release identity
+      - name: Validate tag, version, ancestry, and release notes
         id: identity
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           version="$(< VERSION)"
@@ -47,18 +48,62 @@ jobs:
             echo "release tag does not match VERSION" >&2
             exit 1
           fi
-          revision="$(git rev-list -n 1 "$RELEASE_TAG")"
-          if [[ "$revision" != "$GITHUB_SHA" ]]; then
+
+          revision="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          event_revision="$(git rev-parse "$GITHUB_SHA^{commit}")"
+          if [[ "$event_revision" != "$revision" ]]; then
             echo "release event revision does not match the tag" >&2
             exit 1
           fi
-          image_name="ghcr.io/${GITHUB_REPOSITORY,,}"
+          if ! git merge-base --is-ancestor "$revision" refs/remotes/origin/main; then
+            echo "release tag must point to a commit on main" >&2
+            exit 1
+          fi
+
+          release_notes="docs/release-notes-$RELEASE_TAG.md"
+          if [[ ! -f "$release_notes" || -L "$release_notes" ]]; then
+            echo "release notes are missing or not a regular file" >&2
+            exit 1
+          fi
+
           {
-            echo "image_name=$image_name"
+            echo "release_notes=$release_notes"
             echo "release_tag=$RELEASE_TAG"
-            echo "version=$version"
             echo "revision=$revision"
+            echo "version=$version"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Fetch Mix dependencies
+        run: nix develop --command mix deps.get
+
+      - name: Run repository checks
+        run: nix develop --command just ci
+
+  publish:
+    name: Publish artifacts and prepare draft release
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+      packages: write
+    env:
+      RELEASE_NOTES: ${{ needs.validate.outputs.release_notes }}
+      RELEASE_TAG: ${{ needs.validate.outputs.release_tag }}
+      SOURCE_REVISION: ${{ needs.validate.outputs.revision }}
+      VERSION: ${{ needs.validate.outputs.version }}
+
+    steps:
+      - name: Check out the validated release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.revision }}
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858 # v3.21.9
 
       - name: Build and smoke-check the release image
         run: |
@@ -77,15 +122,15 @@ jobs:
       - name: Prepare and publish the image
         id: image
         env:
-          IMAGE_NAME: ${{ steps.identity.outputs.image_name }}
-          VERSION: ${{ steps.identity.outputs.version }}
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
         run: |
           set -euo pipefail
           export PATH="$PWD/release-tools/bin:$PATH"
+          image_name="${IMAGE_NAME,,}"
           registry_auth="$HOME/.docker/config.json"
 
-          skopeo --insecure-policy copy \
-            "docker-archive:result" "oci:release-image:$VERSION"
+          skopeo --insecure-policy copy "docker-archive:result" \
+            "oci:release-image:$VERSION"
           image_os="$(skopeo inspect --format '{{.Os}}' "oci:release-image:$VERSION")"
           image_architecture="$(
             skopeo inspect --format '{{.Architecture}}' "oci:release-image:$VERSION"
@@ -94,11 +139,12 @@ jobs:
             echo "release image does not match the declared platform" >&2
             exit 1
           fi
+
           expected_digest="sha256:$(
             skopeo inspect --raw "oci:release-image:$VERSION" | sha256sum | cut -d ' ' -f 1
           )"
           digest_alias="sha256-${expected_digest#sha256:}"
-          published_image="$IMAGE_NAME:$digest_alias"
+          published_image="$image_name:$digest_alias"
           skopeo --insecure-policy copy --authfile "$registry_auth" --retry-times 3 \
             "oci:release-image:$VERSION" "docker://$published_image"
 
@@ -112,14 +158,15 @@ jobs:
           fi
           {
             echo "digest=$published_digest"
-            echo "reference=$IMAGE_NAME@$published_digest"
+            echo "image_name=$image_name"
+            echo "reference=$image_name@$published_digest"
           } >> "$GITHUB_OUTPUT"
 
       - name: Require public package visibility
         env:
           GH_TOKEN: ${{ github.token }}
-          IMAGE_NAME: ${{ steps.identity.outputs.image_name }}
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          IMAGE_NAME: ${{ steps.image.outputs.image_name }}
         run: |
           set -euo pipefail
           export PATH="$PWD/release-tools/bin:$PATH"
@@ -141,31 +188,28 @@ jobs:
 
       - name: Generate release metadata and SBOM
         env:
-          IMAGE_NAME: ${{ steps.identity.outputs.image_name }}
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
-          RELEASE_TAG: ${{ steps.identity.outputs.release_tag }}
-          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
-          SOURCE_REVISION: ${{ steps.identity.outputs.revision }}
+          IMAGE_NAME: ${{ steps.image.outputs.image_name }}
         run: |
           set -euo pipefail
           export PATH="$PWD/release-tools/bin:$PATH"
           syft "oci-dir:release-image" -o spdx-json=cluster-murmur.spdx.json
-          jq -e --arg version "$RELEASE_VERSION" '
+          jq -e --arg version "$VERSION" '
             .spdxVersion == "SPDX-2.3" and
             (.packages | type == "array") and
             (.packages | length > 0) and
             any(.packages[]; .name == "cluster-murmur" and .versionInfo == $version)
-          ' \
-            cluster-murmur.spdx.json >/dev/null
+          ' cluster-murmur.spdx.json >/dev/null
           if (( $(stat -c '%s' cluster-murmur.spdx.json) > 16777216 )); then
             echo "SBOM exceeds the attestation size limit" >&2
             exit 1
           fi
+
           jq -n \
             --arg image "$IMAGE_NAME" \
             --arg digest "$IMAGE_DIGEST" \
             --arg tag "$RELEASE_TAG" \
-            --arg version "$RELEASE_VERSION" \
+            --arg version "$VERSION" \
             --arg revision "$SOURCE_REVISION" \
             '{
               schema_version: 1,
@@ -182,27 +226,86 @@ jobs:
       - name: Attest build provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-name: ${{ steps.identity.outputs.image_name }}
+          subject-name: ${{ steps.image.outputs.image_name }}
           subject-digest: ${{ steps.image.outputs.digest }}
-          subject-version: ${{ steps.identity.outputs.version }}
+          subject-version: ${{ needs.validate.outputs.version }}
           push-to-registry: true
           create-storage-record: false
 
       - name: Attest the SBOM
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-name: ${{ steps.identity.outputs.image_name }}
+          subject-name: ${{ steps.image.outputs.image_name }}
           subject-digest: ${{ steps.image.outputs.digest }}
-          subject-version: ${{ steps.identity.outputs.version }}
+          subject-version: ${{ needs.validate.outputs.version }}
           sbom-path: cluster-murmur.spdx.json
           push-to-registry: true
           create-storage-record: false
 
-      - name: Attach release metadata
+      - name: Create the draft GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.identity.outputs.release_tag }}
         run: |
+          set -euo pipefail
+
+          verification_ref="refs/release-verification/$GITHUB_RUN_ID"
+          git fetch --no-tags origin \
+            "refs/tags/$RELEASE_TAG:$verification_ref"
+          current_revision="$(git rev-parse "$verification_ref^{commit}")"
+          if [[ "$current_revision" != "$SOURCE_REVISION" ]]; then
+            echo "release tag moved after validation" >&2
+            exit 1
+          fi
+
+          expected_prerelease=false
+          release_flags=(--draft)
+          if [[ "$VERSION" == *-* ]]; then
+            expected_prerelease=true
+            release_flags+=(--prerelease)
+          fi
+          title="Cluster Murmur v$VERSION"
+          if existing_release="$(
+            gh release view "$RELEASE_TAG" \
+              --json assets,body,isDraft,isPrerelease,name,tagName 2>/dev/null
+          )"; then
+            jq -e \
+              --arg tag "$RELEASE_TAG" \
+              --arg title "$title" \
+              --argjson prerelease "$expected_prerelease" \
+              --rawfile notes "$RELEASE_NOTES" '
+                .tagName == $tag and
+                .name == $title and
+                .body == $notes and
+                .isDraft == true and
+                .isPrerelease == $prerelease and
+                ([.assets[].name] - [
+                  "SHA256SUMS",
+                  "cluster-murmur.spdx.json",
+                  "release-metadata.json"
+                ] | length) == 0
+              ' <<< "$existing_release" >/dev/null
+          else
+            gh release create "$RELEASE_TAG" \
+              "${release_flags[@]}" \
+              --notes-file "$RELEASE_NOTES" \
+              --title "$title" \
+              --verify-tag
+          fi
+
           gh release upload "$RELEASE_TAG" \
             cluster-murmur.spdx.json release-metadata.json SHA256SUMS \
             --clobber
+          mapfile -t actual_assets < <(
+            gh release view "$RELEASE_TAG" \
+              --json assets --jq '.assets[].name' | sort
+          )
+          mapfile -t expected_assets < <(
+            printf '%s\n' \
+              SHA256SUMS \
+              cluster-murmur.spdx.json \
+              release-metadata.json | sort
+          )
+          if [[ "${actual_assets[*]}" != "${expected_assets[*]}" ]]; then
+            echo "draft release has an unexpected asset set" >&2
+            exit 1
+          fi

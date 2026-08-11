@@ -98,8 +98,10 @@ container controls, and deployment-owned inputs.
 The [hardened Kubernetes example](deploy/kubernetes/README.md) records the
 supported single-writer rollout and offline backup shape using placeholders
 that require a private reviewed overlay.
-Tagged GitHub Releases publish one `linux/amd64` image with digest metadata,
-an SPDX SBOM, and signed provenance as documented in the
+Pushing a reviewed version-matching tag prepares one `linux/amd64` image and a
+draft GitHub Release with digest metadata, an SPDX SBOM, and signed provenance.
+Publishing the reviewed draft triggers public-distribution verification as
+documented in the
 [artifact guide](docs/deployment.md#published-release-artifacts).
 The [isolated end-to-end example](examples/isolated-end-to-end/README.md)
 exercises the complete observation-to-publication lifecycle without any live

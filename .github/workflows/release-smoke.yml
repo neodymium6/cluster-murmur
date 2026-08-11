@@ -1,0 +1,240 @@
+name: Release smoke
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published semantic release tag to verify
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-smoke-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve published release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      revision: ${{ steps.identity.outputs.revision }}
+      release_tag: ${{ steps.identity.outputs.release_tag }}
+      version: ${{ steps.identity.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+    steps:
+      - name: Check out the published tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+
+      - name: Validate release identity
+        id: identity
+        run: |
+          set -euo pipefail
+          version="$(< VERSION)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "VERSION is not a bounded release version" >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_TAG" != "v$version" ]]; then
+            echo "published release tag does not match VERSION" >&2
+            exit 1
+          fi
+
+          revision="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          if [[ "$(git rev-parse HEAD)" != "$revision" ]]; then
+            echo "checked-out revision does not match the published tag" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$revision" refs/remotes/origin/main; then
+            echo "published release tag must point to a commit on main" >&2
+            exit 1
+          fi
+
+          if [[ "$version" == *-* ]]; then
+            expected_prerelease=true
+          else
+            expected_prerelease=false
+          fi
+          release_json="$(gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease,tagName)"
+          jq -e \
+            --arg tag "$RELEASE_TAG" \
+            --argjson prerelease "$expected_prerelease" \
+            '.tagName == $tag and (.isDraft | not) and
+             .isPrerelease == $prerelease' \
+            <<< "$release_json" >/dev/null
+
+          {
+            echo "release_tag=$RELEASE_TAG"
+            echo "revision=$revision"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+  verify:
+    name: Verify public release distribution
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      attestations: read
+      contents: read
+      packages: read
+    env:
+      RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+      SOURCE_REVISION: ${{ needs.resolve.outputs.revision }}
+      VERSION: ${{ needs.resolve.outputs.version }}
+
+    steps:
+      - name: Check out the published tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.resolve.outputs.revision }}
+
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858 # v3.21.9
+
+      - name: Build pinned release inspection tools
+        run: nix build .#release-tools --out-link release-tools
+
+      - name: Download public release assets
+        id: assets
+        run: |
+          set -euo pipefail
+          release_dir="$(mktemp -d "$RUNNER_TEMP/release-smoke.XXXXXX")"
+          release_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG"
+          for asset in \
+            cluster-murmur.spdx.json \
+            release-metadata.json \
+            SHA256SUMS; do
+            curl --fail --silent --show-error --location \
+              --output "$release_dir/$asset" "$release_url/$asset"
+          done
+          echo "directory=$release_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Verify release assets and checksums
+        id: metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_DIR: ${{ steps.assets.outputs.directory }}
+        run: |
+          set -euo pipefail
+          mapfile -t actual_assets < <(
+            gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+              --json assets --jq '.assets[].name' | sort
+          )
+          mapfile -t expected_assets < <(
+            printf '%s\n' \
+              SHA256SUMS \
+              cluster-murmur.spdx.json \
+              release-metadata.json | sort
+          )
+          if [[ "${actual_assets[*]}" != "${expected_assets[*]}" ]]; then
+            echo "published release has an unexpected asset set" >&2
+            exit 1
+          fi
+
+          cd "$RELEASE_DIR"
+          mapfile -t checksum_files < <(awk '{print $2}' SHA256SUMS | sort)
+          mapfile -t expected_checksum_files < <(
+            printf '%s\n' cluster-murmur.spdx.json release-metadata.json | sort
+          )
+          if [[ "${checksum_files[*]}" != "${expected_checksum_files[*]}" ]]; then
+            echo "checksum manifest has an unexpected file set" >&2
+            exit 1
+          fi
+          sha256sum --check SHA256SUMS
+
+          image_name="ghcr.io/${GITHUB_REPOSITORY,,}"
+          jq -e \
+            --arg image "$image_name" \
+            --arg revision "$SOURCE_REVISION" \
+            --arg tag "$RELEASE_TAG" \
+            --arg version "$VERSION" '
+              .schema_version == 1 and
+              .image == $image and
+              (.digest | test("^sha256:[0-9a-f]{64}$")) and
+              .immutable_reference == (.image + "@" + .digest) and
+              .release_tag == $tag and
+              .version == $version and
+              .source_revision == $revision and
+              .supported_platforms == ["linux/amd64"]
+            ' release-metadata.json >/dev/null
+          jq -e --arg version "$VERSION" '
+            .spdxVersion == "SPDX-2.3" and
+            (.packages | type == "array") and
+            (.packages | length > 0) and
+            any(.packages[]; .name == "cluster-murmur" and .versionInfo == $version)
+          ' cluster-murmur.spdx.json >/dev/null
+
+          {
+            echo "digest=$(jq -r .digest release-metadata.json)"
+            echo "image_name=$image_name"
+            echo "reference=$(jq -r .immutable_reference release-metadata.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify the public digest and image metadata
+        env:
+          IMAGE_DIGEST: ${{ steps.metadata.outputs.digest }}
+          IMAGE_NAME: ${{ steps.metadata.outputs.image_name }}
+          IMAGE_REFERENCE: ${{ steps.metadata.outputs.reference }}
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/release-tools/bin:$PATH"
+          inspection="$(skopeo inspect --no-creds \
+            --format '{{.Digest}}|{{.Os}}/{{.Architecture}}' \
+            "docker://$IMAGE_REFERENCE")"
+          if [[ "$inspection" != "$IMAGE_DIGEST|linux/amd64" ]]; then
+            echo "public image identity or platform does not match release metadata" >&2
+            exit 1
+          fi
+
+          skopeo inspect --no-creds "docker://$IMAGE_REFERENCE" |
+            jq -e \
+              --arg source "https://github.com/$GITHUB_REPOSITORY" \
+              --arg version "$VERSION" '
+                .Labels["org.opencontainers.image.source"] == $source and
+                .Labels["org.opencontainers.image.version"] == $version
+              ' >/dev/null
+
+      - name: Log in to GHCR for attestation bundles
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+          logout: true
+
+      - name: Verify provenance and SBOM attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_REFERENCE: ${{ steps.metadata.outputs.reference }}
+        run: |
+          set -euo pipefail
+          gh attestation verify "oci://$IMAGE_REFERENCE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            --source-digest "$SOURCE_REVISION" \
+            --source-ref "refs/tags/$RELEASE_TAG" \
+            --bundle-from-oci
+          gh attestation verify "oci://$IMAGE_REFERENCE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            --source-digest "$SOURCE_REVISION" \
+            --source-ref "refs/tags/$RELEASE_TAG" \
+            --predicate-type https://spdx.dev/Document/v2.3 \
+            --bundle-from-oci
