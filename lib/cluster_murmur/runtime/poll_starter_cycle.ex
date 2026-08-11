@@ -12,6 +12,7 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
   alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.Observers.{Client, Poller}
   alias ClusterMurmur.Persistence.ObservationIngestionStore
+  alias ClusterMurmur.Runtime.PersonaCooldownSnapshot
   alias ClusterMurmur.Runtime.ResponderTurnSchedule
 
   alias ClusterMurmur.Triggers.{
@@ -133,6 +134,7 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
              context.shared_input,
              context.adapters
            ),
+         :ok <- validate_cooldown_store(context.adapters.cooldown_store),
          :ok <- validate_conversation_runtime(context) do
       :ok
     else
@@ -166,6 +168,9 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
       )
       when is_atom(ingestion_store) do
     with :ok <- preflight(configuration, cycle_started_at, context),
+         {:ok, cooldowns} <-
+           PersonaCooldownSnapshot.load(configuration, context.adapters.cooldown_store),
+         context <- with_cooldowns(context, cooldowns),
          {:ok, poll_result} <-
            Poller.poll_once(observer_client, configuration.state_tracking, ingestion_store),
          executed_at <- safe_executed_at(cycle_started_at, poll_result.events),
@@ -182,6 +187,13 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
            ) do
       {:ok, summarize(poll_result, dispatch_result)}
     else
+      {:error, reason}
+      when reason in [
+             :invalid_persona_cooldown_snapshot,
+             :persona_cooldown_snapshot_failed
+           ] ->
+        {:error, :poll_failed}
+
       {:error, reason}
       when reason in [:invalid_poll, :invalid_observer_targets] or
              (is_tuple(reason) and tuple_size(reason) == 2 and elem(reason, 0) == :observer) ->
@@ -206,6 +218,17 @@ defmodule ClusterMurmur.Runtime.PollStarterCycle do
     else
       _failure -> {:error, :invalid_poll_starter_cycle}
     end
+  end
+
+  defp with_cooldowns(context, cooldowns) do
+    shared_input = %{context.shared_input | cooldowns: cooldowns}
+    %{context | shared_input: shared_input}
+  end
+
+  defp validate_cooldown_store(store) do
+    if is_atom(store) and Code.ensure_loaded?(store) and function_exported?(store, :fetch, 1),
+      do: :ok,
+      else: {:error, :invalid_poll_starter_cycle}
   end
 
   defp safe_executed_at(cycle_started_at, events) do

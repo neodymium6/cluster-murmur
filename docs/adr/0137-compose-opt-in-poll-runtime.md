@@ -1,5 +1,9 @@
 # ADR 0137: Compose an Opt-In Poll Runtime
 
+## Status
+
+Accepted; amended by ADR 0206.
+
 ## Context
 
 The no-reply starter pipeline can complete one already authorized event, while

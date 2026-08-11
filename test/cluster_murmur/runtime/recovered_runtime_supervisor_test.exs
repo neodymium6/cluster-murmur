@@ -60,7 +60,7 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
     def list_available(_now), do: {:ok, []}
     def claim(_candidate, _now), do: :unused
     def complete(_value, _completed_at), do: :unused
-    def fetch(_event_id), do: :unused
+    def fetch(_id), do: {:ok, nil}
     def authorize(_trigger, _event, _now, _event_policy), do: :unused
     def ingest(_observation, _policy), do: :unused
 
