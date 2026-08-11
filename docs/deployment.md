@@ -69,6 +69,64 @@ permission except from the intended temporary and data paths, migrate an
 isolated database, and smoke-run the extracted entrypoint. These archive-level
 checks do not apply container-runtime mount, identity, or privilege controls.
 
+## Published release artifacts
+
+Publishing a GitHub Release whose tag exactly matches `v` plus `VERSION`
+starts the protected `release` environment workflow. It rebuilds and
+container-smoke-checks the tagged source, then publishes exactly one supported
+platform, `linux/amd64`, to `ghcr.io/neodymium6/cluster-murmur`. The workflow
+does not publish a version tag, `latest`, or another channel alias. The
+registry-only upload alias contains the complete manifest digest, and the
+digest-pinned reference in release metadata is the only supported reference.
+Publication then reads the manifest back from GHCR and requires an exact digest
+match.
+
+Each GitHub Release receives `release-metadata.json`, the SPDX 2.3 SBOM,
+and `SHA256SUMS`. The metadata records the image name, registry digest,
+digest-pinned reference, release tag, version, source revision, and complete
+supported-platform list. GitHub also signs build-provenance and SBOM
+attestations with the workflow's short-lived identity and attaches them to the
+image digest in GHCR.
+
+Configure required reviewers on the repository's `release` environment and
+protect release tags from movement or deletion. GHCR links the package to this
+repository for access permissions, but its first publication is private and
+does not inherit repository visibility. Consequently, the first workflow run
+stops at its visibility gate after uploading the reviewed digest. An
+administrator must inspect the package and digest, irreversibly change its
+visibility to Public in the package settings, confirm that the digest can be
+inspected without authentication, and rerun the failed workflow. Subsequent
+releases require and anonymously verify public visibility before signing or
+attaching release assets.
+
+The workflow persists no registry credential. Its pinned login action exposes
+the job-scoped GitHub token through the standard private Docker authentication
+file used by both Skopeo and the registry-attestation steps, then logs out in
+the job's post phase on both success and failure. The workflow fails if the
+event tag, checked-out revision, and `VERSION` do not agree.
+
+Consume the recorded digest rather than the version tag:
+
+```text
+ghcr.io/neodymium6/cluster-murmur@sha256:<digest-from-release-metadata>
+```
+
+After authenticating to GHCR when required, verify both attestations against
+this repository:
+
+```bash
+gh attestation verify \
+  oci://ghcr.io/neodymium6/cluster-murmur@sha256:<digest> \
+  --repo neodymium6/cluster-murmur \
+  --bundle-from-oci
+
+gh attestation verify \
+  oci://ghcr.io/neodymium6/cluster-murmur@sha256:<digest> \
+  --repo neodymium6/cluster-murmur \
+  --predicate-type https://spdx.dev/Document/v2.3 \
+  --bundle-from-oci
+```
+
 ## Required container controls
 
 A runtime must:

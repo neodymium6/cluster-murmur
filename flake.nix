@@ -173,12 +173,24 @@
 
       packages = forAllSystems (
         system:
+        let
+          pkgs = pkgsFor.${system};
+        in
         {
           default = releaseFor system;
           cluster-murmur = releaseFor system;
         }
-        // nixpkgs.lib.optionalAttrs (pkgsFor.${system}.stdenv.isLinux) {
+        // nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
           container-image = containerImageFor system;
+          release-tools = pkgs.symlinkJoin {
+            name = "cluster-murmur-release-tools";
+            paths = [
+              pkgs.coreutils
+              pkgs.jq
+              pkgs.skopeo
+              pkgs.syft
+            ];
+          };
         }
       );
 

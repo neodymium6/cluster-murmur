@@ -1,0 +1,208 @@
+name: Release artifacts
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish immutable OCI artifact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    environment: release
+
+    steps:
+      - name: Check out the released tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/determinate-nix-action@61cbfe2efc2d4e7a8a6d56967c3c1058e846c858 # v3.21.9
+
+      - name: Validate release identity
+        id: identity
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="$(< VERSION)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "VERSION is not a bounded release version" >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_TAG" != "v$version" ]]; then
+            echo "release tag does not match VERSION" >&2
+            exit 1
+          fi
+          revision="$(git rev-list -n 1 "$RELEASE_TAG")"
+          if [[ "$revision" != "$GITHUB_SHA" ]]; then
+            echo "release event revision does not match the tag" >&2
+            exit 1
+          fi
+          image_name="ghcr.io/${GITHUB_REPOSITORY,,}"
+          {
+            echo "image_name=$image_name"
+            echo "release_tag=$RELEASE_TAG"
+            echo "version=$version"
+            echo "revision=$revision"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and smoke-check the release image
+        run: |
+          nix build .#checks.x86_64-linux.container-image --no-link
+          nix build .#container-image --out-link result
+          nix build .#release-tools --out-link release-tools
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+          logout: true
+
+      - name: Prepare and publish the image
+        id: image
+        env:
+          IMAGE_NAME: ${{ steps.identity.outputs.image_name }}
+          VERSION: ${{ steps.identity.outputs.version }}
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/release-tools/bin:$PATH"
+          registry_auth="$HOME/.docker/config.json"
+
+          skopeo --insecure-policy copy \
+            "docker-archive:result" "oci:release-image:$VERSION"
+          image_os="$(skopeo inspect --format '{{.Os}}' "oci:release-image:$VERSION")"
+          image_architecture="$(
+            skopeo inspect --format '{{.Architecture}}' "oci:release-image:$VERSION"
+          )"
+          if [[ "$image_os/$image_architecture" != "linux/amd64" ]]; then
+            echo "release image does not match the declared platform" >&2
+            exit 1
+          fi
+          expected_digest="sha256:$(
+            skopeo inspect --raw "oci:release-image:$VERSION" | sha256sum | cut -d ' ' -f 1
+          )"
+          digest_alias="sha256-${expected_digest#sha256:}"
+          published_image="$IMAGE_NAME:$digest_alias"
+          skopeo --insecure-policy copy --authfile "$registry_auth" --retry-times 3 \
+            "oci:release-image:$VERSION" "docker://$published_image"
+
+          published_digest="$(
+            skopeo inspect --authfile "$registry_auth" \
+              --format '{{.Digest}}' "docker://$published_image"
+          )"
+          if [[ "$published_digest" != "$expected_digest" ]]; then
+            echo "published image digest does not match the built manifest" >&2
+            exit 1
+          fi
+          {
+            echo "digest=$published_digest"
+            echo "reference=$IMAGE_NAME@$published_digest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Require public package visibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_NAME: ${{ steps.identity.outputs.image_name }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/release-tools/bin:$PATH"
+          owner="${GITHUB_REPOSITORY%%/*}"
+          package="${GITHUB_REPOSITORY#*/}"
+          package="${package,,}"
+          owner_type="$(gh api "/users/$owner" --jq .type)"
+          if [[ "$owner_type" == "Organization" ]]; then
+            package_endpoint="/orgs/$owner/packages/container/$package"
+          else
+            package_endpoint="/users/$owner/packages/container/$package"
+          fi
+          visibility="$(gh api "$package_endpoint" --jq .visibility)"
+          if [[ "$visibility" != "public" ]]; then
+            echo "GHCR package visibility must be changed to Public; rerun after review" >&2
+            exit 1
+          fi
+          skopeo inspect --no-creds "docker://$IMAGE_NAME@$IMAGE_DIGEST" >/dev/null
+
+      - name: Generate release metadata and SBOM
+        env:
+          IMAGE_NAME: ${{ steps.identity.outputs.image_name }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          RELEASE_TAG: ${{ steps.identity.outputs.release_tag }}
+          RELEASE_VERSION: ${{ steps.identity.outputs.version }}
+          SOURCE_REVISION: ${{ steps.identity.outputs.revision }}
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/release-tools/bin:$PATH"
+          syft "oci-dir:release-image" -o spdx-json=cluster-murmur.spdx.json
+          jq -e --arg version "$RELEASE_VERSION" '
+            .spdxVersion == "SPDX-2.3" and
+            (.packages | type == "array") and
+            (.packages | length > 0) and
+            any(.packages[]; .name == "cluster-murmur" and .versionInfo == $version)
+          ' \
+            cluster-murmur.spdx.json >/dev/null
+          if (( $(stat -c '%s' cluster-murmur.spdx.json) > 16777216 )); then
+            echo "SBOM exceeds the attestation size limit" >&2
+            exit 1
+          fi
+          jq -n \
+            --arg image "$IMAGE_NAME" \
+            --arg digest "$IMAGE_DIGEST" \
+            --arg tag "$RELEASE_TAG" \
+            --arg version "$RELEASE_VERSION" \
+            --arg revision "$SOURCE_REVISION" \
+            '{
+              schema_version: 1,
+              image: $image,
+              digest: $digest,
+              immutable_reference: ($image + "@" + $digest),
+              release_tag: $tag,
+              version: $version,
+              source_revision: $revision,
+              supported_platforms: ["linux/amd64"]
+            }' > release-metadata.json
+          sha256sum cluster-murmur.spdx.json release-metadata.json > SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.identity.outputs.image_name }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          subject-version: ${{ steps.identity.outputs.version }}
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attest the SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.identity.outputs.image_name }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          subject-version: ${{ steps.identity.outputs.version }}
+          sbom-path: cluster-murmur.spdx.json
+          push-to-registry: true
+          create-storage-record: false
+
+      - name: Attach release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.identity.outputs.release_tag }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            cluster-murmur.spdx.json release-metadata.json SHA256SUMS \
+            --clobber

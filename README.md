@@ -98,6 +98,9 @@ container controls, and deployment-owned inputs.
 The [hardened Kubernetes example](deploy/kubernetes/README.md) records the
 supported single-writer rollout and offline backup shape using placeholders
 that require a private reviewed overlay.
+Tagged GitHub Releases publish one `linux/amd64` image with digest metadata,
+an SPDX SBOM, and signed provenance as documented in the
+[artifact guide](docs/deployment.md#published-release-artifacts).
 
 ## Documentation
 
