@@ -78,6 +78,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   rollout, offline backup/restore, migration rollback, and observer isolation.
 - Protected tagged-release publication for one digest-pinned `linux/amd64`
   image with SPDX SBOM, checksums, and signed provenance attestations.
+- Tag-driven release validation and artifact publication that prepares a draft
+  GitHub Release for human review, followed by a separate public-distribution
+  smoke workflow when the draft is published.
 
 ### Verification
 

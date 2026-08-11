@@ -40,6 +40,10 @@ connect the software to sensitive systems.
 - Tagged GitHub Releases publish one digest-addressed `linux/amd64` OCI image,
   SPDX SBOM, checksums, and signed provenance and SBOM attestations. No mutable
   version or `latest` image tag is published.
+- A reviewed version-matching tag runs the full repository gate, prepares the
+  artifacts, and creates a draft GitHub Release. Publishing that reviewed draft
+  starts a separate smoke workflow that verifies the public asset set,
+  checksums, metadata, image platform and labels, and both attestations.
 
 ## Isolated verification
 
