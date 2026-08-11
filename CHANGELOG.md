@@ -70,6 +70,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   with matching allowlisted JSON lifecycle logs in production.
 - A non-deployable hardened Kubernetes base and runbook for single-writer
   rollout, offline backup/restore, migration rollback, and observer isolation.
+- Protected tagged-release publication for one digest-pinned `linux/amd64`
+  image with SPDX SBOM, checksums, and signed provenance attestations.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 

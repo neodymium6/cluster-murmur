@@ -13,6 +13,8 @@ development commands. Use the documents below for details.
   [deployment.md](deployment.md).
 - Adapt the non-deployable hardened Kubernetes base:
   [deploy/kubernetes](../deploy/kubernetes/README.md).
+- Publish or verify a digest-pinned tagged image, SBOM, and provenance:
+  [deployment.md](deployment.md#published-release-artifacts).
 - Understand architecture and component ownership: [DESIGN.md](../DESIGN.md).
 - Check exact runtime invariants and acceptance criteria:
   [mvp-contract.md](mvp-contract.md).
