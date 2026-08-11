@@ -64,7 +64,7 @@
             pname = "cluster-murmur-prod-deps";
             inherit version;
             src = releaseSource;
-            hash = "sha256-EKELmjAs8BwUzMq+ToC3SRpo7DI0cPUvHVIxfRtXMAE=";
+            hash = "sha256-QTch0JBsxhzoAuMXPY5Ia7O8zMNYF2YEs/2iVGTKSOk=";
           };
 
           EXQLITE_USE_SYSTEM = "1";
@@ -189,7 +189,7 @@
             inherit version;
             src = source;
             mixEnv = "test";
-            hash = "sha256-sNrFtv/n7dztH6rZVnHQy/k7vKEnHjGT3ax5nNFdGzk=";
+            hash = "sha256-hnCZTfFYr/Z5lWUQyJiKKZwYV2K/2YRj0lfiFKBB9vQ=";
           };
         in
         {

@@ -30,6 +30,7 @@ defmodule ClusterMurmur.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:ecto_sqlite3, "~> 0.24.1"},
       {:ex_json_schema, "~> 0.11.4"},
+      {:mint, "~> 1.9"},
       {:time_zone_info, "~> 0.7"},
       {:yamerl, "~> 0.10.0"}
     ]
