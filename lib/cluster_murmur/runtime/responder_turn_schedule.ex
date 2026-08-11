@@ -7,8 +7,10 @@ defmodule ClusterMurmur.Runtime.ResponderTurnSchedule do
   Every external transport remains explicit and is never exposed by inspection.
   """
 
+  alias ClusterMurmur.Config.ConversationDefaults
   alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.DomainLimits
+  alias ClusterMurmur.Runtime.ResponderScheduleSettings
   alias ClusterMurmur.Runtime.ResponderConversationRunner.Turn
 
   defmodule Step do
@@ -58,7 +60,47 @@ defmodule ClusterMurmur.Runtime.ResponderTurnSchedule do
   @schedule_keys [:__struct__, :steps]
   @schedule_key_count length(@schedule_keys)
   @max_steps 256
+  @max_conversation_turns @max_steps + 1
   @max_offset_ms DomainLimits.max_interval_ms()
+
+  @doc "Builds one finite relative schedule from validated deployment timings."
+  @spec build(term(), term(), term(), term()) ::
+          {:ok, t()} | {:error, :invalid_responder_turn_schedule}
+  def build(
+        %ConversationDefaults{} = defaults,
+        %ResponderScheduleSettings{} = settings,
+        generation_transport,
+        publication_transport
+      )
+      when is_function(generation_transport, 1) and
+             is_function(publication_transport, 1) do
+    with :ok <- ConversationDefaults.validate(defaults),
+         :ok <- ResponderScheduleSettings.validate(settings),
+         {:ok, step_count} <- responder_step_count(defaults.max_turns),
+         {:ok, steps} <-
+           build_steps(
+             0,
+             step_count,
+             settings,
+             generation_transport,
+             publication_transport,
+             []
+           ),
+         schedule = %__MODULE__{steps: steps},
+         :ok <- validate(schedule),
+         true <- valid_effect_windows?(steps, defaults.max_duration_ms) do
+      {:ok, schedule}
+    else
+      _failure -> {:error, :invalid_responder_turn_schedule}
+    end
+  rescue
+    _error -> {:error, :invalid_responder_turn_schedule}
+  catch
+    _kind, _reason -> {:error, :invalid_responder_turn_schedule}
+  end
+
+  def build(_defaults, _settings, _generation_transport, _publication_transport),
+    do: {:error, :invalid_responder_turn_schedule}
 
   @doc "Validates one exact non-empty relative schedule."
   @spec validate(term()) :: :ok | {:error, :invalid_responder_turn_schedule}
@@ -92,6 +134,76 @@ defmodule ClusterMurmur.Runtime.ResponderTurnSchedule do
   end
 
   def project(_schedule, _base_at), do: {:error, :invalid_responder_turn_schedule}
+
+  defp responder_step_count(1), do: {:ok, 1}
+
+  defp responder_step_count(max_turns)
+       when is_integer(max_turns) and max_turns in 2..@max_conversation_turns,
+       do: {:ok, max_turns - 1}
+
+  defp responder_step_count(_max_turns), do: {:error, :invalid_responder_turn_schedule}
+
+  defp build_steps(
+         count,
+         count,
+         _settings,
+         _generation_transport,
+         _publication_transport,
+         steps
+       ),
+       do: {:ok, Enum.reverse(steps)}
+
+  defp build_steps(
+         index,
+         count,
+         settings,
+         generation_transport,
+         publication_transport,
+         steps
+       ) do
+    planned_after_ms = index * settings.turn_interval_ms
+
+    with {:ok, generated_after_ms} <-
+           add_offset(planned_after_ms, settings.generation_delay_ms),
+         {:ok, publication_started_after_ms} <-
+           add_offset(planned_after_ms, settings.publication_start_delay_ms),
+         {:ok, publication_completed_after_ms} <-
+           add_offset(planned_after_ms, settings.publication_complete_delay_ms) do
+      step = %Step{
+        planned_after_ms: planned_after_ms,
+        generated_after_ms: generated_after_ms,
+        publication_started_after_ms: publication_started_after_ms,
+        publication_completed_after_ms: publication_completed_after_ms,
+        generation_transport: generation_transport,
+        publication_transport: publication_transport
+      }
+
+      build_steps(
+        index + 1,
+        count,
+        settings,
+        generation_transport,
+        publication_transport,
+        [step | steps]
+      )
+    end
+  end
+
+  defp add_offset(planned_after_ms, delay_ms) do
+    offset_ms = planned_after_ms + delay_ms
+
+    if valid_offset?(offset_ms),
+      do: {:ok, offset_ms},
+      else: {:error, :invalid_responder_turn_schedule}
+  end
+
+  defp valid_effect_windows?(steps, max_duration_ms) do
+    Enum.all?(steps, fn step ->
+      step.planned_after_ms >= max_duration_ms or
+        (step.generated_after_ms < max_duration_ms and
+           step.publication_started_after_ms < max_duration_ms)
+    end)
+  end
 
   defp validate_steps([], _previous_completed_after_ms, count) when count > 0, do: :ok
 

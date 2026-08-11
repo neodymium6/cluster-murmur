@@ -837,6 +837,16 @@ are bounded by the shared maximum runtime interval, and fail startup when
 missing or invalid. They define planned timestamps; loading them does not wait,
 start a conversation, or contact an external service.
 
+Standalone assembly derives a finite responder schedule from these timings and
+the versioned conversation defaults. The starter counts toward `max_turns`, so
+the schedule normally contains `max_turns - 1` responder steps. A one-turn
+conversation retains one non-effectful terminalization step for shared runtime
+validation. Standalone assembly accepts at most 257 total turns, because the
+runner permits at most 256 responder steps, and rejects schedules whose
+relative offsets exceed the shared runtime interval or whose generation or
+publication start would reach the conversation deadline. Schedule construction
+is pure: it does not wait, read a clock, call a transport, or start a worker.
+
 ## Secret handling
 
 Public configuration may contain only environment-variable names and fake,
