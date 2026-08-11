@@ -72,6 +72,7 @@ defmodule ClusterMurmur.Discord.WebhookRequestTest do
     assert {:ok, plan} = PublicationPlanner.plan(record, persona, settings)
     assert {:ok, request} = WebhookRequest.encode(plan, record, persona, settings)
     assert WebhookRequest.validate(request, plan, record, persona, settings) == :ok
+    assert WebhookRequest.validate_for_transport(request, settings) == :ok
 
     forged = [
       %{request | method: :get},
@@ -89,7 +90,35 @@ defmodule ClusterMurmur.Discord.WebhookRequestTest do
     for candidate <- forged do
       assert WebhookRequest.validate(candidate, plan, record, persona, settings) ==
                {:error, :invalid_webhook_request}
+
+      assert WebhookRequest.validate_for_transport(candidate, settings) ==
+               {:error, :invalid_webhook_request}
     end
+  end
+
+  test "revalidates only the fixed safe payload at the transport boundary" do
+    record = loaded()
+    persona = persona(avatar: "https://example.com/avatar.png")
+    settings = settings()
+    assert {:ok, plan} = PublicationPlanner.plan(record, persona, settings)
+    assert {:ok, request} = WebhookRequest.encode(plan, record, persona, settings)
+
+    forged_payloads = [
+      Map.put(request.json, "extra", true),
+      put_in(request.json, ["allowed_mentions", "parse"], ["everyone"]),
+      %{request.json | "content" => "@everyone"},
+      %{request.json | "username" => String.duplicate("x", 81)},
+      %{request.json | "avatar_url" => nil},
+      %{request.json | "avatar_url" => "http://example.com/avatar.png"}
+    ]
+
+    for payload <- forged_payloads do
+      assert WebhookRequest.validate_for_transport(%{request | json: payload}, settings) ==
+               {:error, :invalid_webhook_request}
+    end
+
+    assert WebhookRequest.validate_for_transport(request, other_settings()) ==
+             {:error, :invalid_webhook_request}
   end
 
   test "inspection and errors hide content, identity, and webhook credential" do
