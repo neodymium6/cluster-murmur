@@ -39,6 +39,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   aggregate alongside provider and webhook settings.
 - Network-free construction of the fixed observer client, model provider,
   publisher, and their startup-captured narrow live transports.
+- Explicit bounded startup settings for all five runtime scheduler cadences,
+  with busy-loop lower limits and no live defaults.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 

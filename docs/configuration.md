@@ -802,6 +802,23 @@ at most 64 KiB of body data, then closes the connection. It does not redirect,
 retry, use a proxy, pool connections, or expose a generic HTTP interface.
 Standalone assembly remains a separate reviewed step.
 
+## Runtime scheduler settings
+
+The standalone runtime requires five explicit, non-secret scheduler intervals:
+
+- `CLUSTER_MURMUR_POLL_INTERVAL`;
+- `CLUSTER_MURMUR_EVENT_DISPATCH_INTERVAL`;
+- `CLUSTER_MURMUR_RECURRING_INTERVAL`;
+- `CLUSTER_MURMUR_STOCHASTIC_INTERVAL`; and
+- `CLUSTER_MURMUR_EVENT_RETENTION_INTERVAL`.
+
+Each value uses the same exact duration syntax as public configuration, such as
+`30s`, `5m`, or `1h`. Poll, dispatch, recurring, and stochastic intervals must
+be at least one second. Event retention must be at least one minute. All values
+must remain within the shared maximum runtime interval. Missing, malformed,
+oversized, or out-of-range values fail startup before a clock, store, external
+service, or scheduler is used.
+
 ## Secret handling
 
 Public configuration may contain only environment-variable names and fake,
