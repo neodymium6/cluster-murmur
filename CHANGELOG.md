@@ -21,6 +21,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   later standalone transport assembly.
 - Fixed, revalidated MCP 2026-07-28 Streamable HTTP request encoding for the two
   application-selected read-only observer tools.
+- Bounded MCP JSON and request-scoped SSE response decoding that exposes only
+  fixed structured observer results and stable transport outcomes.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 

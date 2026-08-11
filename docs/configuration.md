@@ -782,8 +782,11 @@ the two application-selected read-only operations into MCP 2026-07-28
 Streamable HTTP `tools/call` messages. It fixes the POST method, endpoint,
 protocol metadata, bearer authorization, headers, JSON-RPC envelope, timeouts,
 and response limit, and revalidates the complete value before later transport.
-It still performs no network request. HTTP execution and standalone assembly
-remain separate reviewed steps.
+The paired response boundary accepts only bounded JSON or request-scoped SSE,
+discards notifications and raw diagnostics, correlates the fixed JSON-RPC ID,
+and projects only a complete non-error `structuredContent` value into the
+existing observer decoder. Both boundaries still perform no network request.
+HTTP execution and standalone assembly remain separate reviewed steps.
 
 ## Secret handling
 
