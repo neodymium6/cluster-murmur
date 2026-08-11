@@ -9,7 +9,7 @@ criteria.
 
 The keywords **must**, **must not**, **should**, and **may** are normative. This
 document describes the complete standalone MVP implemented in source version
-`0.2.0-alpha.2`; [`public-alpha.md`](public-alpha.md) records the narrower
+`0.2.0-alpha.3`; [`public-alpha.md`](public-alpha.md) records the narrower
 environment-neutral subset shipped previously as `v0.1.0-alpha.1`.
 
 ## System boundary
