@@ -777,8 +777,13 @@ from deployment-owned environment variables rather than public YAML:
 
 The resulting settings value is redacted and returns only stable value-free
 errors. Loading it does not connect to the observer or expose an arbitrary HTTP
-request boundary. The fixed observer transport and standalone assembly remain
-separate reviewed steps.
+request boundary. The observer request encoder combines only these settings and
+the two application-selected read-only operations into MCP 2026-07-28
+Streamable HTTP `tools/call` messages. It fixes the POST method, endpoint,
+protocol metadata, bearer authorization, headers, JSON-RPC envelope, timeouts,
+and response limit, and revalidates the complete value before later transport.
+It still performs no network request. HTTP execution and standalone assembly
+remain separate reviewed steps.
 
 ## Secret handling
 
