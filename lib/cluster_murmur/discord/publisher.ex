@@ -12,7 +12,7 @@ defmodule ClusterMurmur.Discord.Publisher do
   alias ClusterMurmur.ExternalError
   alias ClusterMurmur.Persistence.PublicationAttemptRecord
 
-  @type transport_error :: :timeout | :unavailable
+  @type transport_error :: :invalid_request | :timeout | :unavailable
   @type transport_result ::
           {:ok, WebhookResponse.t()}
           | {:error, :not_sent, transport_error()}

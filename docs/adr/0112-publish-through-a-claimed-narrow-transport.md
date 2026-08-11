@@ -4,7 +4,7 @@ Date: 2026-08-05
 
 ## Status
 
-Accepted
+Accepted; amended by ADR 0200.
 
 ## Context
 
