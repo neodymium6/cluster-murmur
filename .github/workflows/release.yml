@@ -90,6 +90,7 @@ jobs:
       id-token: write
       packages: write
     env:
+      CONTAINERS_REGISTRIES_CONF: ${{ github.workspace }}/.github/containers-registries.conf
       RELEASE_NOTES: ${{ needs.validate.outputs.release_notes }}
       RELEASE_TAG: ${{ needs.validate.outputs.release_tag }}
       SOURCE_REVISION: ${{ needs.validate.outputs.revision }}

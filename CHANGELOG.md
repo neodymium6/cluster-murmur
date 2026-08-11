@@ -7,6 +7,16 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## Unreleased
 
+## [0.2.0-alpha.2](docs/release-notes-v0.2.0-alpha.2.md) - 2026-08-11
+
+### Release automation
+
+- Isolated pinned container tooling from runner-provided registry
+  configuration so tagged artifact preparation behaves consistently across
+  supported GitHub-hosted runners.
+- Superseded the immutable `v0.2.0-alpha.1` tag after its artifact-preparation
+  run stopped before publishing an image or creating a GitHub Release.
+
 ## [0.2.0-alpha.1](docs/release-notes-v0.2.0-alpha.1.md) - 2026-08-11
 
 ### Runtime and transport integration
