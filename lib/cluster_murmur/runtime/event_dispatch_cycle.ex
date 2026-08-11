@@ -2,9 +2,10 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
   @moduledoc """
   Runs one bounded durable event-dispatch batch through fixed conversations.
 
-  The complete candidate, event, trigger, and authorization-free consumer batch
-  is validated before the first outbox claim. Each claimed entry is completed
-  only after all of its planned matches reach a terminal accepted outcome.
+  Current durable cooldowns and the complete candidate, event, trigger, and
+  authorization-free consumer batch are validated before the first outbox
+  claim. Each claimed entry is completed only after all of its planned matches
+  reach a terminal accepted outcome.
   """
 
   alias ClusterMurmur.Config.Configuration
@@ -19,7 +20,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
     EventStore
   }
 
-  alias ClusterMurmur.Runtime.ResponderTurnSchedule
+  alias ClusterMurmur.Runtime.{PersonaCooldownSnapshot, ResponderTurnSchedule}
 
   alias ClusterMurmur.Triggers.{
     AuthorizedConversationPipeline,
@@ -202,6 +203,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
              context.shared_input,
              context.adapters
            ),
+         :ok <- validate_cooldown_store(context.adapters.cooldown_store),
          :ok <- validate_conversation_runtime(context) do
       :ok
     else
@@ -236,6 +238,9 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
         %Adapters{} = adapters
       ) do
     with :ok <- preflight(configuration, now, context, adapters),
+         {:ok, cooldowns} <-
+           PersonaCooldownSnapshot.load(configuration, context.adapters.cooldown_store),
+         context <- with_cooldowns(context, cooldowns),
          {:ok, candidates} <- list_candidates(adapters.dispatches, now),
          {:ok, events} <- load_events(candidates, adapters.events, now, nil, [], 0),
          {:ok, %Plan{} = plan} <- plan(candidates, events, configuration, now),
@@ -253,8 +258,18 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
          :ok <- validate_result(result) do
       {:ok, result}
     else
-      {:error, :event_dispatch_failed} = error -> error
-      _failure -> {:error, :invalid_event_dispatch_cycle}
+      {:error, reason}
+      when reason in [
+             :invalid_persona_cooldown_snapshot,
+             :persona_cooldown_snapshot_failed
+           ] ->
+        {:error, :event_dispatch_failed}
+
+      {:error, :event_dispatch_failed} = error ->
+        error
+
+      _failure ->
+        {:error, :invalid_event_dispatch_cycle}
     end
   rescue
     _error -> {:error, :invalid_event_dispatch_cycle}
@@ -305,6 +320,17 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
     else
       _failure -> {:error, :invalid_event_dispatch_cycle}
     end
+  end
+
+  defp with_cooldowns(context, cooldowns) do
+    shared_input = %{context.shared_input | cooldowns: cooldowns}
+    %{context | shared_input: shared_input}
+  end
+
+  defp validate_cooldown_store(store) do
+    if is_atom(store) and Code.ensure_loaded?(store) and function_exported?(store, :fetch, 1),
+      do: :ok,
+      else: {:error, :invalid_event_dispatch_cycle}
   end
 
   defp validate_adapters(adapters) do

@@ -4,7 +4,7 @@ Date: 2026-08-11
 
 ## Status
 
-Accepted; amends ADR 0137.
+Accepted; amends ADR 0137; amended by ADR 0207.
 
 ## Context
 
@@ -33,5 +33,5 @@ Every poll bases speaker selection on durable cooldowns current at the start of
 that cycle. This adds at most 256 narrow local store reads before observation
 and fails closed when the database cannot prove the current selection facts.
 
-Durable event-dispatch cycles consume the same reusable starter input and must
-refresh their snapshot independently in a follow-up change.
+Durable event-dispatch cycles apply the corresponding independent refresh from
+ADR 0207.

@@ -45,6 +45,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   personas without generic persistence listing.
 - Per-poll refresh of durable persona cooldowns before observation or speaker
   selection, with fail-closed storage handling.
+- Per-dispatch refresh of durable persona cooldowns before outbox reads or
+  claims, shared by starter-only and bounded-conversation consumers.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 
