@@ -84,7 +84,8 @@ defmodule ClusterMurmur.Discord.WebhookPublisher do
       {:ok, %WebhookResponse{} = response} ->
         classify_response(WebhookResponse.decode(response), dispatching)
 
-      {:error, :not_sent, error_class} when error_class in [:timeout, :unavailable] ->
+      {:error, :not_sent, error_class}
+      when error_class in [:invalid_request, :timeout, :unavailable] ->
         {:failed, error_class, dispatching}
 
       {:error, :outcome_unknown} ->

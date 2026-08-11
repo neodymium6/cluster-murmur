@@ -153,7 +153,7 @@ defmodule ClusterMurmur.Discord.WebhookPublisherTest do
   end
 
   test "distinguishes proven pre-send failures from unknown transport effects" do
-    for {index, error_class} <- [{1, :timeout}, {2, :unavailable}] do
+    for {index, error_class} <- [{1, :invalid_request}, {2, :timeout}, {3, :unavailable}] do
       {started, plan, record, persona, settings} = scenario(index)
       transport = fn _request -> {:error, :not_sent, error_class} end
 
@@ -164,11 +164,11 @@ defmodule ClusterMurmur.Discord.WebhookPublisherTest do
     end
 
     for {index, transport} <- [
-          {3, fn _request -> {:error, :outcome_unknown} end},
-          {4, fn _request -> nil end},
-          {5, fn _request -> raise "private failure" end},
-          {6, fn _request -> throw(:private_failure) end},
-          {7, fn _request -> exit(:private_failure) end}
+          {4, fn _request -> {:error, :outcome_unknown} end},
+          {5, fn _request -> nil end},
+          {6, fn _request -> raise "private failure" end},
+          {7, fn _request -> throw(:private_failure) end},
+          {8, fn _request -> exit(:private_failure) end}
         ] do
       {started, plan, record, persona, settings} = scenario(index)
 
