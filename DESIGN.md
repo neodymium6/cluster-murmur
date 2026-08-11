@@ -2,19 +2,17 @@
 
 ## Status
 
-This document began as the architecture baseline. The repository is now a
-public alpha engine: its bounded domain, persistence, orchestration,
-recovery, and opt-in scheduling components are implemented and exercised with
-fake adapters; release and container artifacts have isolated Nix checks. The
-default OTP application intentionally starts only the repository. The live
-transports, automatic OTP assembly, health endpoints, and Kubernetes deployment
-described below remain target architecture owned by a later standalone-service
-milestone.
+This document began as the architecture baseline. The tagged public alpha
+established the bounded domain, persistence, orchestration, recovery, and
+opt-in scheduling components. Current unreleased production builds also provide
+fixed live transports and automatic recovery-gated OTP assembly; release and
+container artifacts exercise that entry point with isolated fake inputs. Health
+endpoints and a hardened Kubernetes deployment remain later readiness work.
 
 The normative public configuration surface is documented in
 [`docs/configuration.md`](docs/configuration.md). Testable MVP invariants,
 persistence fields, and acceptance criteria are documented in
-[`docs/mvp-contract.md`](docs/mvp-contract.md). The narrower public alpha
+[`docs/mvp-contract.md`](docs/mvp-contract.md). The historical tagged-alpha
 completion boundary is documented in
 [`docs/public-alpha.md`](docs/public-alpha.md).
 

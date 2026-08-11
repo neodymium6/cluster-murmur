@@ -10,8 +10,9 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
   Any recovery or initialization error, incomplete mutation, or full bounded
   page prevents all five schedulers from starting. Termination of any scheduler
   closes the shared supervisor, requiring a parent-managed replacement to run
-  every gate again before starting any worker. This opt-in boundary is not
-  installed automatically.
+  every gate again before starting any worker. The production application
+  installs this boundary after the repository; other Mix environments may use
+  it explicitly.
   """
 
   use Supervisor
@@ -76,6 +77,11 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
 
   @option_keys Options.__struct__() |> Map.keys()
   @option_key_count length(@option_keys)
+
+  @doc "Validates exact recovery-gated runtime options without running a startup gate."
+  @spec validate(term()) :: :ok | {:error, :invalid_recovered_runtime_supervisor}
+  def validate(%Options{} = options), do: validate_options(options, nil)
+  def validate(_options), do: {:error, :invalid_recovered_runtime_supervisor}
 
   @doc "Runs recovery and schedule initialization before all five schedulers."
   @spec start_link(Options.t()) :: Supervisor.on_start()

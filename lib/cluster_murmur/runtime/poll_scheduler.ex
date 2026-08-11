@@ -2,10 +2,10 @@ defmodule ClusterMurmur.Runtime.PollScheduler do
   @moduledoc """
   Runs explicitly configured poll-starter cycles without overlap.
 
-  This worker has no live defaults and is not installed in the application
-  supervision tree automatically. A deployment must construct validated
-  options and supervise it explicitly. The next timer is created only after
-  the current synchronous cycle has returned.
+  This worker has no live defaults. The production application constructs its
+  validated options and starts it behind shared recovery gates; other uses must
+  supervise it explicitly. The next timer is created only after the current
+  synchronous cycle has returned.
   """
 
   use GenServer

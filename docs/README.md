@@ -5,7 +5,7 @@ development commands. Use the documents below for details.
 
 ## By task
 
-- Evaluate the implemented public alpha scope and known limitations:
+- Review the historical `v0.1.0-alpha.1` scope and known limitations:
   [public-alpha.md](public-alpha.md).
 - Write or validate public configuration:
   [configuration.md](configuration.md).

@@ -59,6 +59,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   clock, cycle, ingestion, and interval-derived first-run delays.
 - Validated recurring, stochastic, and retention scheduler options with fixed
   cycles, system clock and randomness, and interval-derived first-run delays.
+- Effect-free assembly and preflight of the fixed recovery-gated five-scheduler
+  production supervisor options.
+- A fail-closed production OTP entry point that prepares bounded deployment
+  inputs, starts SQLite first, and gates all five runtime schedulers behind
+  recovery and schedule initialization, including after repository replacement.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 

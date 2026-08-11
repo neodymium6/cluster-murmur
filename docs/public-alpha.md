@@ -1,12 +1,16 @@
-# Public alpha boundary
+# v0.1.0-alpha.1 public alpha boundary
+
+This is the historical scope of the tagged `v0.1.0-alpha.1` release. Current
+unreleased behavior is documented in the root README, configuration reference,
+deployment guide, and changelog.
 
 ## Purpose
 
-The public alpha is an environment-neutral, composable engine. It proves the
+This tagged public alpha is an environment-neutral, composable engine. It proves the
 bounded observation-to-conversation behavior without choosing a live
 deployment, embedding credentials, or connecting to external infrastructure.
 
-The alpha is not a standalone service. `ClusterMurmur.Application` starts only
+The tagged alpha is not a standalone service. `ClusterMurmur.Application` starts only
 the SQLite repository. A deployment that enables runtime work must explicitly
 assemble the reviewed opt-in supervisors and workers with their configuration,
 clock, random source, stores, and narrow transports.

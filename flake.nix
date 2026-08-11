@@ -245,12 +245,69 @@
                 mkdir -p "$migration_root"
                 chmod 0700 "$migration_root"
 
+                config_root="$TMPDIR/standalone-config"
+                mkdir -p "$config_root"
+                cat > "$config_root/cluster-murmur.yaml" <<'EOF'
+                version: 1
+                state_tracking:
+                  failures_required: 3
+                  successes_required: 4
+                llm:
+                  provider: openai_compatible
+                  base_url_env: LLM_BASE_URL
+                  model_env: LLM_MODEL
+                  api_key_file_env: LLM_API_KEY_FILE
+                  timeout: 20s
+                  max_output_tokens: 300
+                includes:
+                  event_groups: []
+                  personas: []
+                  bindings: []
+                  triggers: []
+                  routing:
+                    - routing.yaml
+                EOF
+                cat > "$config_root/routing.yaml" <<'EOF'
+                routing:
+                  default:
+                    webhook_secret_file_env: DISCORD_WEBHOOK_SECRET_FILE
+                EOF
+                printf '%s\n' 'clearly-fake-api-key' > "$config_root/api-key"
+                printf '%s\n' 'clearly-fake-observer-token' > "$config_root/observer-token"
+                printf '%s\n' \
+                  'https://discord.com/api/webhooks/123456789/clearly_fake_token' \
+                  > "$config_root/webhook"
+
+                export CLUSTER_MURMUR_CONFIG_PATH="$config_root/cluster-murmur.yaml"
+                export CLUSTER_MURMUR_OBSERVER_MCP_URL='https://observer.example.invalid/mcp'
+                export CLUSTER_MURMUR_OBSERVER_MCP_TOKEN_FILE="$config_root/observer-token"
+                export LLM_BASE_URL='https://llm.example.invalid/v1'
+                export LLM_MODEL='example-model'
+                export LLM_API_KEY_FILE="$config_root/api-key"
+                export DISCORD_WEBHOOK_SECRET_FILE="$config_root/webhook"
+                export CLUSTER_MURMUR_POLL_INTERVAL='30s'
+                export CLUSTER_MURMUR_EVENT_DISPATCH_INTERVAL='30s'
+                export CLUSTER_MURMUR_RECURRING_INTERVAL='30s'
+                export CLUSTER_MURMUR_STOCHASTIC_INTERVAL='30s'
+                export CLUSTER_MURMUR_EVENT_RETENTION_INTERVAL='1h'
+                export CLUSTER_MURMUR_RESPONDER_TURN_INTERVAL='5s'
+                export CLUSTER_MURMUR_RESPONDER_GENERATION_DELAY='0ms'
+                export CLUSTER_MURMUR_RESPONDER_PUBLICATION_START_DELAY='1s'
+                export CLUSTER_MURMUR_RESPONDER_PUBLICATION_COMPLETE_DELAY='2s'
+
                 test -x "$release_bin"
                 test ! -e "${productionRelease}/releases/COOKIE"
                 test "$(CLUSTER_MURMUR_DATABASE_PATH="$migration_database" \
                   "$release_bin" eval \
                   'IO.write("#{Application.spec(:cluster_murmur, :vsn)}:#{Node.alive?()}")')" \
                   = "${version}:false"
+
+                CLUSTER_MURMUR_DATABASE_PATH="$migration_database" \
+                  "$release_bin" eval 'ClusterMurmur.Release.migrate!()'
+                test "$(sqlite3 "$migration_database" \
+                  "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'stochastic_schedules'")" \
+                  = "stochastic_schedules"
+                test "$(stat -c '%a' "$migration_database")" = "600"
 
                 probe_nondistributed() {
                   probe_output="$(env \
@@ -281,13 +338,6 @@
                 chmod 0600 "$adversarial_vm_args"
                 echo "-sname injected_vm_args" >> "$adversarial_vm_args"
                 probe_nondistributed "RELEASE_VM_ARGS=$adversarial_vm_args"
-
-                CLUSTER_MURMUR_DATABASE_PATH="$migration_database" \
-                  "$release_bin" eval 'ClusterMurmur.Release.migrate!()'
-                test "$(sqlite3 "$migration_database" \
-                  "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'stochastic_schedules'")" \
-                  = "stochastic_schedules"
-                test "$(stat -c '%a' "$migration_database")" = "600"
 
                 rejected_database="$TMPDIR/missing/sensitive-marker.sqlite3"
                 rejected_output="$TMPDIR/migration-failure.log"
@@ -429,11 +479,60 @@
                 mkdir -p "$runtime_tmp/release"
                 chmod 0700 "$runtime_tmp/release"
 
+                config_root="$runtime_tmp/standalone-config"
+                mkdir -p "$config_root"
+                cat > "$config_root/cluster-murmur.yaml" <<'EOF'
+                version: 1
+                state_tracking:
+                  failures_required: 3
+                  successes_required: 4
+                llm:
+                  provider: openai_compatible
+                  base_url_env: LLM_BASE_URL
+                  model_env: LLM_MODEL
+                  api_key_file_env: LLM_API_KEY_FILE
+                  timeout: 20s
+                  max_output_tokens: 300
+                includes:
+                  event_groups: []
+                  personas: []
+                  bindings: []
+                  triggers: []
+                  routing:
+                    - routing.yaml
+                EOF
+                cat > "$config_root/routing.yaml" <<'EOF'
+                routing:
+                  default:
+                    webhook_secret_file_env: DISCORD_WEBHOOK_SECRET_FILE
+                EOF
+                printf '%s\n' 'clearly-fake-api-key' > "$config_root/api-key"
+                printf '%s\n' 'clearly-fake-observer-token' > "$config_root/observer-token"
+                printf '%s\n' \
+                  'https://discord.com/api/webhooks/123456789/clearly_fake_token' \
+                  > "$config_root/webhook"
+
                 container_env=(
+                  "CLUSTER_MURMUR_CONFIG_PATH=$config_root/cluster-murmur.yaml"
                   "CLUSTER_MURMUR_DATABASE_PATH=$runtime_database"
+                  "CLUSTER_MURMUR_EVENT_DISPATCH_INTERVAL=30s"
+                  "CLUSTER_MURMUR_EVENT_RETENTION_INTERVAL=1h"
+                  "CLUSTER_MURMUR_OBSERVER_MCP_TOKEN_FILE=$config_root/observer-token"
+                  "CLUSTER_MURMUR_OBSERVER_MCP_URL=https://observer.example.invalid/mcp"
+                  "CLUSTER_MURMUR_POLL_INTERVAL=30s"
+                  "CLUSTER_MURMUR_RECURRING_INTERVAL=30s"
+                  "CLUSTER_MURMUR_RESPONDER_GENERATION_DELAY=0ms"
+                  "CLUSTER_MURMUR_RESPONDER_PUBLICATION_COMPLETE_DELAY=2s"
+                  "CLUSTER_MURMUR_RESPONDER_PUBLICATION_START_DELAY=1s"
+                  "CLUSTER_MURMUR_RESPONDER_TURN_INTERVAL=5s"
+                  "CLUSTER_MURMUR_STOCHASTIC_INTERVAL=30s"
+                  "DISCORD_WEBHOOK_SECRET_FILE=$config_root/webhook"
                   "HOME=$runtime_tmp"
                   "LANG=C.UTF-8"
                   "LC_ALL=C.UTF-8"
+                  "LLM_API_KEY_FILE=$config_root/api-key"
+                  "LLM_BASE_URL=https://llm.example.invalid/v1"
+                  "LLM_MODEL=example-model"
                   "RELEASE_TMP=$runtime_tmp/release"
                   "SSL_CERT_FILE=${expectedCertificate}"
                   "TMPDIR=$runtime_tmp"

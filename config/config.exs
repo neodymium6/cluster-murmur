@@ -6,7 +6,8 @@ config :elixir, :time_zone_database, TimeZoneInfo.TimeZoneDatabase
 config :time_zone_info, update: :disabled
 
 config :cluster_murmur,
-  ecto_repos: [ClusterMurmur.Repo]
+  ecto_repos: [ClusterMurmur.Repo],
+  standalone_runtime: false
 
 config :cluster_murmur, ClusterMurmur.Repo,
   pool_size: 1,
