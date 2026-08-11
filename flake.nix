@@ -36,6 +36,7 @@
           ./.formatter.exs
           ./AGENTS.md
           ./config
+          ./deploy
           ./DESIGN.md
           ./LICENSE
           ./README.md
@@ -89,7 +90,9 @@
           contents = [ productionRelease ];
 
           extraCommands = ''
-            mkdir -p ./etc ./tmp ./var/lib/cluster-murmur
+            mkdir -p ./bin ./etc ./tmp ./var/lib/cluster-murmur
+            ln -s ${productionRelease}/bin/cluster_murmur ./bin/cluster-murmur
+            ln -s ${pkgs.tini}/bin/tini ./bin/tini
             printf '%s\n' \
               'cluster-murmur:x:65532:65532:Cluster Murmur:/tmp:/sbin/nologin' \
               > ./etc/passwd
@@ -107,11 +110,11 @@
             User = "65532:65532";
             WorkingDir = "/";
             Entrypoint = [
-              "${pkgs.tini}/bin/tini"
+              "/bin/tini"
               "--"
             ];
             Cmd = [
-              "${productionRelease}/bin/cluster_murmur"
+              "/bin/cluster-murmur"
               "start"
             ];
             Env = [
@@ -370,8 +373,25 @@
               ''
                 cd ${source}
                 actionlint .github/workflows/*.yml
-                markdownlint-cli2 AGENTS.md DESIGN.md README.md SECURITY.md docs/**/*.md
+                markdownlint-cli2 \
+                  AGENTS.md DESIGN.md README.md SECURITY.md \
+                  deploy/**/*.md docs/**/*.md
                 touch "$out"
+              '';
+
+          kubernetes-example =
+            pkgs.runCommand "cluster-murmur-kubernetes-example" { nativeBuildInputs = [ pkgs.kustomize ]; }
+              ''
+                kustomize build ${source}/deploy/kubernetes > "$out"
+                grep -q 'strategy:' "$out"
+                grep -q 'type: Recreate' "$out"
+                grep -q 'readOnlyRootFilesystem: true' "$out"
+                grep -q 'automountServiceAccountToken: false' "$out"
+                grep -q 'CLUSTER_MURMUR_LLM_BASE_URL' "$out"
+                grep -q 'CLUSTER_MURMUR_DISCORD_WEBHOOK_FILE' "$out"
+                if grep -q 'fsGroup:' "$out"; then
+                  exit 1
+                fi
               '';
         }
         // nixpkgs.lib.optionalAttrs pkgs.stdenv.isLinux {
@@ -379,8 +399,8 @@
             let
               image = containerImageFor system;
               expectedArchitecture = pkgs.go.GOARCH;
-              expectedCommand = "${productionRelease}/bin/cluster_murmur";
-              expectedEntrypoint = "${pkgs.tini}/bin/tini";
+              expectedCommand = "/bin/cluster-murmur";
+              expectedEntrypoint = "/bin/tini";
               expectedCertificate = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
               runtimeClosure = pkgs.closureInfo {
                 rootPaths = [

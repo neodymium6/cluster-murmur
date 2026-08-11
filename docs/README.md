@@ -11,6 +11,8 @@ development commands. Use the documents below for details.
   [configuration.md](configuration.md).
 - Build artifacts, prepare SQLite, or review runtime controls:
   [deployment.md](deployment.md).
+- Adapt the non-deployable hardened Kubernetes base:
+  [deploy/kubernetes](../deploy/kubernetes/README.md).
 - Understand architecture and component ownership: [DESIGN.md](../DESIGN.md).
 - Check exact runtime invariants and acceptance criteria:
   [mvp-contract.md](mvp-contract.md).

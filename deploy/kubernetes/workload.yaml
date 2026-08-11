@@ -1,0 +1,242 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cluster-murmur
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cluster-murmur-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-murmur
+  labels:
+    app.kubernetes.io/name: cluster-murmur
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cluster-murmur
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cluster-murmur
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      serviceAccountName: cluster-murmur
+      terminationGracePeriodSeconds: 35
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: migrate
+          image: registry.example.invalid/cluster-murmur@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/cluster-murmur
+          args:
+            - eval
+            - ClusterMurmur.Release.migrate!()
+          env:
+            - name: CLUSTER_MURMUR_DATABASE_PATH
+              value: /var/lib/cluster-murmur/cluster-murmur.sqlite3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/cluster-murmur
+            - name: runtime-temporary
+              mountPath: /tmp
+      containers:
+        - name: cluster-murmur
+          image: registry.example.invalid/cluster-murmur@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CLUSTER_MURMUR_CONFIG_PATH
+              value: /etc/cluster-murmur/cluster-murmur.yaml
+            - name: CLUSTER_MURMUR_DATABASE_PATH
+              value: /var/lib/cluster-murmur/cluster-murmur.sqlite3
+            - name: CLUSTER_MURMUR_HEALTH_PORT
+              value: "18080"
+            - name: CLUSTER_MURMUR_OBSERVER_MCP_URL
+              value: http://127.0.0.1:19090/mcp
+            - name: CLUSTER_MURMUR_OBSERVER_MCP_TOKEN_FILE
+              value: /var/run/secrets/cluster-murmur/observer-token
+            - name: CLUSTER_MURMUR_POLL_INTERVAL
+              value: 30s
+            - name: CLUSTER_MURMUR_EVENT_DISPATCH_INTERVAL
+              value: 2s
+            - name: CLUSTER_MURMUR_RECURRING_INTERVAL
+              value: 10s
+            - name: CLUSTER_MURMUR_STOCHASTIC_INTERVAL
+              value: 15s
+            - name: CLUSTER_MURMUR_EVENT_RETENTION_INTERVAL
+              value: 1h
+            - name: CLUSTER_MURMUR_RESPONDER_TURN_INTERVAL
+              value: 5s
+            - name: CLUSTER_MURMUR_RESPONDER_GENERATION_DELAY
+              value: 0ms
+            - name: CLUSTER_MURMUR_RESPONDER_PUBLICATION_START_DELAY
+              value: 1s
+            - name: CLUSTER_MURMUR_RESPONDER_PUBLICATION_COMPLETE_DELAY
+              value: 2s
+            - name: CLUSTER_MURMUR_LLM_BASE_URL
+              value: https://model.example.invalid/v1
+            - name: CLUSTER_MURMUR_LLM_MODEL
+              value: example-model
+            - name: CLUSTER_MURMUR_LLM_API_KEY_FILE
+              value: /var/run/secrets/cluster-murmur/model-api-key
+            - name: CLUSTER_MURMUR_DISCORD_WEBHOOK_FILE
+              value: /var/run/secrets/cluster-murmur/discord-webhook
+          ports:
+            - name: health
+              containerPort: 18080
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /startupz
+              port: health
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: health
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: public-config
+              mountPath: /etc/cluster-murmur
+              readOnly: true
+            - name: application-secrets
+              mountPath: /var/run/secrets/cluster-murmur
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/cluster-murmur
+            - name: runtime-temporary
+              mountPath: /tmp
+        - name: cluster-observer
+          image: registry.example.invalid/cluster-observer@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: observer-mcp
+              containerPort: 19090
+              protocol: TCP
+          startupProbe:
+            tcpSocket:
+              port: observer-mcp
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 30
+          readinessProbe:
+            tcpSocket:
+              port: observer-mcp
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 2
+          livenessProbe:
+            tcpSocket:
+              port: observer-mcp
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: observer-auth
+              mountPath: /var/run/secrets/cluster-observer
+              readOnly: true
+            - name: observer-temporary
+              mountPath: /tmp
+      volumes:
+        - name: public-config
+          configMap:
+            name: cluster-murmur-public-config
+        - name: application-secrets
+          secret:
+            secretName: cluster-murmur-secrets
+            defaultMode: 0444
+            items:
+              - key: observer-token
+                path: observer-token
+              - key: model-api-key
+                path: model-api-key
+              - key: discord-webhook
+                path: discord-webhook
+        - name: observer-auth
+          secret:
+            secretName: cluster-murmur-secrets
+            defaultMode: 0444
+            items:
+              - key: observer-token
+                path: observer-token
+        - name: data
+          persistentVolumeClaim:
+            claimName: cluster-murmur-data
+        - name: runtime-temporary
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: observer-temporary
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi

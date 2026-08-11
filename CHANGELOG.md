@@ -68,6 +68,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   lease acquired after recovery and released before runtime shutdown drains.
 - Fixed-cardinality scheduler and normalized external outcome Telemetry events
   with matching allowlisted JSON lifecycle logs in production.
+- A non-deployable hardened Kubernetes base and runbook for single-writer
+  rollout, offline backup/restore, migration rollback, and observer isolation.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 
