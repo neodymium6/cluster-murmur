@@ -51,6 +51,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   with ordered per-turn delays and no live defaults.
 - Pure finite responder-schedule construction from conversation bounds,
   deployment timings, and explicit narrow transports.
+- Fixed, cross-validated production starter and responder adapter bundles with
+  no deployment-selected persistence or policy modules.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 
