@@ -7,6 +7,17 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## Unreleased
 
+## [0.2.0-alpha.3](docs/release-notes-v0.2.0-alpha.3.md) - 2026-08-11
+
+### Container publication
+
+- Bounded the OCI image to at most 20 layers and verified that limit in the
+  container check, removing the 100-layer upload pattern that exhausted GHCR
+  secondary request limits during first publication.
+- Superseded the immutable `v0.2.0-alpha.2` tag after its validated artifact
+  build reached GHCR but was rate-limited before a manifest, package, or GitHub
+  Release was created.
+
 ## [0.2.0-alpha.2](docs/release-notes-v0.2.0-alpha.2.md) - 2026-08-11
 
 ### Release automation

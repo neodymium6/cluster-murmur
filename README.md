@@ -7,7 +7,7 @@ conversations.
 ## Status
 
 Cluster Murmur is a public standalone alpha. The current source version is
-`0.2.0-alpha.2`; published artifacts remain listed on the
+`0.2.0-alpha.3`; published artifacts remain listed on the
 [GitHub Releases page](https://github.com/neodymium6/cluster-murmur/releases).
 
 The standalone alpha provides a fail-closed entry point using fixed transports,

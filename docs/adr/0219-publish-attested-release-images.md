@@ -28,6 +28,9 @@ publish a version tag, `latest`, or another channel alias. Verify the registry
 digest again after publication and make the digest-pinned reference
 authoritative. Because the upload alias names its intended content rather than
 a release channel, retrying cannot silently replace a version binding.
+Bound the Nix archive to at most 20 layers and enforce that limit in the
+container check so first publication does not inherit the builder's 100-layer
+default and exhaust registry secondary request limits.
 The Nix Skopeo invocation disables only its absent local signature-policy file
 for these two copies; registry TLS verification and every digest comparison
 remain enabled, and the following steps generate the release signatures.

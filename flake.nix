@@ -12,6 +12,7 @@
         "aarch64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+      maxContainerLayers = 20;
       pkgsFor = forAllSystems (system: import nixpkgs { inherit system; });
       version = nixpkgs.lib.strings.removeSuffix "\n" (builtins.readFile ./VERSION);
       releaseSource = nixpkgs.lib.fileset.toSource {
@@ -86,6 +87,7 @@
           productionRelease = releaseFor system;
         in
         pkgs.dockerTools.buildLayeredImage {
+          maxLayers = maxContainerLayers;
           name = "cluster-murmur";
           tag = version;
           contents = [ productionRelease ];
@@ -444,6 +446,9 @@
                   "$archive_root/manifest.json")"
                 jq -e --arg version "${version}" \
                   '.[0].RepoTags == ["cluster-murmur:" + $version]' \
+                  "$archive_root/manifest.json"
+                jq -e --argjson max_layers "${toString maxContainerLayers}" \
+                  '.[0].Layers | length > 0 and length <= $max_layers' \
                   "$archive_root/manifest.json"
                 jq -e --arg entrypoint "${expectedEntrypoint}" \
                   --arg command "${expectedCommand}" \
