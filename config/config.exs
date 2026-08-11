@@ -5,6 +5,12 @@ import Config
 config :elixir, :time_zone_database, TimeZoneInfo.TimeZoneDatabase
 config :time_zone_info, update: :disabled
 
+if config_env() == :prod do
+  config :logger, :default_handler, formatter: {ClusterMurmur.OperationalJSONFormatter, %{}}
+else
+  config :logger, :default_formatter, metadata: [:component, :outcome, :error_class]
+end
+
 config :cluster_murmur,
   ecto_repos: [ClusterMurmur.Repo],
   standalone_runtime: false

@@ -13,7 +13,7 @@ defmodule ClusterMurmur.Runtime.RecurringScheduleScheduler do
   alias ClusterMurmur.Config.Configuration
   alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.DomainLimits
-  alias ClusterMurmur.Runtime.RecurringScheduleCycle
+  alias ClusterMurmur.Runtime.{OperationalTelemetry, RecurringScheduleCycle}
 
   defmodule Options do
     @moduledoc false
@@ -89,7 +89,9 @@ defmodule ClusterMurmur.Runtime.RecurringScheduleScheduler do
         {:recurring_schedule_cycle, timer_token},
         {options, status, timer_token}
       ) do
+    started_at = System.monotonic_time()
     next_status = run_cycle(options, status)
+    :ok = OperationalTelemetry.cycle(:recurring_schedule, started_at, next_status.last_error)
     next_timer_token = schedule(options.interval_ms)
     {:noreply, {options, next_status, next_timer_token}}
   end

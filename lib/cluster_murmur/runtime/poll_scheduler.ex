@@ -14,7 +14,7 @@ defmodule ClusterMurmur.Runtime.PollScheduler do
   alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.DomainLimits
   alias ClusterMurmur.Observers.Client
-  alias ClusterMurmur.Runtime.PollStarterCycle
+  alias ClusterMurmur.Runtime.{OperationalTelemetry, PollStarterCycle}
   alias ClusterMurmur.Runtime.PollStarterCycle.Context
 
   defmodule Options do
@@ -107,7 +107,9 @@ defmodule ClusterMurmur.Runtime.PollScheduler do
 
   @impl true
   def handle_info({:poll, timer_token}, {options, status, timer_token}) do
+    started_at = System.monotonic_time()
     next_status = run_cycle(options, status)
+    :ok = OperationalTelemetry.cycle(:poll, started_at, next_status.last_error)
     next_timer_token = schedule(options.interval_ms)
     {:noreply, {options, next_status, next_timer_token}}
   end

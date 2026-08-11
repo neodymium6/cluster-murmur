@@ -132,6 +132,38 @@ Do not expose this port through a public Service or ingress. Network policy must
 limit it to orchestrator probes. The endpoint contains no metrics or diagnostics
 and must not be extended with arbitrary handlers.
 
+## Metrics and operational logs
+
+The runtime emits `[:cluster_murmur, :runtime, :cycle, :stop]` for every poll,
+event-dispatch, recurring, stochastic, and retention cycle. The three fixed live
+transports emit `[:cluster_murmur, :external, :request, :stop]`. Both events
+contain `count: 1` and `duration` in native monotonic time units. Their metadata
+is limited to the documented finite `component`, `outcome`, and `error_class`
+atoms. Convert durations with `System.convert_time_unit/3` in a trusted metrics
+handler.
+
+Cycle components are `poll`, `event_dispatch`, `recurring_schedule`,
+`stochastic_schedule`, and `event_retention`; external components are
+`observer_mcp`, `model_provider`, and `discord_webhook`. Outcomes are `ok`,
+`error`, `rejected`, `not_sent`, and `unknown`. Error classes are absent on
+success or are one of `invalid_cycle`, `poll_failed`, `dispatch_failed`,
+`retention_failed`, `authentication_failed`, `invalid_request`, `rate_limited`,
+`timeout`, `unavailable`, `invalid_response`, and `outcome_unknown`.
+
+The release also emits `runtime cycle completed` and `external request
+completed` through Logger with the same structured fields. Model and Discord
+HTTP responses are classified before logging, so a non-success response is not
+reported as `ok`. Successful outcomes use `info`; other terminal outcomes use
+`warning`.
+
+Production formats each log as one JSON object per line. The formatter retains
+only time, level, the two fixed operational messages, and allowlisted telemetry
+metadata. It replaces every other message with `application event` and drops
+all other metadata rather than serializing it. No result, request, response,
+exception, endpoint, credential, prompt, observation, event, participant, or
+message is included. Attach only a reviewed bounded Telemetry exporter; the
+health listener deliberately serves no metrics route.
+
 ## Graceful termination
 
 Set the orchestrator termination grace period to at least 35 seconds. On normal

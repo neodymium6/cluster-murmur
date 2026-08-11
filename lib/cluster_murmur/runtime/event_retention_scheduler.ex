@@ -13,7 +13,7 @@ defmodule ClusterMurmur.Runtime.EventRetentionScheduler do
   alias ClusterMurmur.Config.Configuration
   alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.DomainLimits
-  alias ClusterMurmur.Runtime.EventRetentionCycle
+  alias ClusterMurmur.Runtime.{EventRetentionCycle, OperationalTelemetry}
 
   defmodule Options do
     @moduledoc false
@@ -86,7 +86,9 @@ defmodule ClusterMurmur.Runtime.EventRetentionScheduler do
 
   @impl true
   def handle_info({:event_retention_cycle, timer_token}, {options, status, timer_token}) do
+    started_at = System.monotonic_time()
     next_status = run_cycle(options, status)
+    :ok = OperationalTelemetry.cycle(:event_retention, started_at, next_status.last_error)
     next_timer_token = schedule(options.interval_ms)
     {:noreply, {options, next_status, next_timer_token}}
   end

@@ -15,6 +15,8 @@ defmodule ClusterMurmur.Discord.WebhookHTTPTransport do
     WebhookSettings
   }
 
+  alias ClusterMurmur.Runtime.OperationalTelemetry
+
   @max_response_header_bytes 16 * 1_024
   @max_response_wire_bytes 96 * 1_024
   @receive_buffer_bytes 4 * 1_024
@@ -27,7 +29,15 @@ defmodule ClusterMurmur.Discord.WebhookHTTPTransport do
 
   @doc "Executes one exact application-assembled Discord webhook request."
   @spec execute(term(), term()) :: result()
-  def execute(%WebhookRequest{} = request, %WebhookSettings{} = settings) do
+  def execute(request, settings) do
+    started_at = System.monotonic_time()
+
+    request
+    |> do_execute(settings)
+    |> OperationalTelemetry.external_request(:discord_webhook, started_at)
+  end
+
+  defp do_execute(%WebhookRequest{} = request, %WebhookSettings{} = settings) do
     with :ok <- WebhookRequest.validate_for_transport(request, settings),
          {:ok, uri} <- URI.new(request.url),
          true <- fixed_discord_uri?(uri) do
@@ -41,7 +51,7 @@ defmodule ClusterMurmur.Discord.WebhookHTTPTransport do
     _kind, _reason -> {:error, :not_sent, :invalid_request}
   end
 
-  def execute(_request, _settings), do: {:error, :not_sent, :invalid_request}
+  defp do_execute(_request, _settings), do: {:error, :not_sent, :invalid_request}
 
   defp fixed_discord_uri?(%URI{scheme: "https", host: host, port: 443})
        when is_binary(host),

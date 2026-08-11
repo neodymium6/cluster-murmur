@@ -12,7 +12,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchScheduler do
 
   alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.DomainLimits
-  alias ClusterMurmur.Runtime.EventDispatchCycle
+  alias ClusterMurmur.Runtime.{EventDispatchCycle, OperationalTelemetry}
   alias ClusterMurmur.Runtime.EventDispatchCycle.{Adapters, Context}
 
   defmodule Options do
@@ -104,7 +104,9 @@ defmodule ClusterMurmur.Runtime.EventDispatchScheduler do
 
   @impl true
   def handle_info({:event_dispatch_cycle, timer_token}, {options, status, timer_token}) do
+    started_at = System.monotonic_time()
     next_status = run_cycle(options, status)
+    :ok = OperationalTelemetry.cycle(:event_dispatch, started_at, next_status.last_error)
     next_timer_token = schedule(options.interval_ms)
     {:noreply, {options, next_status, next_timer_token}}
   end

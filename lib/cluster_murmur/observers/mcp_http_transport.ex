@@ -9,6 +9,7 @@ defmodule ClusterMurmur.Observers.MCPHTTPTransport do
   """
 
   alias ClusterMurmur.Observers.{MCPHTTPRequest, MCPHTTPResponse, MCPRequest, MCPSettings}
+  alias ClusterMurmur.Runtime.OperationalTelemetry
 
   @max_response_header_bytes 16 * 1_024
   @max_response_wire_bytes 96 * 1_024
@@ -18,7 +19,15 @@ defmodule ClusterMurmur.Observers.MCPHTTPTransport do
 
   @doc "Executes one exact application-selected observer operation."
   @spec execute(term(), term()) :: result()
-  def execute(%MCPRequest{} = operation, %MCPSettings{} = settings) do
+  def execute(operation, settings) do
+    started_at = System.monotonic_time()
+
+    operation
+    |> do_execute(settings)
+    |> OperationalTelemetry.external_request(:observer_mcp, started_at)
+  end
+
+  defp do_execute(%MCPRequest{} = operation, %MCPSettings{} = settings) do
     with {:ok, request} <- MCPHTTPRequest.encode(operation, settings),
          :ok <- MCPHTTPRequest.validate(request, operation, settings),
          {:ok, uri} <- URI.new(request.url) do
@@ -32,7 +41,7 @@ defmodule ClusterMurmur.Observers.MCPHTTPTransport do
     _kind, _reason -> {:error, :rejected, :invalid_request}
   end
 
-  def execute(_operation, _settings), do: {:error, :rejected, :invalid_request}
+  defp do_execute(_operation, _settings), do: {:error, :rejected, :invalid_request}
 
   defp execute_request(request, uri) do
     deadline = monotonic_milliseconds() + request.overall_timeout_ms
