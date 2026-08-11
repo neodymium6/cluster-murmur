@@ -385,7 +385,9 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
        else: {:error, :invalid_starter_pipeline}
   end
 
-  defp validate_adapters(adapters) do
+  @doc "Validates the complete fixed starter adapter set without running a pipeline."
+  @spec validate_adapters(term()) :: :ok | {:error, :invalid_starter_pipeline}
+  def validate_adapters(%Adapters{} = adapters) do
     requirements = [
       {adapters.conversation_action_store, [consume: 1]},
       {adapters.provider, [generate: 3]},
@@ -399,15 +401,22 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipeline do
       {adapters.reply_random, [uniform: 0]}
     ]
 
-    if Enum.all?(requirements, fn {module, functions} ->
-         is_atom(module) and Code.ensure_loaded?(module) and
-           Enum.all?(functions, fn {function, arity} ->
-             function_exported?(module, function, arity)
-           end)
-       end),
+    if exact_adapters?(adapters) and
+         Enum.all?(requirements, fn {module, functions} ->
+           is_atom(module) and Code.ensure_loaded?(module) and
+             Enum.all?(functions, fn {function, arity} ->
+               function_exported?(module, function, arity)
+             end)
+         end),
        do: :ok,
        else: {:error, :invalid_starter_pipeline}
+  rescue
+    _error -> {:error, :invalid_starter_pipeline}
+  catch
+    _kind, _reason -> {:error, :invalid_starter_pipeline}
   end
+
+  def validate_adapters(_adapters), do: {:error, :invalid_starter_pipeline}
 
   defp latest_event_at(%{observed_at: nil, occurred_at: occurred_at}), do: occurred_at
 
