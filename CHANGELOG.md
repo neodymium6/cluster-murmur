@@ -28,6 +28,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   post-send failure classification.
 - Explicit provider-transport classification for locally rejected malformed or
   oversized HTTP responses.
+- A fixed one-request OpenAI-compatible HTTP transport with verified TLS,
+  bounded parser input, and no redirects or retries.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 

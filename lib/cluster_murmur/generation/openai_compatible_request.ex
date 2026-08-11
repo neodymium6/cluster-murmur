@@ -138,6 +138,56 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequest do
     _kind, _reason -> {:error, :invalid_provider_request}
   end
 
+  @doc "Reconstructs the fixed prompt and revalidates a request at the transport boundary."
+  @spec validate_for_transport(term(), term()) :: :ok | {:error, :invalid_provider_request}
+  def validate_for_transport(%__MODULE__{} = request, %ProviderSettings{} = settings) do
+    with {:ok, prompt} <- reconstruct_prompt(request.json),
+         :ok <- validate(request, prompt, settings) do
+      :ok
+    else
+      _failure -> {:error, :invalid_provider_request}
+    end
+  rescue
+    _error -> {:error, :invalid_provider_request}
+  catch
+    _kind, _reason -> {:error, :invalid_provider_request}
+  end
+
+  def validate_for_transport(_request, _settings), do: {:error, :invalid_provider_request}
+
+  defp reconstruct_prompt(%{
+         "max_tokens" => _max_tokens,
+         "messages" => [
+           %{"content" => system_instruction, "role" => "system"} = system_message,
+           %{"content" => encoded_data, "role" => "user"} = user_message
+         ],
+         "model" => _model
+       })
+       when map_size(system_message) == 2 and map_size(user_message) == 2 and
+              is_binary(system_instruction) and is_binary(encoded_data) and
+              byte_size(encoded_data) <= @max_request_bytes do
+    with decoded when is_map(decoded) and not is_struct(decoded) <- :json.decode(encoded_data),
+         true <- map_size(decoded) == 4,
+         true <-
+           Enum.all?(
+             ["confirmed_facts", "conversation", "creative_context", "persona"],
+             &Map.has_key?(decoded, &1)
+           ) do
+      {:ok,
+       %PromptRequest{
+         system_instruction: system_instruction,
+         persona: decoded["persona"],
+         confirmed_facts: decoded["confirmed_facts"],
+         creative_context: decoded["creative_context"],
+         conversation: decoded["conversation"]
+       }}
+    else
+      _invalid -> {:error, :invalid_provider_request}
+    end
+  end
+
+  defp reconstruct_prompt(_json), do: {:error, :invalid_provider_request}
+
   defp validate_prompt(prompt) do
     data = prompt_data(prompt)
 

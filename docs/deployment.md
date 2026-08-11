@@ -7,9 +7,9 @@ production release. The default OTP application starts only the SQLite
 repository. Building or loading an artifact does not authorize connecting it to
 infrastructure, a model provider, or Discord.
 
-A deployment must supply and review its own runtime assembly, transports,
-configuration paths, secret mounts, storage, network policy, health integration,
-telemetry, and rollout policy.
+A deployment must supply and review its own runtime assembly, transport wiring
+and any still-missing transport, configuration paths, secret mounts, storage,
+network policy, health integration, telemetry, and rollout policy.
 
 ## Build the OTP release
 
@@ -20,7 +20,7 @@ nix build .#cluster-murmur
 ```
 
 The release contains no generated Erlang cookie. Runtime configuration,
-credentials, external transports, and worker assembly are not included.
+credentials, live-transport wiring, and worker assembly are not included.
 
 ## Prepare SQLite
 
@@ -101,7 +101,7 @@ workers with:
 - `CLUSTER_MURMUR_OBSERVER_MCP_URL` set to the reviewed fixed `/mcp` endpoint;
 - `CLUSTER_MURMUR_OBSERVER_MCP_TOKEN_FILE` and other mounted credential-file
   references;
-- fixed MCP, model-provider, and Discord transports;
+- fixed MCP and model-provider transport wiring plus a fixed Discord transport;
 - a production clock and random source;
 - the narrow public persistence adapters;
 - health, metrics, logging, and restart integration; and
@@ -117,3 +117,11 @@ configured loopback sidecar. Remote observer endpoints require HTTPS with
 operating-system CA and hostname verification. It makes one request per
 connection and does not follow redirects, retry, use deployment proxy settings,
 or retain response bodies after bounded decoding.
+
+The shipped OpenAI-compatible transport similarly opens one verified,
+deadline-bounded request per connection and accepts only the request derived
+from the configured provider settings and application-assembled prompt. Prefer
+HTTPS for provider endpoints; plain HTTP remains the existing explicit
+operator-owned choice for isolated local or private providers. The transport
+does not follow redirects, retry, use deployment proxy settings, or retain raw
+responses after bounded decoding.
