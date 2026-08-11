@@ -55,6 +55,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   no deployment-selected persistence or policy modules.
 - Effect-free assembly and preflight of shared production poll and durable
   event conversation contexts from one validated startup value.
+- Validated production poll and durable event scheduler options with fixed
+  clock, cycle, ingestion, and interval-derived first-run delays.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 
