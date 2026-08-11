@@ -4,6 +4,7 @@ defmodule ClusterMurmur.StartupTest do
   alias ClusterMurmur.Config.Configuration
   alias ClusterMurmur.Config.StateTracking
   alias ClusterMurmur.RuntimeSettings
+  alias ClusterMurmur.Runtime.SchedulerSettings
   alias ClusterMurmur.Startup
   alias ClusterMurmur.Startup.Prepared
   alias ClusterMurmur.TestSupport.PrivateTmpDir
@@ -45,6 +46,7 @@ defmodule ClusterMurmur.StartupTest do
              %StateTracking{failures_required: 3, successes_required: 4}
 
     assert %RuntimeSettings{} = prepared.runtime_settings
+    assert %SchedulerSettings{poll_interval_ms: 30_000} = prepared.scheduler_settings
     assert Startup.validate(prepared) == :ok
     assert inspect(prepared) == "#ClusterMurmur.Startup.Prepared<...>"
 
@@ -95,6 +97,24 @@ defmodule ClusterMurmur.StartupTest do
              {:error, {:runtime_settings, {:webhook, {:webhook, :missing_secret_file_path}}}}
   end
 
+  test "loads scheduler settings last and labels their failures", context do
+    missing_interval =
+      context
+      |> environment_values()
+      |> Map.delete("CLUSTER_MURMUR_POLL_INTERVAL")
+
+    assert Startup.prepare(context.config_path, environment(missing_interval)) ==
+             {:error, {:scheduler_settings, :missing_poll_interval}}
+
+    invalid_interval =
+      context
+      |> environment_values()
+      |> Map.put("CLUSTER_MURMUR_EVENT_RETENTION_INTERVAL", "59s")
+
+    assert Startup.prepare(context.config_path, environment(invalid_interval)) ==
+             {:error, {:scheduler_settings, :invalid_event_retention_interval}}
+  end
+
   test "fails closed for invalid inputs and forged prepared values", context do
     assert Startup.prepare(context.config_path, :not_an_environment_reader) ==
              {:error, :invalid_startup}
@@ -105,6 +125,7 @@ defmodule ClusterMurmur.StartupTest do
           nil,
           %{prepared | configuration: %{prepared.configuration | version: 1.0}},
           %{prepared | runtime_settings: nil},
+          %{prepared | scheduler_settings: nil},
           Map.put(prepared, :private, true)
         ] do
       assert Startup.validate(value) == {:error, :invalid_startup}
@@ -131,7 +152,12 @@ defmodule ClusterMurmur.StartupTest do
       "LLM_BASE_URL" => "https://llm.example.invalid/v1",
       "LLM_MODEL" => "example-model",
       "LLM_API_KEY_FILE" => context.api_key_path,
-      "DISCORD_WEBHOOK_SECRET_FILE" => context.webhook_path
+      "DISCORD_WEBHOOK_SECRET_FILE" => context.webhook_path,
+      "CLUSTER_MURMUR_POLL_INTERVAL" => "30s",
+      "CLUSTER_MURMUR_EVENT_DISPATCH_INTERVAL" => "2s",
+      "CLUSTER_MURMUR_RECURRING_INTERVAL" => "10s",
+      "CLUSTER_MURMUR_STOCHASTIC_INTERVAL" => "15s",
+      "CLUSTER_MURMUR_EVENT_RETENTION_INTERVAL" => "1h"
     }
   end
 

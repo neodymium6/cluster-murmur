@@ -5,6 +5,7 @@ defmodule ClusterMurmur.Runtime.LiveDependenciesTest do
   alias ClusterMurmur.Generation.{OpenAICompatibleProvider, ProviderSettings}
   alias ClusterMurmur.Observers.{Client, MCPClient, MCPSettings}
   alias ClusterMurmur.Runtime.LiveDependencies
+  alias ClusterMurmur.Runtime.SchedulerSettings
   alias ClusterMurmur.RuntimeSettings
   alias ClusterMurmur.Startup.Prepared
   alias ClusterMurmur.TestSupport.RuntimeFixture
@@ -71,6 +72,13 @@ defmodule ClusterMurmur.Runtime.LiveDependenciesTest do
   defp prepared do
     %Prepared{
       configuration: RuntimeFixture.configuration(),
+      scheduler_settings: %SchedulerSettings{
+        poll_interval_ms: 30_000,
+        event_dispatch_interval_ms: 2_000,
+        recurring_interval_ms: 10_000,
+        stochastic_interval_ms: 15_000,
+        event_retention_interval_ms: 3_600_000
+      },
       runtime_settings: %RuntimeSettings{
         observer_settings: %MCPSettings{
           endpoint: "https://observer.example.invalid/mcp",
