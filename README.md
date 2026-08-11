@@ -101,6 +101,9 @@ that require a private reviewed overlay.
 Tagged GitHub Releases publish one `linux/amd64` image with digest metadata,
 an SPDX SBOM, and signed provenance as documented in the
 [artifact guide](docs/deployment.md#published-release-artifacts).
+The [isolated end-to-end example](examples/isolated-end-to-end/README.md)
+exercises the complete observation-to-publication lifecycle without any live
+external effect.
 
 ## Documentation
 

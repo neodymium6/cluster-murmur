@@ -72,6 +72,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   rollout, offline backup/restore, migration rollback, and observer isolation.
 - Protected tagged-release publication for one digest-pinned `linux/amd64`
   image with SPDX SBOM, checksums, and signed provenance attestations.
+- An executable isolated end-to-end example covering real loopback observer and
+  model transports, SQLite lifecycle persistence, publication-once, and safe
+  resumed polling after startup recovery.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 
