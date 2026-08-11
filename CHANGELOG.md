@@ -13,6 +13,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   adapters for later standalone runtime assembly.
 - Bounded retirement of durable stochastic schedules removed from current
   configuration, suitable for fail-closed startup reconciliation.
+- Fail-closed stochastic startup initialization that samples all initial runs
+  before reconciling durable schedule state.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 
