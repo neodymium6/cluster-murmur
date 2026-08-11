@@ -285,6 +285,7 @@
                 export LLM_MODEL='example-model'
                 export LLM_API_KEY_FILE="$config_root/api-key"
                 export DISCORD_WEBHOOK_SECRET_FILE="$config_root/webhook"
+                export CLUSTER_MURMUR_HEALTH_PORT='45687'
                 export CLUSTER_MURMUR_POLL_INTERVAL='30s'
                 export CLUSTER_MURMUR_EVENT_DISPATCH_INTERVAL='30s'
                 export CLUSTER_MURMUR_RECURRING_INTERVAL='30s'
@@ -316,11 +317,16 @@
                     "$@" \
                     "$release_bin" start_iex <<'EOF'
                 IO.puts("PROBE_NODE_ALIVE=#{Node.alive?()}")
+                {:ok, probe_socket} = :gen_tcp.connect({127, 0, 0, 1}, 45687, [:binary, active: false], 1000)
+                :ok = :gen_tcp.send(probe_socket, "GET /readyz HTTP/1.1\r\n\r\n")
+                {:ok, probe_response} = :gen_tcp.recv(probe_socket, 0, 1000)
+                IO.puts("PROBE_READY=#{String.starts_with?(probe_response, "HTTP/1.1 200 OK")}")
                 System.stop(0)
                 EOF
                   )"
 
                   grep -Fq "PROBE_NODE_ALIVE=false" <<< "$probe_output"
+                  grep -Fq "PROBE_READY=true" <<< "$probe_output"
                 }
 
                 mkdir -p "$TMPDIR/release"
@@ -517,6 +523,7 @@
                   "CLUSTER_MURMUR_DATABASE_PATH=$runtime_database"
                   "CLUSTER_MURMUR_EVENT_DISPATCH_INTERVAL=30s"
                   "CLUSTER_MURMUR_EVENT_RETENTION_INTERVAL=1h"
+                  "CLUSTER_MURMUR_HEALTH_PORT=45687"
                   "CLUSTER_MURMUR_OBSERVER_MCP_TOKEN_FILE=$config_root/observer-token"
                   "CLUSTER_MURMUR_OBSERVER_MCP_URL=https://observer.example.invalid/mcp"
                   "CLUSTER_MURMUR_POLL_INTERVAL=30s"
@@ -550,10 +557,15 @@
                   "$rootfs${expectedEntrypoint}" -- \
                   "$rootfs${expectedCommand}" start_iex <<'EOF'
                 IO.puts("CONTAINER_SMOKE=#{Application.spec(:cluster_murmur, :vsn)}:#{Node.alive?()}")
+                {:ok, probe_socket} = :gen_tcp.connect({127, 0, 0, 1}, 45687, [:binary, active: false], 1000)
+                :ok = :gen_tcp.send(probe_socket, "GET /startupz HTTP/1.1\r\n\r\n")
+                {:ok, probe_response} = :gen_tcp.recv(probe_socket, 0, 1000)
+                IO.puts("CONTAINER_STARTUP=#{String.starts_with?(probe_response, "HTTP/1.1 200 OK")}")
                 System.stop(0)
                 EOF
                 )"
                 grep -Fq "CONTAINER_SMOKE=${version}:false" <<< "$smoke_output"
+                grep -Fq "CONTAINER_STARTUP=true" <<< "$smoke_output"
                 touch "$out"
               '';
         }

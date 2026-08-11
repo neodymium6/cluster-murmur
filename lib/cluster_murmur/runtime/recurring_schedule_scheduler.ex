@@ -75,6 +75,7 @@ defmodule ClusterMurmur.Runtime.RecurringScheduleScheduler do
 
   @impl true
   def init(options) do
+    Process.flag(:trap_exit, true)
     timer_token = schedule(options.initial_delay_ms)
     {:ok, {options, %Status{cycle_count: 0, last_result: nil, last_error: nil}, timer_token}}
   end

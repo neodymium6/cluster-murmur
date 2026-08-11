@@ -64,6 +64,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - A fail-closed production OTP entry point that prepares bounded deployment
   inputs, starts SQLite first, and gates all five runtime schedulers behind
   recovery and schedule initialization, including after repository replacement.
+- Fixed value-free liveness, readiness, and startup HTTP probes with a monitored
+  lease acquired after recovery and released before runtime shutdown drains.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 

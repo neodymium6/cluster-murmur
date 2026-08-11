@@ -862,6 +862,28 @@ relative offsets exceed the shared runtime interval or whose generation or
 publication start would reach the conversation deadline. Schedule construction
 is pure: it does not wait, read a clock, call a transport, or start a worker.
 
+## Operational probe settings
+
+The production application requires `CLUSTER_MURMUR_HEALTH_PORT` to contain one
+base-10 TCP port from 1 through 65,535. No bind address, path, handler, response,
+or probe timeout is deployment-selectable. The application listens on all IPv4
+container interfaces for exactly `GET /livez`, `GET /readyz`, and `GET
+/startupz` HTTP/1.1 requests. It accepts one bounded request per connection and
+returns only fixed value-free text.
+
+Liveness succeeds while the fixed probe listener is running. Readiness and
+startup succeed only while the production readiness service holds the runtime's
+monitored lease, acquired after the repository, recovery, both schedule
+initializers, and all five schedulers have started. The lease is the final
+runtime child and is released before remaining schedulers drain during runtime
+replacement or graceful shutdown. Liveness remains available during runtime
+replacement and the listener stops last. These signals do not test external
+providers or observed infrastructure and expose no diagnostic information.
+
+The probe port is an inbound interface but not a public service. Deployment
+network policy must restrict it to the orchestrator. Do not route it through a
+public Service or ingress.
+
 ## Secret handling
 
 Public configuration may contain only environment-variable names and fake,

@@ -47,6 +47,12 @@ Runtime deployments must:
 - avoid logging secrets, complete prompts, complete MCP responses, private
   endpoints, or unrelated user messages.
 
+The production operational listener exposes only fixed value-free `/livez`,
+`/readyz`, and `/startupz` responses. It is unauthenticated because it carries no
+application data or diagnostics, but it is still an inbound interface and must
+be reachable only by the orchestrator through deployment network policy. It
+must not be published through an ingress or public Service.
+
 Generic schemas and environment-neutral examples belong in this public
 repository. Real deployment configuration, encrypted Secrets, endpoint
 inventories, and private overlays belong in a separate private repository.

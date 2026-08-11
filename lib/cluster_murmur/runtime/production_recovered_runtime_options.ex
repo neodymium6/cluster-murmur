@@ -11,6 +11,7 @@ defmodule ClusterMurmur.Runtime.ProductionRecoveredRuntimeOptions do
   alias ClusterMurmur.Runtime.{
     ProductionBackgroundSchedulerOptions,
     ProductionConversationSchedulerOptions,
+    ReadyMarker,
     RecoveredRuntimeSupervisor,
     RecurringScheduleInitializer,
     StochasticScheduleInitializer,
@@ -36,7 +37,8 @@ defmodule ClusterMurmur.Runtime.ProductionRecoveredRuntimeOptions do
            event_retention_scheduler: background.event_retention,
            recurring_schedule_initializer: RecurringScheduleInitializer,
            stochastic_schedule_initializer: StochasticScheduleInitializer,
-           clock: SystemClock
+           clock: SystemClock,
+           readiness_marker: ReadyMarker
          },
          :ok <- RecoveredRuntimeSupervisor.validate(options) do
       {:ok, options}

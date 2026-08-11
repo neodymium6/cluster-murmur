@@ -1,7 +1,14 @@
 defmodule ClusterMurmur.Runtime.ProductionApplicationTest do
   use ExUnit.Case, async: true
 
-  alias ClusterMurmur.Runtime.{ProductionApplication, RecoveredRuntimeSupervisor}
+  alias ClusterMurmur.Runtime.{
+    HealthServer,
+    HealthSettings,
+    ProductionApplication,
+    ReadyMarker,
+    RecoveredRuntimeSupervisor
+  }
+
   alias ClusterMurmur.TestSupport.PrivateTmpDir
 
   setup do
@@ -32,6 +39,8 @@ defmodule ClusterMurmur.Runtime.ProductionApplicationTest do
   test "builds the complete ordered production child list without starting it", context do
     assert {:ok,
             [
+              {HealthServer, %HealthSettings{port: 18_080}},
+              {ReadyMarker, :production},
               ClusterMurmur.Repo,
               {RecoveredRuntimeSupervisor, %RecoveredRuntimeSupervisor.Options{} = options}
             ]} = result = ProductionApplication.child_specs(environment(context))
@@ -77,6 +86,14 @@ defmodule ClusterMurmur.Runtime.ProductionApplicationTest do
 
     assert ProductionApplication.child_specs(environment(invalid_intervals)) ==
              {:error, :invalid_production_application}
+
+    invalid_health =
+      context
+      |> environment_values()
+      |> Map.put("CLUSTER_MURMUR_HEALTH_PORT", "0")
+
+    assert ProductionApplication.child_specs(environment(invalid_health)) ==
+             {:error, :invalid_production_application}
   end
 
   defp environment(context) when is_map(context) do
@@ -91,6 +108,7 @@ defmodule ClusterMurmur.Runtime.ProductionApplicationTest do
   defp environment_values(context) do
     %{
       "CLUSTER_MURMUR_CONFIG_PATH" => context.config_path,
+      "CLUSTER_MURMUR_HEALTH_PORT" => "18080",
       "CLUSTER_MURMUR_OBSERVER_MCP_URL" => "https://observer.example.invalid/mcp",
       "CLUSTER_MURMUR_OBSERVER_MCP_TOKEN_FILE" => context.observer_token_path,
       "LLM_BASE_URL" => "https://llm.example.invalid/v1",

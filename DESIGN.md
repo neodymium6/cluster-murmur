@@ -6,8 +6,9 @@ This document began as the architecture baseline. The tagged public alpha
 established the bounded domain, persistence, orchestration, recovery, and
 opt-in scheduling components. Current unreleased production builds also provide
 fixed live transports and automatic recovery-gated OTP assembly; release and
-container artifacts exercise that entry point with isolated fake inputs. Health
-endpoints and a hardened Kubernetes deployment remain later readiness work.
+container artifacts exercise that entry point with isolated fake inputs. Fixed
+operational probes are implemented; metrics, structured operational logs, and a
+hardened Kubernetes deployment remain later readiness work.
 
 The normative public configuration surface is documented in
 [`docs/configuration.md`](docs/configuration.md). Testable MVP invariants,

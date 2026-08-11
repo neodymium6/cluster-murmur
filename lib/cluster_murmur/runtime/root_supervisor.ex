@@ -1,11 +1,12 @@
 defmodule ClusterMurmur.Runtime.RootSupervisor do
   @moduledoc """
-  Supervises persistence before every dependent runtime child.
+  Supervises operational health, persistence, and dependent runtime children.
 
-  The rest-for-one strategy makes repository replacement stop all later
-  runtime children. They restart only after the repository is available again,
-  so the recovery-gated supervisor reruns every startup gate against the new
-  repository process.
+  The fixed production order keeps liveness available while the runtime is
+  replaced. The readiness service remains unavailable until its later runtime
+  lease is acquired. Repository replacement stops the runtime lease and all
+  schedulers; they restart only after the repository is available again, so
+  every startup gate reruns against the new process.
   """
 
   use Supervisor

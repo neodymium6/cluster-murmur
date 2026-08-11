@@ -23,6 +23,7 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
     EventDispatchScheduler,
     EventRetentionScheduler,
     PollScheduler,
+    ReadinessLease,
     RecurringScheduleInitializer,
     RecurringScheduleScheduler,
     Recovery,
@@ -36,6 +37,7 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
   alias ClusterMurmur.Triggers.{ScheduleTrigger, StochasticTrigger}
 
   @max_schedules 256
+  @worker_shutdown_ms 5_000
 
   defmodule Options do
     @moduledoc false
@@ -49,7 +51,8 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
       :event_retention_scheduler,
       :recurring_schedule_initializer,
       :stochastic_schedule_initializer,
-      :clock
+      :clock,
+      :readiness_marker
     ]
     defstruct [
       :poll_scheduler,
@@ -59,7 +62,8 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
       :event_retention_scheduler,
       :recurring_schedule_initializer,
       :stochastic_schedule_initializer,
-      :clock
+      :clock,
+      :readiness_marker
     ]
 
     @type t :: %__MODULE__{
@@ -71,7 +75,8 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
             event_retention_scheduler: ClusterMurmur.Runtime.EventRetentionScheduler.Options.t(),
             recurring_schedule_initializer: module(),
             stochastic_schedule_initializer: module(),
-            clock: module()
+            clock: module(),
+            readiness_marker: module() | nil
           }
   end
 
@@ -116,13 +121,14 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
          :ok <- RecurringScheduleScheduler.validate(options.recurring_schedule_scheduler),
          :ok <- StochasticScheduler.validate(options.stochastic_scheduler),
          :ok <- EventRetentionScheduler.validate(options.event_retention_scheduler) do
-      children = [
-        significant_child(PollScheduler, options.poll_scheduler),
-        significant_child(EventDispatchScheduler, options.event_dispatch_scheduler),
-        significant_child(RecurringScheduleScheduler, options.recurring_schedule_scheduler),
-        significant_child(StochasticScheduler, options.stochastic_scheduler),
-        significant_child(EventRetentionScheduler, options.event_retention_scheduler)
-      ]
+      children =
+        [
+          significant_child(PollScheduler, options.poll_scheduler),
+          significant_child(EventDispatchScheduler, options.event_dispatch_scheduler),
+          significant_child(RecurringScheduleScheduler, options.recurring_schedule_scheduler),
+          significant_child(StochasticScheduler, options.stochastic_scheduler),
+          significant_child(EventRetentionScheduler, options.event_retention_scheduler)
+        ] ++ readiness_children(options.readiness_marker)
 
       Supervisor.init(children,
         strategy: :one_for_one,
@@ -135,8 +141,18 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
 
   defp significant_child(module, options) do
     {module, options}
-    |> Supervisor.child_spec(restart: :temporary)
+    |> Supervisor.child_spec(restart: :temporary, shutdown: @worker_shutdown_ms)
     |> Map.put(:significant, true)
+  end
+
+  defp readiness_children(nil), do: []
+
+  defp readiness_children(marker) do
+    [
+      {ReadinessLease, marker}
+      |> Supervisor.child_spec(restart: :temporary, shutdown: 1_000)
+      |> Map.put(:significant, true)
+    ]
   end
 
   defp validate_options(options, stores) do
@@ -149,6 +165,7 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
          :ok <- validate_initializer(options.recurring_schedule_initializer, 2),
          :ok <- validate_initializer(options.stochastic_schedule_initializer, 3),
          :ok <- validate_clock(options.clock),
+         :ok <- validate_readiness_marker(options.readiness_marker),
          true <- options.poll_scheduler.clock == options.clock,
          true <- options.event_dispatch_scheduler.clock == options.clock,
          true <- options.recurring_schedule_scheduler.clock == options.clock,
@@ -189,6 +206,15 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
   defp validate_initializer(initializer, arity) do
     if is_atom(initializer) and Code.ensure_loaded?(initializer) and
          function_exported?(initializer, :run, arity),
+       do: :ok,
+       else: {:error, :invalid_recovered_runtime_supervisor}
+  end
+
+  defp validate_readiness_marker(nil), do: :ok
+
+  defp validate_readiness_marker(marker) do
+    if is_atom(marker) and Code.ensure_loaded?(marker) and
+         function_exported?(marker, :acquire, 1),
        do: :ok,
        else: {:error, :invalid_recovered_runtime_supervisor}
   end
