@@ -9,13 +9,15 @@ conversations.
 Cluster Murmur is a public alpha engine. The current prerelease is
 [`v0.1.0-alpha.1`](https://github.com/neodymium6/cluster-murmur/releases/tag/v0.1.0-alpha.1).
 
-The public alpha is a composable, environment-neutral engine, not a standalone
-live service. `ClusterMurmur.Application` intentionally starts only the SQLite
-repository. Live transports, credentials, endpoints, routing, and assembly of
-the opt-in runtime remain deployment-owned.
+The tagged public alpha is a composable, environment-neutral engine rather than
+a standalone live service. Current unreleased production builds add a
+fail-closed standalone entry point using the fixed transports and runtime
+assembly. Credentials, endpoints, routing, storage, and rollout policy remain
+deployment-owned inputs.
 
 Do not connect this revision to production, sensitive infrastructure, model
-providers, or Discord without reviewing the exact private deployment assembly.
+providers, or Discord without reviewing the exact deployment configuration,
+environment, and revision.
 
 ## Capabilities
 
@@ -31,13 +33,16 @@ providers, or Discord without reviewing the exact private deployment assembly.
   deletion of only unreferenced events.
 - Fixed OpenAI-compatible and Discord request/response boundaries, allowlisted
   facts, deterministic fallback text, disabled mentions, and redacted errors.
-- Opt-in supervisors and workers exercised with fake adapters; no live defaults
-  are installed in the application tree.
+- Fixed production transports and a recovery-gated runtime entry point, with
+  opt-in component boundaries exercised independently using fake adapters.
 - A nondistributed OTP release, hardened OCI image definition, and CI checks for
   dependencies, source, tests, migrations, release behavior, and image metadata.
 
-The exact implemented scope, readiness evidence, and deferred work are in the
-[public alpha boundary](docs/public-alpha.md).
+Current runtime inputs and assembly are documented in the
+[configuration reference](docs/configuration.md) and
+[deployment guide](docs/deployment.md). The
+[public alpha boundary](docs/public-alpha.md) records the narrower historical
+scope of `v0.1.0-alpha.1`.
 
 ## Safety boundary
 

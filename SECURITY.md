@@ -2,9 +2,11 @@
 
 ## Supported versions
 
-There are no supported releases yet. The current repository is a public alpha
-engine, not a standalone service, and must not be connected to production or
-sensitive systems.
+There are no supported releases yet. The tagged public alpha is not a
+standalone service. Current unreleased production builds contain a standalone
+entry point, but that does not authorize connecting any revision to production
+or sensitive systems without review and explicit approval for the exact
+deployment.
 
 ## Security boundary
 

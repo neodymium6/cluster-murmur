@@ -32,3 +32,6 @@ end
 config :cluster_murmur, ClusterMurmur.Repo,
   database: database_path,
   allow_in_memory: allow_in_memory?
+
+config :cluster_murmur,
+  standalone_runtime: config_env() == :prod

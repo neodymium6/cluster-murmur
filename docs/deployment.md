@@ -2,14 +2,14 @@
 
 ## Scope
 
-The public alpha is a composable engine, not a standalone service or a supported
-production release. The default OTP application starts only the SQLite
-repository. Building or loading an artifact does not authorize connecting it to
-infrastructure, a model provider, or Discord.
+The tagged public alpha remains a composable engine rather than a supported
+production release. Current unreleased production builds start the complete
+fixed runtime after validating deployment inputs and running recovery. Building
+or loading an artifact does not authorize connecting it to infrastructure, a
+model provider, or Discord.
 
-A deployment must supply and review its own runtime assembly, transport wiring
-and any still-missing transport, configuration paths, secret mounts, storage,
-network policy, health integration, telemetry, and rollout policy.
+A deployment must still supply and review configuration, secret mounts,
+storage, network policy, health integration, telemetry, and rollout policy.
 
 ## Build the OTP release
 
@@ -19,8 +19,9 @@ Build the immutable, nondistributed release from the pinned Nix inputs:
 nix build .#cluster-murmur
 ```
 
-The release contains no generated Erlang cookie. Runtime configuration,
-credentials, live-transport wiring, and worker assembly are not included.
+The release contains no generated Erlang cookie, runtime configuration, or
+credentials. Its production entry point owns the fixed transport and worker
+assembly.
 
 ## Prepare SQLite
 
@@ -92,25 +93,35 @@ as:
 The database bind mount and all remaining runtime settings remain private
 deployment inputs.
 
-## Deployment-owned runtime
+## Start the standalone runtime
 
-A live deployment must explicitly assemble the reviewed opt-in supervisors and
-workers with:
+A production start requires `CLUSTER_MURMUR_CONFIG_PATH` to name the absolute
+path of the root public YAML document. The path is UTF-8, NUL-free, and at most
+4,096 bytes. Configuration includes and mounted secret-file paths retain their
+separate documented bounds. The application fails closed when any startup
+input, recovery step, or schedule initialization is invalid.
 
-- validated public configuration and private configuration paths;
+The deployment must provide:
+
+- the validated public configuration path;
 - `CLUSTER_MURMUR_OBSERVER_MCP_URL` set to the reviewed fixed `/mcp` endpoint;
 - `CLUSTER_MURMUR_OBSERVER_MCP_TOKEN_FILE` and other mounted credential-file
   references;
-- fixed MCP and model-provider transport wiring plus a fixed Discord transport;
-- a production clock and random source;
-- the narrow public persistence adapters;
+- the provider, webhook, scheduler, and responder-timing environment values
+  documented in the [configuration reference](configuration.md);
 - health, metrics, logging, and restart integration; and
 - platform-specific storage, network, and rollout policy.
+
+Startup orders the SQLite repository before one recovery-gated supervisor.
+That supervisor completes global recovery and recurring and stochastic schedule
+initialization before it starts poll, event-dispatch, recurring, stochastic,
+and retention schedulers. Application startup does not run database migrations;
+apply them first as described above.
 
 These inputs must not introduce generic shell, SSH, `kubectl`, SQL, arbitrary
 PromQL, or arbitrary HTTP passthrough capabilities. See the
 [public alpha boundary](public-alpha.md) and [security policy](../SECURITY.md)
-before designing an assembly.
+before approving deployment configuration and rollout.
 
 The shipped observer transport accepts plain HTTP only for an explicitly
 configured loopback sidecar. Remote observer endpoints require HTTPS with

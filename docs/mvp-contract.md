@@ -7,11 +7,11 @@ satisfy. `DESIGN.md` explains the architecture and ADRs explain material
 decisions; this document defines testable runtime invariants and completion
 criteria.
 
-The keywords **must**, **must not**, **should**, and **may** are normative. The
-repository is a public alpha engine. This document describes the complete
-standalone MVP target; [`public-alpha.md`](public-alpha.md) identifies the
-implemented, environment-neutral engine subset and the work deliberately
-deferred to a later standalone-service milestone.
+The keywords **must**, **must not**, **should**, and **may** are normative. This
+document describes the complete standalone MVP target. The repository has
+progressed beyond the tagged public alpha to an unreleased standalone production
+entry point; [`public-alpha.md`](public-alpha.md) records the narrower
+environment-neutral subset shipped as `v0.1.0-alpha.1`.
 
 ## System boundary
 

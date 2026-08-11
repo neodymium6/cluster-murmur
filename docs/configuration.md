@@ -3,10 +3,11 @@
 ## Status and scope
 
 This document defines the public configuration contract targeted by the MVP.
-The repository is a public alpha engine: loading, validation, and startup-input
-preparation are implemented, while live transports and automatic runtime
-assembly remain deployment-owned. Examples describe the normative contract;
-[`public-alpha.md`](public-alpha.md) identifies the implemented alpha boundary.
+Loading, validation, startup preparation, fixed live transports, and production
+runtime assembly are implemented. Concrete configuration, mounted secrets,
+endpoints, storage, network policy, and rollout remain deployment-owned.
+Examples describe the normative contract; [`public-alpha.md`](public-alpha.md)
+records the narrower tagged-alpha boundary.
 
 Configuration controls observations, event policy, personas, bindings,
 triggers, generation limits, and outbound routing. It must never contain
@@ -183,6 +184,20 @@ digits, `.`, `_`, or `-`. Human-facing fields such as `display_name` may use Uni
 an integer followed by one of `ms`, `s`, `m`, `h`, or `d`. Times use 24-hour
 `HH:MM` notation. Timezones use IANA names such as `Asia/Tokyo` or `Etc/UTC`.
 
+## Root configuration path
+
+The production application requires `CLUSTER_MURMUR_CONFIG_PATH` to contain the
+absolute path of the root YAML document. It must be valid UTF-8, contain no NUL
+byte, and be between 1 and 4,096 bytes. The existing configuration loader then
+canonicalizes that document and applies the include and prompt-file containment
+rules described above. Development and test application starts do not read this
+variable because they retain the repository-only application tree.
+
+Reading the root document, included public documents, and mounted secret files
+prepares one redacted startup value before any worker, clock, recovery step, or
+network transport runs. Missing or invalid inputs fail production startup with
+a stable value-free error.
+
 ## Database path
 
 The supervised SQLite repository uses an in-memory database only in the test
@@ -234,30 +249,28 @@ matching claim, executed and recorded within its lease interval, can clear the
 lease, advance the next run, and update its local-date counter atomically. Lease
 claim candidates are evaluated purely against active hours and a persisted
 counter normalized to the calculated current local date. Renewal, early
-release, external execution, exactly-once delivery, other schemas and stores,
-automatic migration execution, and retention-worker deployment remain later
-stages. A
+release, external execution, exactly-once delivery, and automatic migration
+execution remain outside this contract. A
 separate bounded event store validates complete events before storage, inserts
 immutable event IDs idempotently, and rejects conflicting reuse without
 replacing committed facts. Its primary-key-only read restores at most one event
 through the shared bounded validator. The startup configuration normalizes
 bounded event retention and dedupe-window durations, and trigger authorization
-enforces durable dedupe markers. Event listing, referenced-lifecycle retention,
-and retention-worker deployment remain later stages. A
+enforces durable dedupe markers. Referenced-lifecycle retention remains outside
+the conservative installed retention worker's contract. A
 narrow observation-ingestion transaction restores prior entity state, applies
 the pure debounce and event plan, and commits the next state with its optional
 event atomically. It performs no observer call or trigger action.
 
 The implemented poll runtime composes one fixed read-only observer poll, atomic
 ingestion, deterministic event-trigger matching, durable authorization,
-bounded starter generation, and claimed Discord publication. Its explicit
-conversation mode additionally projects a finite responder schedule from
-validated relative offsets and runs only through correlated fixed adapters.
-The periodic scheduler is opt-in: the public application supervision tree does
-not construct an observer, external transports, secrets, timing, or an interval
-by default. A deployment must build validated scheduler options in its private
-assembly and explicitly supervise the child. The scheduler completes one cycle
-before creating the next timer and rejects stale or injected timer messages.
+bounded starter generation, and claimed Discord publication. Its conversation
+mode additionally projects a finite responder schedule from validated relative
+offsets and runs only through correlated fixed adapters. The production
+application constructs the fixed observer, transports, timing, and validated
+scheduler options from startup inputs. Other Mix environments retain explicit
+opt-in assembly. The scheduler completes one cycle before creating the next
+timer and rejects stale or injected timer messages.
 
 Restart recovery is also explicit. It loads at most 100 abandoned trigger
 executions, active conversations, and open publication attempts per collection;
@@ -277,8 +290,8 @@ before all five workers start. Termination of any worker closes the shared
 supervisor and stops its siblings, so a parent-managed replacement cannot run
 startup mutations against live work. A full recovery or retirement page
 requires another startup pass to prove that no residual work remains. These
-boundaries remain outside the public application tree, so private deployment
-assembly must construct and supervise them explicitly.
+boundaries are installed by the production application after the repository.
+Development and test builds retain explicit opt-in assembly.
 
 `ClusterMurmur.Release.migrate!/0`, invoked after every application instance
 using the database has stopped, is the only application migration operation. It
@@ -365,9 +378,10 @@ that exact plan to delete at most 100 expired dedupe markers without returning
 their values. An explicit runtime cycle validates the complete configuration
 and injected instant before invoking one marker batch followed by one event
 sweep from the same plan. It returns only aggregate counts and does not repeat
-cleanup or read a clock. An opt-in worker can supply a validated UTC
-clock and schedule these cycles without overlap while retaining only redacted
-aggregate status. No retention worker is installed automatically.
+cleanup or read a clock. The retention scheduler supplies a validated UTC clock
+and runs these cycles without overlap while retaining only redacted aggregate
+status. Production installs that scheduler behind shared recovery gates;
+development and test builds may supervise it explicitly.
 
 The event table's retention order and every child-table event reference are
 indexed for the bounded event-record cleanup store. These indexes support its
@@ -608,8 +622,8 @@ The constrained stochastic commit store reprojects that exact event and writes
 it in the same SQLite transaction that advances the opaque claimed schedule to
 its planned next run. An identical precommitted event is restored; template
 drift or schedule conflict fails closed without advancing the claim. Worker
-timing, due enumeration, and later event-trigger dispatch remain explicit
-runtime assembly work.
+timing, due enumeration, and later event-trigger dispatch remain separate fixed
+runtime boundaries assembled by the production application.
 
 The explicit stochastic cycle performs that due enumeration. It traverses
 cursor pages of at most 100 and validates and correlates no more than the
@@ -619,16 +633,16 @@ or out-of-order durable projections, leaves inactive or daily-limited entries
 unclaimed, and continues a prevalidated batch after individual claim or commit
 conflicts. Returned claims and typed commit results must correlate exactly with
 their calls before execution is counted. Its result contains aggregate counts
-only. No stochastic timer is installed in the public application tree, and
-committed-event dispatch remains a separate runtime step.
+only. Committed-event dispatch remains a separate runtime step handled by the
+installed event-dispatch scheduler.
 
 An opt-in stochastic scheduler can invoke that cycle repeatedly without
 overlap. It requires an explicit validated configuration, cycle module, UTC
 clock, random source, interval, and initial delay; no live defaults are
 provided. The next timer is scheduled only after the synchronous cycle returns,
 and only an exact bounded, correlated aggregate result is retained. Status
-inspection excludes configuration and event details. The worker is not
-installed in the public application supervision tree automatically.
+inspection excludes configuration and event details. The production application
+installs it behind shared recovery and initialization gates.
 
 Recurring cron triggers have a separate constrained durable state table for
 ordered next/previous runs and one opaque claim lease. A fixed store can restore
@@ -636,8 +650,8 @@ or initialize state, list at most 100 due schedules in deterministic cursor
 order without claim material, and atomically grant one fixed 60-second opaque
 lease for an exact due version. It can complete only that exact live claim,
 recording the execution, advancing the next run, and clearing the lease in one
-transaction. The store does not calculate recurrence, execute actions, or emit
-events; no recurring execution cycle is installed. A pure planner can
+transaction. The store itself does not calculate recurrence, execute actions,
+or emit events. A pure planner can
 correlate a claim with its exact trigger and
 claim-free due projection, preserve only application-supplied event facts, and
 calculate the next cron run strictly after an injected execution instant. It
@@ -653,8 +667,8 @@ A recurring-schedule cycle prevalidates and correlates at most 256 due states
 with the exact current configuration before taking its first claim. It then
 claims, plans, projects, and atomically commits each state in durable order,
 continuing after individual conflicts and returning aggregate counts only. The
-cycle reads no clock, performs no external action, and is not installed in the
-public application supervision tree.
+cycle reads no clock and performs no external action. Production runs it only
+through the recovery-gated recurring scheduler.
 
 An opt-in recurring-schedule scheduler can invoke that cycle repeatedly without
 overlap. It requires an explicit validated configuration, cycle module, UTC
@@ -683,16 +697,16 @@ with restored immutable events and cap current trigger matches before any
 claim. Existing fixed starter and bounded-conversation consumers can preflight
 the resulting durable plan without authorizing work. An explicit bounded cycle
 then claims entries in order, immediately consumes matching fixed pipelines,
-and completes only unmatched or fully terminal handoffs. It is not installed
-in the public application supervision tree automatically.
+and completes only unmatched or fully terminal handoffs. Production runs it
+through the recovery-gated event-dispatch scheduler.
 
 An opt-in event-dispatch scheduler can invoke that cycle repeatedly without
 overlap. It requires an explicit validated configuration, dispatch context,
 fixed persistence and authorizer adapters, cycle module, UTC clock, interval,
 and initial delay. The next timer is scheduled only after the synchronous cycle
 returns. Status retains only a validated redacted aggregate result or a stable
-failure class. The scheduler supplies no live defaults and is not installed in
-the public application supervision tree automatically.
+failure class. The scheduler supplies no live defaults; the production
+application constructs its exact options from validated startup inputs.
 
 Active windows include their start minute and exclude their end minute. A
 crossing-midnight window is active from its start through local midnight and
@@ -800,7 +814,8 @@ values. It opens one passive HTTP/1 connection, verifies remote TLS against the
 operating-system trust store and hostname, sends one POST, incrementally accepts
 at most 64 KiB of body data, then closes the connection. It does not redirect,
 retry, use a proxy, pool connections, or expose a generic HTTP interface.
-Standalone assembly remains a separate reviewed step.
+The production application assembles this fixed transport after all startup
+inputs validate; loading configuration alone still performs no network work.
 
 ## Runtime scheduler settings
 
