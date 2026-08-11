@@ -93,6 +93,43 @@ as:
 The database bind mount and all remaining runtime settings remain private
 deployment inputs.
 
+The [hardened Kubernetes example](../deploy/kubernetes/README.md) defines the
+supported one-replica `Recreate` shape, same-image migration init container,
+non-root security context, private volume, bounded temporary storage, probe
+configuration, default-deny network policy, and Cluster Observer sidecar
+relationship. It contains deliberate placeholders and requires a private
+reviewed overlay; it is not directly deployable.
+
+The Kubernetes storage provisioner or private overlay must make the volume root
+owned by `65532:65532` with exact mode `0700`. Do not use Pod `fsGroup` for this
+volume: its permission widening can violate the repository's exact `0700`
+directory and `0600` database-file checks.
+
+## Single-writer rollout, backup, and rollback
+
+Only one application or migration process may use a database volume at a time.
+Keep one replica and use replacement rather than rolling overlap. Stop the old
+runtime completely before the packaged forward migration runs, then wait for
+startup and readiness before admitting dependent work.
+
+Before every upgrade, stop all writers and migrators and take an atomic snapshot
+of the complete persistent volume, including SQLite WAL and shared-memory files.
+Record the application version, immutable image digest, migration set, snapshot
+identity, and time without secrets. Restore into a new volume, validate it with
+one isolated Pod and the recorded image, then change the production reference.
+Never treat a copy of only the live main database file as a backup.
+
+The release provides forward migrations but no downgrade command. Before a
+migration, the old image and configuration can be selected again. After a
+schema-incompatible migration, restore the pre-upgrade snapshot into a new
+volume before starting the previous digest. Do not point an old image at a newer
+schema unless that exact compatibility is documented.
+
+Current event retention deletes only expired unreferenced events. Events still
+owned by durable lifecycle records may outlive the configured retention window,
+so monitor volume capacity and do not use manual SQL deletion to bypass those
+references. Referenced-lifecycle compaction remains explicitly deferred.
+
 ## Start the standalone runtime
 
 A production start requires `CLUSTER_MURMUR_CONFIG_PATH` to name the absolute

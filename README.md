@@ -95,6 +95,9 @@ nix build .#container-image
 Building an artifact does not authorize running it against live systems. See
 the [deployment and artifact guide](docs/deployment.md) for migrations, storage,
 container controls, and deployment-owned inputs.
+The [hardened Kubernetes example](deploy/kubernetes/README.md) records the
+supported single-writer rollout and offline backup shape using placeholders
+that require a private reviewed overlay.
 
 ## Documentation
 
@@ -104,6 +107,7 @@ detail. The main references are:
 - [Public alpha boundary](docs/public-alpha.md)
 - [Configuration reference](docs/configuration.md)
 - [Deployment and artifact guide](docs/deployment.md)
+- [Hardened Kubernetes example](deploy/kubernetes/README.md)
 - [System design](DESIGN.md)
 - [MVP runtime contract](docs/mvp-contract.md)
 - [Security policy](SECURITY.md)
