@@ -294,6 +294,7 @@ Cluster Murmur will not expose generic shell, SSH, `kubectl`, arbitrary HTTP,
 or arbitrary PromQL access, and it will never perform autonomous remediation.
 
 See [DESIGN.md](DESIGN.md) for the architecture,
+[CHANGELOG.md](CHANGELOG.md) for release history,
 [docs/configuration.md](docs/configuration.md) for the intended public
 configuration contract, [docs/mvp-contract.md](docs/mvp-contract.md) for
 testable MVP requirements, [docs/public-alpha.md](docs/public-alpha.md) for the
