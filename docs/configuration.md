@@ -761,6 +761,25 @@ The startup preparation boundary runs complete configuration loading before
 this settings step and returns them together only after both validate. It does
 not start runtime workers or external transports.
 
+## Observer MCP runtime settings
+
+The standalone runtime resolves the fixed Cluster Observer connection inputs
+from deployment-owned environment variables rather than public YAML:
+
+- `CLUSTER_MURMUR_OBSERVER_MCP_URL` contains the exact MCP endpoint. It must be
+  a normalized HTTPS URL whose path is exactly `/mcp`, without user information,
+  query, or fragment. Plain HTTP is accepted only for `localhost`, `127.0.0.1`,
+  or `::1` loopback sidecars.
+- `CLUSTER_MURMUR_OBSERVER_MCP_TOKEN_FILE` contains an absolute path to a
+  mounted file holding the bearer token. The shared bounded secret reader
+  validates and reads the file; the token is never accepted directly in an
+  environment variable.
+
+The resulting settings value is redacted and returns only stable value-free
+errors. Loading it does not connect to the observer or expose an arbitrary HTTP
+request boundary. The fixed observer transport and standalone assembly remain
+separate reviewed steps.
+
 ## Secret handling
 
 Public configuration may contain only environment-variable names and fake,
