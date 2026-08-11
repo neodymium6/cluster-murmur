@@ -111,3 +111,9 @@ These inputs must not introduce generic shell, SSH, `kubectl`, SQL, arbitrary
 PromQL, or arbitrary HTTP passthrough capabilities. See the
 [public alpha boundary](public-alpha.md) and [security policy](../SECURITY.md)
 before designing an assembly.
+
+The shipped observer transport accepts plain HTTP only for an explicitly
+configured loopback sidecar. Remote observer endpoints require HTTPS with
+operating-system CA and hostname verification. It makes one request per
+connection and does not follow redirects, retry, use deployment proxy settings,
+or retain response bodies after bounded decoding.

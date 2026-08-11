@@ -786,7 +786,12 @@ The paired response boundary accepts only bounded JSON or request-scoped SSE,
 discards notifications and raw diagnostics, correlates the fixed JSON-RPC ID,
 and projects only a complete non-error `structuredContent` value into the
 existing observer decoder. Both boundaries still perform no network request.
-HTTP execution and standalone assembly remain separate reviewed steps.
+The live observer transport consumes only these independently revalidated
+values. It opens one passive HTTP/1 connection, verifies remote TLS against the
+operating-system trust store and hostname, sends one POST, incrementally accepts
+at most 64 KiB of body data, then closes the connection. It does not redirect,
+retry, use a proxy, pool connections, or expose a generic HTTP interface.
+Standalone assembly remains a separate reviewed step.
 
 ## Secret handling
 
