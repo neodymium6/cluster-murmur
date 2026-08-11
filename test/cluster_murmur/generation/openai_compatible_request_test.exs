@@ -132,6 +132,36 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequestTest do
     end
   end
 
+  test "reconstructs and revalidates the prompt at the transport boundary" do
+    settings = settings()
+    assert {:ok, request} = OpenAICompatibleRequest.encode(prompt(), settings)
+    assert OpenAICompatibleRequest.validate_for_transport(request, settings) == :ok
+
+    [system, user] = request.json["messages"]
+
+    forged = [
+      %{request | json: Map.put(request.json, "temperature", 1)},
+      %{request | json: %{request.json | "messages" => [system, %{user | "content" => "{}"}]}},
+      %{
+        request
+        | json: %{
+            request.json
+            | "messages" => [system, %{user | "content" => user["content"] <> " "}]
+          }
+      },
+      %{request | headers: []},
+      Map.put(request, :arbitrary_http_option, true)
+    ]
+
+    for value <- forged do
+      assert OpenAICompatibleRequest.validate_for_transport(value, settings) ==
+               {:error, :invalid_provider_request}
+    end
+
+    assert OpenAICompatibleRequest.validate_for_transport(request, %{settings | model: "other"}) ==
+             {:error, :invalid_provider_request}
+  end
+
   defp prompt do
     %PromptRequest{
       system_instruction: PromptAssembler.system_instruction(),

@@ -182,6 +182,12 @@ injected transport call. It performs no retry and returns only decoded content
 or stable external error classes; raw provider responses and diagnostics remain
 inside the adapter boundary.
 
+The live transport reconstructs the closed prompt projection and revalidates
+the complete request against fixed settings, makes one deadline-bounded HTTP/1
+POST, verifies TLS when selected, and bounds response headers, body bytes, and
+total parser input. It provides no generic HTTP method, URL, header, retry,
+redirect, proxy, or pooling interface.
+
 Discord publication claims one exact durable `started` attempt immediately
 before invoking the injected transport. Only the compare-and-set winner may
 dispatch. HTTP responses that prove rejection are known failures; malformed

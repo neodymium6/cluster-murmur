@@ -731,6 +731,15 @@ configuration. The runtime settings boundary accepts it directly, resolves the
 three deployment values with fixed bounds, and does not make a provider
 connection.
 
+The shipped live adapter appends only `/chat/completions`, reconstructs the
+closed prompt projection, and revalidates the settings and complete encoded
+request before dispatch. It opens one HTTP/1 connection per generation. HTTPS
+uses operating-system CA and hostname verification. Responses are limited to 16
+KiB of headers, 64 KiB of body, 96 KiB of total HTTP parser input, and the
+configured overall timeout. The adapter does not follow redirects, retry, use
+deployment proxy settings, pool connections, or expose arbitrary request
+values.
+
 ## Discord routing
 
 The MVP publishes through one pre-created webhook and therefore supports only
