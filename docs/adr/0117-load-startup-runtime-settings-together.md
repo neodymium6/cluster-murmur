@@ -1,5 +1,9 @@
 # ADR 0117: Load Startup Runtime Settings Together
 
+## Status
+
+Accepted; amended by ADR 0202.
+
 ## Context
 
 The complete public startup configuration now contains normalized LLM and

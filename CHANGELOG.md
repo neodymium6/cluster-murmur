@@ -35,6 +35,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   failure handling.
 - A fixed one-request Discord webhook HTTPS transport with bounded response
   processing and conservative post-dispatch outcome classification.
+- Observer MCP settings included in the redacted, fail-closed startup settings
+  aggregate alongside provider and webhook settings.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 
