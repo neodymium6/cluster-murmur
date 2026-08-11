@@ -580,6 +580,13 @@ SQLite, and stops liveness last. An interrupted SQLite transaction rolls back.
 Interrupted provider work is not retried, and publication that may have crossed
 the dispatch boundary is recovered as ambiguous rather than sent again.
 
+The five scheduler types and three fixed live transports emit only two fixed
+Telemetry event names. Measurements contain a native monotonic duration and a
+count of one; metadata contains only finite component, outcome, and stable error
+class values. Matching structured logs use constant messages and those same
+fields. Results, requests, responses, exceptions, endpoints, credentials,
+prompts, observation data, events, participants, and messages are excluded.
+
 ## Verification requirements
 
 Unit tests cover event matching, binding resolution, weighted choice,

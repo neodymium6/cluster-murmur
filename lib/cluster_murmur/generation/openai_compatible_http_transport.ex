@@ -14,6 +14,8 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleHTTPTransport do
     ProviderSettings
   }
 
+  alias ClusterMurmur.Runtime.OperationalTelemetry
+
   @max_response_header_bytes 16 * 1_024
   @max_response_wire_bytes 96 * 1_024
   @receive_buffer_bytes 4 * 1_024
@@ -26,7 +28,15 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleHTTPTransport do
 
   @doc "Executes one exact application-assembled generation request."
   @spec execute(term(), term()) :: result()
-  def execute(%OpenAICompatibleRequest{} = request, %ProviderSettings{} = settings) do
+  def execute(request, settings) do
+    started_at = System.monotonic_time()
+
+    request
+    |> do_execute(settings)
+    |> OperationalTelemetry.external_request(:model_provider, started_at)
+  end
+
+  defp do_execute(%OpenAICompatibleRequest{} = request, %ProviderSettings{} = settings) do
     with :ok <- OpenAICompatibleRequest.validate_for_transport(request, settings),
          {:ok, uri} <- URI.new(request.url) do
       execute_request(request, uri)
@@ -39,7 +49,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleHTTPTransport do
     _kind, _reason -> {:error, :invalid_response}
   end
 
-  def execute(_request, _settings), do: {:error, :invalid_response}
+  defp do_execute(_request, _settings), do: {:error, :invalid_response}
 
   defp execute_request(request, uri) do
     deadline = monotonic_milliseconds() + request.overall_timeout_ms

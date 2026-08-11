@@ -66,6 +66,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   recovery and schedule initialization, including after repository replacement.
 - Fixed value-free liveness, readiness, and startup HTTP probes with a monitored
   lease acquired after recovery and released before runtime shutdown drains.
+- Fixed-cardinality scheduler and normalized external outcome Telemetry events
+  with matching allowlisted JSON lifecycle logs in production.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 
