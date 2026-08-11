@@ -11,6 +11,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 - Fixed production UTC, monotonic-time, and bounded cryptographic-random
   adapters for later standalone runtime assembly.
+- Bounded retirement of durable stochastic schedules removed from current
+  configuration, suitable for fail-closed startup reconciliation.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 

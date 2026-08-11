@@ -1,23 +1,33 @@
 defmodule ClusterMurmur.Persistence.StochasticScheduleStore do
   @moduledoc """
-  Restores or initializes stochastic schedule state through one bounded store API.
+  Restores, retires, discovers, and claims stochastic schedule state.
 
   Existing durable state always wins over a newly calculated initial run. Due
   schedules can be claimed through a fixed bounded lease, and only that opaque
   claim can authorize the corresponding completion update. Action execution and
-  resampling remain outside this store.
+  resampling remain outside this store. Retirement accepts only one bounded
+  active-trigger allowlist and deletes one bounded page.
   """
 
   import Ecto.Query, only: [from: 2]
 
+  alias ClusterMurmur.Config.Value
   alias ClusterMurmur.DateTimeValidator
-  alias ClusterMurmur.Persistence.{StochasticSchedule, StochasticScheduleClaim}
+
+  alias ClusterMurmur.Persistence.{
+    StochasticSchedule,
+    StochasticScheduleClaim,
+    StochasticScheduleRetirement
+  }
+
   alias ClusterMurmur.Repo
 
   @claim_lease_seconds 60
   @claim_token_bytes 32
   @max_due_schedules 100
   @max_daily_count 10_000
+  @max_active_trigger_ids 256
+  @retirement_page_size 100
 
   @type error ::
           :daily_limit_reached
@@ -42,6 +52,21 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStore do
         else: {:error, :invalid_schedule}
     else
       {:error, :invalid_schedule}
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  @doc "Retires at most 100 schedules absent from one configured trigger set."
+  @spec retire_unconfigured(term()) ::
+          {:ok, StochasticScheduleRetirement.t()} | {:error, error()}
+  def retire_unconfigured(active_trigger_ids) do
+    with {:ok, active_trigger_ids} <- validate_active_trigger_ids(active_trigger_ids) do
+      persist_retirement(active_trigger_ids)
+    else
+      _failure -> {:error, :invalid_schedule}
     end
   rescue
     _error -> {:error, :storage_unavailable}
@@ -160,6 +185,80 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStore do
       _failure -> {:error, :storage_unavailable}
     end
   end
+
+  defp persist_retirement(active_trigger_ids) do
+    case Repo.transaction(fn -> retire_page(active_trigger_ids) end, mode: :immediate) do
+      {:ok, %StochasticScheduleRetirement{} = result} -> {:ok, result}
+      {:error, :invalid_schedule} -> {:error, :invalid_schedule}
+      _failure -> {:error, :storage_unavailable}
+    end
+  end
+
+  defp retire_page(active_trigger_ids) do
+    query =
+      from schedule in StochasticSchedule,
+        order_by: [asc: schedule.trigger_id],
+        limit: @retirement_page_size + 1,
+        select: schedule.trigger_id
+
+    stale_ids =
+      if active_trigger_ids == [],
+        do: Repo.all(query),
+        else:
+          Repo.all(from schedule in query, where: schedule.trigger_id not in ^active_trigger_ids)
+
+    with :ok <- validate_stale_ids(stale_ids),
+         retired_ids = Enum.take(stale_ids, @retirement_page_size),
+         :ok <- delete_retired_ids(retired_ids) do
+      %StochasticScheduleRetirement{
+        retired_count: length(retired_ids),
+        saturated?: length(stale_ids) > @retirement_page_size
+      }
+    else
+      _failure -> Repo.rollback(:invalid_schedule)
+    end
+  end
+
+  defp delete_retired_ids([]), do: :ok
+
+  defp delete_retired_ids(retired_ids) do
+    query = from schedule in StochasticSchedule, where: schedule.trigger_id in ^retired_ids
+
+    case Repo.delete_all(query) do
+      {count, nil} when count == length(retired_ids) -> :ok
+      _failure -> {:error, :invalid_schedule}
+    end
+  end
+
+  defp validate_active_trigger_ids(trigger_ids) when is_list(trigger_ids),
+    do: validate_trigger_ids(trigger_ids, %{}, 0, @max_active_trigger_ids)
+
+  defp validate_active_trigger_ids(_trigger_ids), do: {:error, :invalid_schedule}
+
+  defp validate_trigger_ids([], _seen, _count, _maximum), do: {:ok, []}
+
+  defp validate_trigger_ids([trigger_id | rest], seen, count, maximum) when count < maximum do
+    with {:ok, ^trigger_id} <- Value.id(trigger_id),
+         false <- Map.has_key?(seen, trigger_id),
+         {:ok, validated_rest} <-
+           validate_trigger_ids(rest, Map.put(seen, trigger_id, true), count + 1, maximum) do
+      {:ok, [trigger_id | validated_rest]}
+    else
+      _failure -> {:error, :invalid_schedule}
+    end
+  end
+
+  defp validate_trigger_ids(_trigger_ids, _seen, _count, _maximum),
+    do: {:error, :invalid_schedule}
+
+  defp validate_stale_ids(stale_ids) when is_list(stale_ids) do
+    case validate_trigger_ids(stale_ids, %{}, 0, @retirement_page_size + 1) do
+      {:ok, ^stale_ids} -> :ok
+      _failure -> {:error, :invalid_schedule}
+    end
+  end
+
+  defp validate_stale_ids(_stale_ids), do: {:error, :invalid_schedule}
 
   defp insert_then_restore(changeset, trigger_id) do
     case Repo.insert(changeset,
