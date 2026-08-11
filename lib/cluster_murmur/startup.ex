@@ -8,20 +8,31 @@ defmodule ClusterMurmur.Startup do
   """
 
   alias ClusterMurmur.Config.{Configuration, Loader}
-  alias ClusterMurmur.Runtime.SchedulerSettings
+  alias ClusterMurmur.Runtime.{ResponderScheduleSettings, SchedulerSettings}
   alias ClusterMurmur.RuntimeSettings
 
   defmodule Prepared do
     @moduledoc false
 
     @derive {Inspect, only: []}
-    @enforce_keys [:configuration, :runtime_settings, :scheduler_settings]
-    defstruct [:configuration, :runtime_settings, :scheduler_settings]
+    @enforce_keys [
+      :configuration,
+      :runtime_settings,
+      :scheduler_settings,
+      :responder_schedule_settings
+    ]
+    defstruct [
+      :configuration,
+      :runtime_settings,
+      :scheduler_settings,
+      :responder_schedule_settings
+    ]
 
     @type t :: %__MODULE__{
             configuration: ClusterMurmur.Config.Configuration.t(),
             runtime_settings: ClusterMurmur.RuntimeSettings.t(),
-            scheduler_settings: ClusterMurmur.Runtime.SchedulerSettings.t()
+            scheduler_settings: ClusterMurmur.Runtime.SchedulerSettings.t(),
+            responder_schedule_settings: ClusterMurmur.Runtime.ResponderScheduleSettings.t()
           }
   end
 
@@ -33,6 +44,7 @@ defmodule ClusterMurmur.Startup do
           | {:configuration, Loader.error()}
           | {:runtime_settings, RuntimeSettings.error()}
           | {:scheduler_settings, SchedulerSettings.error()}
+          | {:responder_schedule_settings, ResponderScheduleSettings.error()}
 
   @doc "Loads every implemented startup input without starting external work."
   @spec prepare(term(), RuntimeSettings.environment_reader()) ::
@@ -45,11 +57,17 @@ defmodule ClusterMurmur.Startup do
          {:ok, runtime_settings} <-
            annotate(RuntimeSettings.load(configuration, environment_reader), :runtime_settings),
          {:ok, scheduler_settings} <-
-           annotate(SchedulerSettings.load(environment_reader), :scheduler_settings) do
+           annotate(SchedulerSettings.load(environment_reader), :scheduler_settings),
+         {:ok, responder_schedule_settings} <-
+           annotate(
+             ResponderScheduleSettings.load(environment_reader),
+             :responder_schedule_settings
+           ) do
       prepared = %Prepared{
         configuration: configuration,
         runtime_settings: runtime_settings,
-        scheduler_settings: scheduler_settings
+        scheduler_settings: scheduler_settings,
+        responder_schedule_settings: responder_schedule_settings
       }
 
       case validate(prepared) do
@@ -70,7 +88,8 @@ defmodule ClusterMurmur.Startup do
   def validate(%Prepared{} = prepared) do
     if exact_prepared?(prepared) and Configuration.validate(prepared.configuration) == :ok and
          RuntimeSettings.validate(prepared.runtime_settings) == :ok and
-         SchedulerSettings.validate(prepared.scheduler_settings) == :ok do
+         SchedulerSettings.validate(prepared.scheduler_settings) == :ok and
+         ResponderScheduleSettings.validate(prepared.responder_schedule_settings) == :ok do
       :ok
     else
       {:error, :invalid_startup}

@@ -819,6 +819,24 @@ must remain within the shared maximum runtime interval. Missing, malformed,
 oversized, or out-of-range values fail startup before a clock, store, external
 service, or scheduler is used.
 
+## Runtime responder schedule settings
+
+Standalone conversation assembly requires four additional non-secret timing
+values:
+
+- `CLUSTER_MURMUR_RESPONDER_TURN_INTERVAL`;
+- `CLUSTER_MURMUR_RESPONDER_GENERATION_DELAY`;
+- `CLUSTER_MURMUR_RESPONDER_PUBLICATION_START_DELAY`; and
+- `CLUSTER_MURMUR_RESPONDER_PUBLICATION_COMPLETE_DELAY`.
+
+The turn interval must be at least one second. Delays are relative to each
+planned responder turn and must be ordered from generation through publication
+completion. Completion must not exceed the turn interval, which keeps adjacent
+planned turns non-overlapping. All four values use the public duration syntax,
+are bounded by the shared maximum runtime interval, and fail startup when
+missing or invalid. They define planned timestamps; loading them does not wait,
+start a conversation, or contact an external service.
+
 ## Secret handling
 
 Public configuration may contain only environment-variable names and fake,

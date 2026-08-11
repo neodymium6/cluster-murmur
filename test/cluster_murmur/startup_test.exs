@@ -4,7 +4,7 @@ defmodule ClusterMurmur.StartupTest do
   alias ClusterMurmur.Config.Configuration
   alias ClusterMurmur.Config.StateTracking
   alias ClusterMurmur.RuntimeSettings
-  alias ClusterMurmur.Runtime.SchedulerSettings
+  alias ClusterMurmur.Runtime.{ResponderScheduleSettings, SchedulerSettings}
   alias ClusterMurmur.Startup
   alias ClusterMurmur.Startup.Prepared
   alias ClusterMurmur.TestSupport.PrivateTmpDir
@@ -47,6 +47,10 @@ defmodule ClusterMurmur.StartupTest do
 
     assert %RuntimeSettings{} = prepared.runtime_settings
     assert %SchedulerSettings{poll_interval_ms: 30_000} = prepared.scheduler_settings
+
+    assert %ResponderScheduleSettings{turn_interval_ms: 5_000} =
+             prepared.responder_schedule_settings
+
     assert Startup.validate(prepared) == :ok
     assert inspect(prepared) == "#ClusterMurmur.Startup.Prepared<...>"
 
@@ -97,7 +101,7 @@ defmodule ClusterMurmur.StartupTest do
              {:error, {:runtime_settings, {:webhook, {:webhook, :missing_secret_file_path}}}}
   end
 
-  test "loads scheduler settings last and labels their failures", context do
+  test "labels scheduler setting failures before responder schedule settings", context do
     missing_interval =
       context
       |> environment_values()
@@ -115,6 +119,25 @@ defmodule ClusterMurmur.StartupTest do
              {:error, {:scheduler_settings, :invalid_event_retention_interval}}
   end
 
+  test "loads responder schedule settings last and labels their failures", context do
+    missing_delay =
+      context
+      |> environment_values()
+      |> Map.delete("CLUSTER_MURMUR_RESPONDER_GENERATION_DELAY")
+
+    assert Startup.prepare(context.config_path, environment(missing_delay)) ==
+             {:error, {:responder_schedule_settings, :missing_responder_generation_delay}}
+
+    unordered =
+      context
+      |> environment_values()
+      |> Map.put("CLUSTER_MURMUR_RESPONDER_PUBLICATION_START_DELAY", "3s")
+      |> Map.put("CLUSTER_MURMUR_RESPONDER_PUBLICATION_COMPLETE_DELAY", "2s")
+
+    assert Startup.prepare(context.config_path, environment(unordered)) ==
+             {:error, {:responder_schedule_settings, :invalid_responder_schedule_settings}}
+  end
+
   test "fails closed for invalid inputs and forged prepared values", context do
     assert Startup.prepare(context.config_path, :not_an_environment_reader) ==
              {:error, :invalid_startup}
@@ -126,6 +149,7 @@ defmodule ClusterMurmur.StartupTest do
           %{prepared | configuration: %{prepared.configuration | version: 1.0}},
           %{prepared | runtime_settings: nil},
           %{prepared | scheduler_settings: nil},
+          %{prepared | responder_schedule_settings: nil},
           Map.put(prepared, :private, true)
         ] do
       assert Startup.validate(value) == {:error, :invalid_startup}
@@ -157,7 +181,11 @@ defmodule ClusterMurmur.StartupTest do
       "CLUSTER_MURMUR_EVENT_DISPATCH_INTERVAL" => "2s",
       "CLUSTER_MURMUR_RECURRING_INTERVAL" => "10s",
       "CLUSTER_MURMUR_STOCHASTIC_INTERVAL" => "15s",
-      "CLUSTER_MURMUR_EVENT_RETENTION_INTERVAL" => "1h"
+      "CLUSTER_MURMUR_EVENT_RETENTION_INTERVAL" => "1h",
+      "CLUSTER_MURMUR_RESPONDER_TURN_INTERVAL" => "5s",
+      "CLUSTER_MURMUR_RESPONDER_GENERATION_DELAY" => "0ms",
+      "CLUSTER_MURMUR_RESPONDER_PUBLICATION_START_DELAY" => "1s",
+      "CLUSTER_MURMUR_RESPONDER_PUBLICATION_COMPLETE_DELAY" => "2s"
     }
   end
 
