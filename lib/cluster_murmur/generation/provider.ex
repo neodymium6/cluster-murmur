@@ -20,6 +20,7 @@ defmodule ClusterMurmur.Generation.Provider do
   @type transport_result ::
           {:ok, OpenAICompatibleResponse.t()}
           | {:error, :not_sent, :timeout | :unavailable}
+          | {:error, :invalid_response}
           | {:error, :outcome_unknown}
   @type transport :: (OpenAICompatibleRequest.t() -> transport_result())
 

@@ -84,6 +84,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleProviderTest do
       {{:error, :not_sent, :timeout}, {:error, :timeout}},
       {{:error, :not_sent, :unavailable}, {:error, :unavailable}},
       {{:error, :outcome_unknown}, {:error, :unavailable}},
+      {{:error, :invalid_response}, {:error, :invalid_response}},
       {{:error, :not_sent, :authentication_failed}, {:error, :invalid_response}},
       {{:error, :private_diagnostic}, {:error, :invalid_response}},
       {:malformed, {:error, :invalid_response}}

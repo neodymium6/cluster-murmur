@@ -1,5 +1,9 @@
 # ADR 0115: Call the Provider Through an Injected Transport
 
+## Status
+
+Accepted; amended by ADR 0197.
+
 ## Context
 
 The fixed request encoder and bounded response decoder do not yet implement the

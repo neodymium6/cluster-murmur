@@ -45,6 +45,9 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleProvider do
       {:error, :outcome_unknown} ->
         {:error, :unavailable}
 
+      {:error, :invalid_response} ->
+        {:error, :invalid_response}
+
       _invalid_transport_result ->
         {:error, :invalid_response}
     end
