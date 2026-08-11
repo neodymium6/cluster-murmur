@@ -33,6 +33,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - A transport-side validator for the exact safe Discord webhook request shape.
 - A proven not-sent Discord request-validation outcome for safe publication
   failure handling.
+- A fixed one-request Discord webhook HTTPS transport with bounded response
+  processing and conservative post-dispatch outcome classification.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 
