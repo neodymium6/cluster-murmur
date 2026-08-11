@@ -23,11 +23,14 @@ the existing container-level smoke check from that tag before any registry
 mutation.
 
 Convert the deterministic Nix archive to an OCI layout, calculate its manifest
-digest locally, and use an upload alias derived from the complete digest. Do not
-publish a version tag, `latest`, or another channel alias. Verify the registry
-digest again after publication and make the digest-pinned reference
-authoritative. Because the upload alias names its intended content rather than
-a release channel, retrying cannot silently replace a version binding.
+digest locally, and use an `image-sha256-<digest>` upload alias derived from the
+complete digest. The `image-` namespace prevents a collision with the
+`sha256-<digest>` fallback tag reserved by the OCI Referrers Tag Schema for
+attestation indexes. Do not publish a version tag, `latest`, or another channel
+alias. Verify the registry digest again after publication and make the
+digest-pinned reference authoritative. Because the upload alias names its
+intended content rather than a release channel, retrying cannot silently
+replace a version binding.
 Bound the Nix archive to at most 20 layers and enforce that limit in the
 container check so first publication does not inherit the builder's 100-layer
 default and exhaust registry secondary request limits.

@@ -78,10 +78,11 @@ one supported platform, `linux/amd64`, to
 `ghcr.io/neodymium6/cluster-murmur`.
 
 The workflow does not publish a version tag, `latest`, or another channel
-alias. Its registry-only upload alias contains the complete manifest digest,
-and the digest-pinned reference in release metadata is the only supported
-reference. Publication reads the manifest back from GHCR and requires an exact
-digest match.
+alias. Its registry-only `image-sha256-<digest>` upload alias contains the
+complete manifest digest without colliding with the OCI referrers tag used for
+attestations. The digest-pinned reference in release metadata is the only
+supported reference. Publication reads the manifest back from GHCR and
+requires an exact digest match.
 
 The workflow generates `release-metadata.json`, the SPDX 2.3 SBOM, and
 `SHA256SUMS`. The metadata records the image name, registry digest,
