@@ -2,11 +2,10 @@
 
 ## Scope
 
-The tagged public alpha remains a composable engine rather than a supported
-production release. Current unreleased production builds start the complete
-fixed runtime after validating deployment inputs and running recovery. Building
-or loading an artifact does not authorize connecting it to infrastructure, a
-model provider, or Discord.
+The standalone alpha starts the complete fixed runtime after validating
+deployment inputs and running recovery. It remains an alpha rather than a
+supported production release. Building or loading an artifact does not
+authorize connecting it to infrastructure, a model provider, or Discord.
 
 A deployment must still supply and review configuration, secret mounts,
 storage, network policy, probe timing, telemetry, and rollout policy.

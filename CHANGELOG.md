@@ -5,12 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## Unreleased
 
-### Runtime integration
+## [0.2.0-alpha.1](docs/release-notes-v0.2.0-alpha.1.md) - 2026-08-11
+
+### Runtime and transport integration
 
 - Fixed production UTC, monotonic-time, and bounded cryptographic-random
-  adapters for later standalone runtime assembly.
+  adapters used by the standalone runtime assembly.
 - Bounded retirement of durable stochastic schedules removed from current
   configuration, suitable for fail-closed startup reconciliation.
 - Fail-closed stochastic startup initialization that samples all initial runs
@@ -18,18 +20,19 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - One recovery-gated failure domain for poll, event-dispatch, recurring,
   stochastic, and event-retention schedulers.
 - Redacted, bounded Cluster Observer MCP endpoint and mounted-token settings for
-  later standalone transport assembly.
+  the standalone transport assembly.
 - Fixed, revalidated MCP 2026-07-28 Streamable HTTP request encoding for the two
   application-selected read-only observer tools.
 - Bounded MCP JSON and request-scoped SSE response decoding that exposes only
   fixed structured observer results and stable transport outcomes.
-- A live one-request Cluster Observer HTTP transport with verified TLS,
-  incremental response limits, no redirects or retries, and conservative
-  post-send failure classification.
+- A live one-request Cluster Observer HTTP transport with verified TLS for
+  remote endpoints, loopback-only plain HTTP, incremental response limits, no
+  redirects or retries, and conservative post-send failure classification.
 - Explicit provider-transport classification for locally rejected malformed or
   oversized HTTP responses.
-- A fixed one-request OpenAI-compatible HTTP transport with verified TLS,
-  bounded parser input, and no redirects or retries.
+- A fixed one-request OpenAI-compatible HTTP transport with verified TLS for
+  HTTPS endpoints, bounded parser input, and no redirects or retries; plain
+  HTTP remains an explicit choice for isolated local or private providers.
 - A transport-side validator for the exact safe Discord webhook request shape.
 - A proven not-sent Discord request-validation outcome for safe publication
   failure handling.
@@ -64,6 +67,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - A fail-closed production OTP entry point that prepares bounded deployment
   inputs, starts SQLite first, and gates all five runtime schedulers behind
   recovery and schedule initialization, including after repository replacement.
+
+### Operations and packaging
+
 - Fixed value-free liveness, readiness, and startup HTTP probes with a monitored
   lease acquired after recovery and released before runtime shutdown drains.
 - Fixed-cardinality scheduler and normalized external outcome Telemetry events
@@ -72,6 +78,9 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   rollout, offline backup/restore, migration rollback, and observer isolation.
 - Protected tagged-release publication for one digest-pinned `linux/amd64`
   image with SPDX SBOM, checksums, and signed provenance attestations.
+
+### Verification
+
 - An executable isolated end-to-end example covering real loopback observer and
   model transports, SQLite lifecycle persistence, publication-once, and safe
   resumed polling after startup recovery.

@@ -2,11 +2,11 @@
 
 ## Supported versions
 
-There are no supported releases yet. The tagged public alpha is not a
-standalone service. Current unreleased production builds contain a standalone
-entry point, but that does not authorize connecting any revision to production
-or sensitive systems without review and explicit approval for the exact
-deployment.
+There are no production-supported releases yet. Source version
+`0.2.0-alpha.1` is the current standalone alpha and contains the fixed
+production entry point. Alpha status does not authorize connecting any revision
+to production or sensitive systems without review and explicit approval for the
+exact deployment.
 
 ## Security boundary
 
