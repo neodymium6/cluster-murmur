@@ -144,7 +144,7 @@ jobs:
           expected_digest="sha256:$(
             skopeo inspect --raw "oci:release-image:$VERSION" | sha256sum | cut -d ' ' -f 1
           )"
-          digest_alias="sha256-${expected_digest#sha256:}"
+          digest_alias="image-sha256-${expected_digest#sha256:}"
           published_image="$image_name:$digest_alias"
           skopeo --insecure-policy copy --authfile "$registry_auth" --retry-times 3 \
             "oci:release-image:$VERSION" "docker://$published_image"

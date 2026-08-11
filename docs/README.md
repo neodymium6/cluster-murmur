@@ -25,9 +25,10 @@ development commands. Use the documents below for details.
 - Understand retained Dialyzer filters:
   [dialyzer-boundaries.md](dialyzer-boundaries.md).
 - Review prepared and shipped changes: [CHANGELOG.md](../CHANGELOG.md), the
-  prepared [v0.2.0-alpha.3 release notes](release-notes-v0.2.0-alpha.3.md), the
-  superseded [v0.2.0-alpha.2 release notes](release-notes-v0.2.0-alpha.2.md) and
-  [v0.2.0-alpha.1 release notes](release-notes-v0.2.0-alpha.1.md), and
+  prepared [v0.2.0-alpha.4 release notes](release-notes-v0.2.0-alpha.4.md), the
+  superseded [v0.2.0-alpha.3 release notes](release-notes-v0.2.0-alpha.3.md),
+  [v0.2.0-alpha.2 release notes](release-notes-v0.2.0-alpha.2.md), and
+  [v0.2.0-alpha.1 release notes](release-notes-v0.2.0-alpha.1.md), plus
   the historical
   [v0.1.0-alpha.1 release notes](release-notes-v0.1.0-alpha.1.md).
 

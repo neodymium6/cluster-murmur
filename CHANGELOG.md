@@ -7,6 +7,17 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## Unreleased
 
+## [0.2.0-alpha.4](docs/release-notes-v0.2.0-alpha.4.md) - 2026-08-11
+
+### OCI attestations
+
+- Namespaced the content-derived upload alias as `image-sha256-<digest>` so it
+  cannot collide with the OCI Referrers Tag Schema name used for provenance
+  and SBOM attestation indexes.
+- Superseded the immutable `v0.2.0-alpha.3` tag after its image publication and
+  public-visibility checks succeeded but the alias collision prevented the
+  provenance attestation and draft GitHub Release.
+
 ## [0.2.0-alpha.3](docs/release-notes-v0.2.0-alpha.3.md) - 2026-08-11
 
 ### Container publication
