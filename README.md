@@ -6,14 +6,14 @@ conversations.
 
 ## Status
 
-Cluster Murmur is a public alpha engine. The current prerelease is
-[`v0.1.0-alpha.1`](https://github.com/neodymium6/cluster-murmur/releases/tag/v0.1.0-alpha.1).
+Cluster Murmur is a public standalone alpha. The current source version is
+`0.2.0-alpha.1`; published artifacts remain listed on the
+[GitHub Releases page](https://github.com/neodymium6/cluster-murmur/releases).
 
-The tagged public alpha is a composable, environment-neutral engine rather than
-a standalone live service. Current unreleased production builds add a
-fail-closed standalone entry point using the fixed transports and runtime
-assembly. Credentials, endpoints, routing, storage, and rollout policy remain
-deployment-owned inputs.
+The standalone alpha provides a fail-closed entry point using fixed transports,
+recovery-gated runtime assembly, bounded operational signals, and documented
+single-writer deployment controls. Credentials, endpoints, routing, storage,
+and rollout policy remain deployment-owned inputs.
 
 Do not connect this revision to production, sensitive infrastructure, model
 providers, or Discord without reviewing the exact deployment configuration,

@@ -24,7 +24,9 @@ development commands. Use the documents below for details.
   [SECURITY.md](../SECURITY.md).
 - Understand retained Dialyzer filters:
   [dialyzer-boundaries.md](dialyzer-boundaries.md).
-- Review shipped changes: [CHANGELOG.md](../CHANGELOG.md) and the
+- Review prepared and shipped changes: [CHANGELOG.md](../CHANGELOG.md), the
+  prepared [v0.2.0-alpha.1 release notes](release-notes-v0.2.0-alpha.1.md), and
+  the historical
   [v0.1.0-alpha.1 release notes](release-notes-v0.1.0-alpha.1.md).
 
 ## Document roles

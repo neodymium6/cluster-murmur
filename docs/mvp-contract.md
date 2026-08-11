@@ -8,10 +8,9 @@ decisions; this document defines testable runtime invariants and completion
 criteria.
 
 The keywords **must**, **must not**, **should**, and **may** are normative. This
-document describes the complete standalone MVP target. The repository has
-progressed beyond the tagged public alpha to an unreleased standalone production
-entry point; [`public-alpha.md`](public-alpha.md) records the narrower
-environment-neutral subset shipped as `v0.1.0-alpha.1`.
+document describes the complete standalone MVP implemented in source version
+`0.2.0-alpha.1`; [`public-alpha.md`](public-alpha.md) records the narrower
+environment-neutral subset shipped previously as `v0.1.0-alpha.1`.
 
 ## System boundary
 
@@ -116,9 +115,12 @@ Conversation status is one of `starting`, `generating`, `waiting`, `completed`,
 `cancelled`, or `failed`. Persona values are immutable configuration and must
 not become independent OTP processes.
 
-Facts and labels must pass explicit field allowlists, nesting limits, and
-serialized-size limits before persistence or prompt construction. Limits will
-be fixed alongside the observation schema before Phase 2 is complete.
+Event facts and labels accept only JSON-compatible values. A complete event is
+bounded to 256 entries per collection, eight collection levels, 1,024 total
+nodes, 512-byte keys, 16 KiB strings, and 64 KiB of aggregate key and string
+content. Observation entity state reuses that boundary before persistence.
+Matchers and prompt projection apply their narrower application-owned field
+allowlists before supplied facts reach policy or generation.
 
 ## External dependency contracts
 

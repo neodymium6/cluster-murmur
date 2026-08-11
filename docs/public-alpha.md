@@ -1,8 +1,8 @@
 # v0.1.0-alpha.1 public alpha boundary
 
 This is the historical scope of the tagged `v0.1.0-alpha.1` release. Current
-unreleased behavior is documented in the root README, configuration reference,
-deployment guide, and changelog.
+behavior is documented in the root README, configuration reference, deployment
+guide, and changelog.
 
 ## Purpose
 
