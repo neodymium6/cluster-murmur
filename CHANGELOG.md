@@ -37,6 +37,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   processing and conservative post-dispatch outcome classification.
 - Observer MCP settings included in the redacted, fail-closed startup settings
   aggregate alongside provider and webhook settings.
+- Network-free construction of the fixed observer client, model provider,
+  publisher, and their startup-captured narrow live transports.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 
