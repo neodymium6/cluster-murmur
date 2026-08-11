@@ -41,6 +41,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   publisher, and their startup-captured narrow live transports.
 - Explicit bounded startup settings for all five runtime scheduler cadences,
   with busy-loop lower limits and no live defaults.
+- Stable bounded restoration of current durable cooldowns for configured
+  personas without generic persistence listing.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 
