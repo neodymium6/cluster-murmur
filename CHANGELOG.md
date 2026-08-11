@@ -30,6 +30,7 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   oversized HTTP responses.
 - A fixed one-request OpenAI-compatible HTTP transport with verified TLS,
   bounded parser input, and no redirects or retries.
+- A transport-side validator for the exact safe Discord webhook request shape.
 
 ## [0.1.0-alpha.1] - 2026-08-11
 
