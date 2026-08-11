@@ -1,16 +1,17 @@
 defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
   @moduledoc """
-  Starts poll, event-dispatch, and recurring schedulers after startup gates.
+  Starts all bounded runtime schedulers after shared startup gates.
 
   All schedulers share one failure domain so none can run global recovery while
   another still owns live work. The boundary validates every scheduler,
   initializer, and recovery dependency before reading one clock instant. It
-  uses that same instant for recovery and recurring-state initialization.
+  uses that same instant for recovery and both schedule initializations.
 
   Any recovery or initialization error, incomplete mutation, or full bounded
-  page prevents all three schedulers from starting. Termination of any scheduler closes the shared
-  supervisor, requiring a parent-managed replacement to recover again before
-  starting any worker. This opt-in boundary is not installed automatically.
+  page prevents all five schedulers from starting. Termination of any scheduler
+  closes the shared supervisor, requiring a parent-managed replacement to run
+  every gate again before starting any worker. This opt-in boundary is not
+  installed automatically.
   """
 
   use Supervisor
@@ -19,17 +20,21 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
 
   alias ClusterMurmur.Runtime.{
     EventDispatchScheduler,
+    EventRetentionScheduler,
     PollScheduler,
     RecurringScheduleInitializer,
     RecurringScheduleScheduler,
-    Recovery
+    Recovery,
+    StochasticScheduleInitializer,
+    StochasticScheduler
   }
 
-  alias ClusterMurmur.Runtime.RecurringScheduleInitializer.Result, as: InitializationResult
+  alias ClusterMurmur.Runtime.RecurringScheduleInitializer.Result, as: RecurringResult
   alias ClusterMurmur.Runtime.Recovery.{Result, Stores}
-  alias ClusterMurmur.Triggers.ScheduleTrigger
+  alias ClusterMurmur.Runtime.StochasticScheduleInitializer.Result, as: StochasticResult
+  alias ClusterMurmur.Triggers.{ScheduleTrigger, StochasticTrigger}
 
-  @max_recurring_schedules 256
+  @max_schedules 256
 
   defmodule Options do
     @moduledoc false
@@ -39,14 +44,20 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
       :poll_scheduler,
       :event_dispatch_scheduler,
       :recurring_schedule_scheduler,
+      :stochastic_scheduler,
+      :event_retention_scheduler,
       :recurring_schedule_initializer,
+      :stochastic_schedule_initializer,
       :clock
     ]
     defstruct [
       :poll_scheduler,
       :event_dispatch_scheduler,
       :recurring_schedule_scheduler,
+      :stochastic_scheduler,
+      :event_retention_scheduler,
       :recurring_schedule_initializer,
+      :stochastic_schedule_initializer,
       :clock
     ]
 
@@ -55,7 +66,10 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
             event_dispatch_scheduler: ClusterMurmur.Runtime.EventDispatchScheduler.Options.t(),
             recurring_schedule_scheduler:
               ClusterMurmur.Runtime.RecurringScheduleScheduler.Options.t(),
+            stochastic_scheduler: ClusterMurmur.Runtime.StochasticScheduler.Options.t(),
+            event_retention_scheduler: ClusterMurmur.Runtime.EventRetentionScheduler.Options.t(),
             recurring_schedule_initializer: module(),
+            stochastic_schedule_initializer: module(),
             clock: module()
           }
   end
@@ -63,7 +77,7 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
   @option_keys Options.__struct__() |> Map.keys()
   @option_key_count length(@option_keys)
 
-  @doc "Runs both startup gates before starting all three validated schedulers."
+  @doc "Runs recovery and schedule initialization before all five schedulers."
   @spec start_link(Options.t()) :: Supervisor.on_start()
   def start_link(%Options{} = options), do: start_link(options, nil)
   def start_link(_options), do: {:error, :invalid_recovered_runtime_supervisor}
@@ -74,7 +88,8 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
     with :ok <- validate_options(options, stores),
          {:ok, started_at} <- current_time(options.clock),
          {:ok, %Result{failure_count: 0, saturated?: false}} <- recover(started_at, stores),
-         :ok <- initialize_recurring(options, started_at) do
+         :ok <- initialize_recurring(options, started_at),
+         :ok <- initialize_stochastic(options, started_at) do
       Supervisor.start_link(__MODULE__, options)
     else
       _failure -> {:error, :invalid_recovered_runtime_supervisor}
@@ -92,11 +107,15 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
   def init(options) do
     with :ok <- PollScheduler.validate(options.poll_scheduler),
          :ok <- EventDispatchScheduler.validate(options.event_dispatch_scheduler),
-         :ok <- RecurringScheduleScheduler.validate(options.recurring_schedule_scheduler) do
+         :ok <- RecurringScheduleScheduler.validate(options.recurring_schedule_scheduler),
+         :ok <- StochasticScheduler.validate(options.stochastic_scheduler),
+         :ok <- EventRetentionScheduler.validate(options.event_retention_scheduler) do
       children = [
         significant_child(PollScheduler, options.poll_scheduler),
         significant_child(EventDispatchScheduler, options.event_dispatch_scheduler),
-        significant_child(RecurringScheduleScheduler, options.recurring_schedule_scheduler)
+        significant_child(RecurringScheduleScheduler, options.recurring_schedule_scheduler),
+        significant_child(StochasticScheduler, options.stochastic_scheduler),
+        significant_child(EventRetentionScheduler, options.event_retention_scheduler)
       ]
 
       Supervisor.init(children,
@@ -119,17 +138,27 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
          :ok <- PollScheduler.validate(options.poll_scheduler),
          :ok <- EventDispatchScheduler.validate(options.event_dispatch_scheduler),
          :ok <- RecurringScheduleScheduler.validate(options.recurring_schedule_scheduler),
-         :ok <- validate_initializer(options.recurring_schedule_initializer),
+         :ok <- StochasticScheduler.validate(options.stochastic_scheduler),
+         :ok <- EventRetentionScheduler.validate(options.event_retention_scheduler),
+         :ok <- validate_initializer(options.recurring_schedule_initializer, 2),
+         :ok <- validate_initializer(options.stochastic_schedule_initializer, 3),
          :ok <- validate_clock(options.clock),
          true <- options.poll_scheduler.clock == options.clock,
          true <- options.event_dispatch_scheduler.clock == options.clock,
          true <- options.recurring_schedule_scheduler.clock == options.clock,
+         true <- options.stochastic_scheduler.clock == options.clock,
+         true <- options.event_retention_scheduler.clock == options.clock,
          true <-
            options.poll_scheduler.configuration ===
              options.event_dispatch_scheduler.configuration,
          true <-
            options.poll_scheduler.configuration ===
              options.recurring_schedule_scheduler.configuration,
+         true <-
+           options.poll_scheduler.configuration === options.stochastic_scheduler.configuration,
+         true <-
+           options.poll_scheduler.configuration ===
+             options.event_retention_scheduler.configuration,
          :ok <- validate_stores(stores) do
       :ok
     else
@@ -151,9 +180,9 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
       else: {:error, :invalid_recovered_runtime_supervisor}
   end
 
-  defp validate_initializer(initializer) do
+  defp validate_initializer(initializer, arity) do
     if is_atom(initializer) and Code.ensure_loaded?(initializer) and
-         function_exported?(initializer, :run, 2),
+         function_exported?(initializer, :run, arity),
        do: :ok,
        else: {:error, :invalid_recovered_runtime_supervisor}
   end
@@ -177,7 +206,7 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
     configuration = options.recurring_schedule_scheduler.configuration
 
     with {:ok, expected_count} <- recurring_schedule_count(configuration),
-         {:ok, %InitializationResult{} = result} <-
+         {:ok, %RecurringResult{} = result} <-
            options.recurring_schedule_initializer.run(configuration, started_at),
          :ok <- RecurringScheduleInitializer.validate_result(result),
          true <- result.schedule_count == expected_count do
@@ -187,13 +216,35 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisor do
     end
   end
 
+  defp initialize_stochastic(options, started_at) do
+    configuration = options.stochastic_scheduler.configuration
+
+    with {:ok, expected_count} <- schedule_count(configuration, StochasticTrigger),
+         {:ok, %StochasticResult{} = result} <-
+           options.stochastic_schedule_initializer.run(
+             configuration,
+             started_at,
+             options.stochastic_scheduler.random
+           ),
+         :ok <- StochasticScheduleInitializer.validate_result(result),
+         true <- result.schedule_count == expected_count do
+      :ok
+    else
+      _failure -> {:error, :invalid_recovered_runtime_supervisor}
+    end
+  end
+
   defp recurring_schedule_count(configuration) do
+    schedule_count(configuration, ScheduleTrigger)
+  end
+
+  defp schedule_count(configuration, trigger_module) do
     configuration.triggers.triggers
     |> Map.values()
     |> Enum.reduce_while(0, fn
-      %ScheduleTrigger{}, count when count < @max_recurring_schedules -> {:cont, count + 1}
-      %ScheduleTrigger{}, _count -> {:halt, :oversized}
-      _other_trigger, count -> {:cont, count}
+      %{__struct__: ^trigger_module}, count when count < @max_schedules -> {:cont, count + 1}
+      %{__struct__: ^trigger_module}, _count -> {:halt, :oversized}
+      _other, count -> {:cont, count}
     end)
     |> case do
       count when is_integer(count) -> {:ok, count}

@@ -8,24 +8,31 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
   alias ClusterMurmur.Runtime.{
     EventDispatchCycle,
     EventDispatchScheduler,
+    EventRetentionCycle,
+    EventRetentionScheduler,
     PollScheduler,
     PollStarterCycle,
     RecurringScheduleCycle,
     RecurringScheduleInitializer,
     RecurringScheduleScheduler,
-    RecoveredRuntimeSupervisor
+    RecoveredRuntimeSupervisor,
+    StochasticCycle,
+    StochasticScheduleInitializer,
+    StochasticScheduler
   }
 
   alias ClusterMurmur.Runtime.EventDispatchCycle.{Adapters, Context}
   alias ClusterMurmur.Runtime.EventDispatchScheduler.Options, as: DispatchOptions
+  alias ClusterMurmur.Runtime.EventRetentionScheduler.Options, as: RetentionOptions
   alias ClusterMurmur.Runtime.PollScheduler.Options, as: PollOptions
   alias ClusterMurmur.Runtime.RecurringScheduleScheduler.Options, as: RecurringOptions
   alias ClusterMurmur.Runtime.RecoveredRuntimeSupervisor.Options
   alias ClusterMurmur.Runtime.Recovery.Stores
+  alias ClusterMurmur.Runtime.StochasticScheduler.Options, as: StochasticOptions
   alias ClusterMurmur.TestSupport.RuntimeFixture
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.SharedInput
-  alias ClusterMurmur.Triggers.{EmittedEvent, ScheduleTrigger}
+  alias ClusterMurmur.Triggers.{EmittedEvent, ScheduleTrigger, StochasticTrigger}
 
   @started_at ~U[2026-08-08 18:30:00.000000Z]
 
@@ -139,7 +146,7 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
     end
   end
 
-  defmodule Initializer do
+  defmodule RecurringInitializer do
     alias ClusterMurmur.Runtime.RecurringScheduleInitializer.Result
     alias ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest, as: Test
 
@@ -161,6 +168,28 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
     end
   end
 
+  defmodule StochasticInitializer do
+    alias ClusterMurmur.Runtime.StochasticScheduleInitializer.Result
+    alias ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest, as: Test
+
+    def run(_configuration, initialized_at, random) do
+      trace({:initialize_stochastic, initialized_at, random})
+
+      if sink = Process.whereis(Test.RecoverySink),
+        do: send(sink, {:stochastic_initialized, initialized_at})
+
+      Process.get(
+        {Test, :stochastic_initialization},
+        {:ok, %Result{schedule_count: 1}}
+      )
+    end
+
+    defp trace(entry) do
+      key = {Test, :trace}
+      Process.put(key, Process.get(key, []) ++ [entry])
+    end
+  end
+
   setup do
     Process.put({__MODULE__, :clock_count}, 0)
     Process.put({__MODULE__, :trace}, [])
@@ -170,6 +199,11 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
     Process.put(
       {__MODULE__, :initialization},
       {:ok, %RecurringScheduleInitializer.Result{schedule_count: 1}}
+    )
+
+    Process.put(
+      {__MODULE__, :stochastic_initialization},
+      {:ok, %StochasticScheduleInitializer.Result{schedule_count: 1}}
     )
 
     :ok
@@ -186,13 +220,16 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
              {:executions, @started_at},
              {:conversations, @started_at},
              {:publications, @started_at},
-             {:initialize_recurring, @started_at}
+             {:initialize_recurring, @started_at},
+             {:initialize_stochastic, @started_at, AdapterStub}
            ]
 
     children = Supervisor.which_children(supervisor)
     assert child_pid(children, PollScheduler) |> Process.alive?()
     assert child_pid(children, EventDispatchScheduler) |> Process.alive?()
     assert child_pid(children, RecurringScheduleScheduler) |> Process.alive?()
+    assert child_pid(children, StochasticScheduler) |> Process.alive?()
+    assert child_pid(children, EventRetentionScheduler) |> Process.alive?()
     assert inspect(options()) == "#ClusterMurmur.Runtime.RecoveredRuntimeSupervisor.Options<...>"
   end
 
@@ -212,15 +249,19 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
 
     assert_recovery_loaded()
     assert_receive {:recurring_initialized, @started_at}
+    assert_receive {:stochastic_initialized, @started_at}
     recovered = supervisor_child(parent)
     original_children = Supervisor.which_children(recovered)
     poll = child_pid(original_children, PollScheduler)
     dispatch = child_pid(original_children, EventDispatchScheduler)
     recurring = child_pid(original_children, RecurringScheduleScheduler)
+    stochastic = child_pid(original_children, StochasticScheduler)
+    retention = child_pid(original_children, EventRetentionScheduler)
 
     Process.exit(dispatch, :kill)
     assert_recovery_loaded()
     assert_receive {:recurring_initialized, @started_at}
+    assert_receive {:stochastic_initialized, @started_at}
 
     replacement = supervisor_child(parent)
     refute replacement == recovered
@@ -228,12 +269,18 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
     replacement_poll = child_pid(replacement_children, PollScheduler)
     replacement_dispatch = child_pid(replacement_children, EventDispatchScheduler)
     replacement_recurring = child_pid(replacement_children, RecurringScheduleScheduler)
+    replacement_stochastic = child_pid(replacement_children, StochasticScheduler)
+    replacement_retention = child_pid(replacement_children, EventRetentionScheduler)
 
     refute replacement_poll == poll
     refute replacement_dispatch == dispatch
     refute replacement_recurring == recurring
+    refute replacement_stochastic == stochastic
+    refute replacement_retention == retention
     refute Process.alive?(poll)
     refute Process.alive?(recurring)
+    refute Process.alive?(stochastic)
+    refute Process.alive?(retention)
   end
 
   test "requires another startup pass after a saturated recovery page" do
@@ -296,6 +343,33 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
     end
   end
 
+  test "starts no scheduler when stochastic initialization is incomplete" do
+    malformed =
+      %StochasticScheduleInitializer.Result{schedule_count: 1}
+      |> Map.put(:private, true)
+
+    for response <- [
+          {:error, :invalid_stochastic_schedule_initialization},
+          {:ok, malformed},
+          {:ok, %StochasticScheduleInitializer.Result{schedule_count: 0}},
+          {:ok, :not_an_initialization_result}
+        ] do
+      Process.put({__MODULE__, :trace}, [])
+      Process.put({__MODULE__, :stochastic_initialization}, response)
+
+      assert RecoveredRuntimeSupervisor.start_link(options(), stores()) ==
+               {:error, :invalid_recovered_runtime_supervisor}
+
+      assert Process.get({__MODULE__, :trace}) == [
+               {:executions, @started_at},
+               {:conversations, @started_at},
+               {:publications, @started_at},
+               {:initialize_recurring, @started_at},
+               {:initialize_stochastic, @started_at, AdapterStub}
+             ]
+    end
+  end
+
   test "rejects all scheduler and recovery adapters before reading the clock" do
     valid = options()
     valid_stores = stores()
@@ -314,6 +388,11 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
            }
        }, valid_stores},
       {%{valid | recurring_schedule_initializer: String}, valid_stores},
+      {%{valid | stochastic_schedule_initializer: String}, valid_stores},
+      {%{valid | stochastic_scheduler: %{valid.stochastic_scheduler | interval_ms: 0}},
+       valid_stores},
+      {%{valid | event_retention_scheduler: %{valid.event_retention_scheduler | interval_ms: 0}},
+       valid_stores},
       {%{
          valid
          | recurring_schedule_scheduler: %{
@@ -329,6 +408,8 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
        }, valid_stores},
       {%{valid | clock: String}, valid_stores},
       {%{valid | clock: OtherClock}, valid_stores},
+      {%{valid | stochastic_scheduler: %{valid.stochastic_scheduler | clock: OtherClock}},
+       valid_stores},
       {Map.put(valid, :private, true), valid_stores},
       {valid, %{valid_stores | executions: String}},
       {valid, Map.put(valid_stores, :private, true)}
@@ -352,16 +433,15 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
       )
 
     schedule_trigger = recurring_trigger()
+    stochastic_trigger = stochastic_trigger()
 
     configuration = %{
       base_configuration
       | triggers: %Triggers{
           triggers:
-            Map.put(
-              base_configuration.triggers.triggers,
-              schedule_trigger.id,
-              schedule_trigger
-            )
+            base_configuration.triggers.triggers
+            |> Map.put(schedule_trigger.id, schedule_trigger)
+            |> Map.put(stochastic_trigger.id, stochastic_trigger)
         }
     }
 
@@ -403,7 +483,23 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
         interval_ms: 60_000,
         initial_delay_ms: 60_000
       },
-      recurring_schedule_initializer: Initializer
+      stochastic_scheduler: %StochasticOptions{
+        configuration: configuration,
+        cycle: StochasticCycle,
+        clock: FixedClock,
+        random: AdapterStub,
+        interval_ms: 60_000,
+        initial_delay_ms: 60_000
+      },
+      event_retention_scheduler: %RetentionOptions{
+        configuration: configuration,
+        cycle: EventRetentionCycle,
+        clock: FixedClock,
+        interval_ms: 60_000,
+        initial_delay_ms: 60_000
+      },
+      recurring_schedule_initializer: RecurringInitializer,
+      stochastic_schedule_initializer: StochasticInitializer
     }
   end
 
@@ -430,6 +526,23 @@ defmodule ClusterMurmur.Runtime.RecoveredRuntimeSupervisorTest do
         type: "schedule.fired",
         group: "operations",
         subject: "hourly"
+      }
+    }
+  end
+
+  defp stochastic_trigger do
+    %StochasticTrigger{
+      id: "ambient",
+      distribution: :shifted_exponential,
+      mean_interval_ms: 8_000,
+      minimum_interval_ms: 2_000,
+      active_hours: nil,
+      daily_limit: nil,
+      action: :emit_event,
+      event: %EmittedEvent{
+        type: "stochastic.fired",
+        group: "operations",
+        subject: "ambient"
       }
     }
   end
