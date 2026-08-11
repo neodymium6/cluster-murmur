@@ -43,6 +43,7 @@
           ./SECURITY.md
           ./VERSION
           ./docs
+          ./examples
           ./lib
           ./mix.exs
           ./mix.lock
@@ -387,7 +388,7 @@
                 actionlint .github/workflows/*.yml
                 markdownlint-cli2 \
                   AGENTS.md DESIGN.md README.md SECURITY.md \
-                  deploy/**/*.md docs/**/*.md
+                  deploy/**/*.md docs/**/*.md examples/**/*.md
                 touch "$out"
               '';
 
