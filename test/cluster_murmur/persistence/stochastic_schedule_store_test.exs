@@ -4,6 +4,7 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
   alias ClusterMurmur.Persistence.{
     StochasticSchedule,
     StochasticScheduleClaim,
+    StochasticScheduleRetirement,
     StochasticScheduleStore
   }
 
@@ -129,6 +130,102 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
     assert result == {:error, :storage_unavailable}
     refute inspect(result) =~ "private"
     refute inspect(result) =~ "2026"
+  end
+
+  test "retires only schedules absent from the bounded active set" do
+    for trigger_id <- ["active", "stale-a", "stale-b"] do
+      assert {:ok, _schedule} =
+               StochasticScheduleStore.restore_or_initialize(
+                 trigger_id,
+                 ~U[2026-08-04 14:00:00.000000Z]
+               )
+    end
+
+    assert StochasticScheduleStore.retire_unconfigured(["active"]) ==
+             {:ok, %StochasticScheduleRetirement{retired_count: 2, saturated?: false}}
+
+    assert Repo.all(StochasticSchedule) |> Enum.map(& &1.trigger_id) == ["active"]
+  end
+
+  test "retires stale claimed schedules while preserving configured live claims" do
+    for {trigger_id, next_run_at} <- [
+          {"active", ~U[2026-08-04 14:00:00.000000Z]},
+          {"stale-expired", ~U[2026-08-04 13:00:00.000000Z]},
+          {"stale-live", ~U[2026-08-04 14:00:00.000000Z]}
+        ] do
+      assert {:ok, _schedule} =
+               StochasticScheduleStore.restore_or_initialize(trigger_id, next_run_at)
+    end
+
+    active_claim =
+      claim_due!(
+        "active",
+        ~U[2026-08-04 14:00:00.000000Z],
+        ~U[2026-08-04 14:00:00.000000Z]
+      )
+
+    _expired_claim =
+      claim_due!(
+        "stale-expired",
+        ~U[2026-08-04 13:00:00.000000Z],
+        ~U[2026-08-04 13:00:00.000000Z]
+      )
+
+    _live_claim =
+      claim_due!(
+        "stale-live",
+        ~U[2026-08-04 14:00:00.000000Z],
+        ~U[2026-08-04 14:00:00.000000Z]
+      )
+
+    assert StochasticScheduleStore.retire_unconfigured(["active"]) ==
+             {:ok, %StochasticScheduleRetirement{retired_count: 2, saturated?: false}}
+
+    assert %StochasticSchedule{claim_token: token} = Repo.get!(StochasticSchedule, "active")
+    assert token == active_claim.token
+    assert Repo.get(StochasticSchedule, "stale-expired") == nil
+    assert Repo.get(StochasticSchedule, "stale-live") == nil
+  end
+
+  test "retires one deterministic page and reports remaining stale schedules" do
+    for number <- 0..100 do
+      assert {:ok, _schedule} =
+               StochasticScheduleStore.restore_or_initialize(
+                 "stale-#{String.pad_leading(Integer.to_string(number), 3, "0")}",
+                 ~U[2026-08-04 14:00:00.000000Z]
+               )
+    end
+
+    assert StochasticScheduleStore.retire_unconfigured([]) ==
+             {:ok, %StochasticScheduleRetirement{retired_count: 100, saturated?: true}}
+
+    assert Repo.all(StochasticSchedule) |> Enum.map(& &1.trigger_id) == ["stale-100"]
+
+    assert StochasticScheduleStore.retire_unconfigured([]) ==
+             {:ok, %StochasticScheduleRetirement{retired_count: 1, saturated?: false}}
+  end
+
+  test "rejects malformed retirement allowlists before touching storage" do
+    Repo.put_dynamic_repo(:missing_stochastic_schedule_repo)
+
+    for active_ids <- [
+          :private,
+          ["invalid id"],
+          ["duplicate", "duplicate"],
+          ["valid" | :improper],
+          Enum.map(0..256, &"trigger-#{&1}")
+        ] do
+      assert StochasticScheduleStore.retire_unconfigured(active_ids) ==
+               {:error, :invalid_schedule}
+    end
+  end
+
+  test "classifies unavailable retirement storage without exposing trigger IDs" do
+    Repo.put_dynamic_repo(:missing_stochastic_schedule_repo)
+
+    result = StochasticScheduleStore.retire_unconfigured(["private-trigger"])
+    assert result == {:error, :storage_unavailable}
+    refute inspect(result) =~ "private"
   end
 
   test "lists due schedules in deterministic order without returning future rows" do
