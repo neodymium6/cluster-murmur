@@ -10,46 +10,23 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
 
   alias ClusterMurmur.Config.Configuration
   alias ClusterMurmur.DateTimeValidator
-  alias ClusterMurmur.Events.{Event, Validator}
 
-  alias ClusterMurmur.Persistence.{
-    EventDispatch,
-    EventDispatchCandidate,
-    EventDispatchClaim,
-    EventDispatchStore,
-    EventStore
+  alias ClusterMurmur.Persistence.{EventDispatchStore, EventStore}
+
+  alias ClusterMurmur.Runtime.{
+    EventDispatchBatchLoader,
+    EventDispatchConsumerContext,
+    EventDispatchExecutor,
+    PersonaCooldownSnapshot
   }
 
-  alias ClusterMurmur.Runtime.{PersonaCooldownSnapshot, ResponderTurnSchedule}
-
   alias ClusterMurmur.Triggers.{
-    AuthorizedConversationPipeline,
-    AuthorizedConversationPipelineConsumer,
     AuthorizedStarterPipeline,
-    AuthorizedStarterPipelineConsumer,
-    EventConversationIdentity,
     EventDispatchPlanner,
     EventTriggerAuthorizer
   }
 
-  alias ClusterMurmur.Triggers.AuthorizedConversationPipeline.Input, as: ConversationInput
-
-  alias ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer.Context,
-    as: ConversationConsumerContext
-
-  alias ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer.Entry,
-    as: ConversationConsumerEntry
-
-  alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.{Input, SharedInput}
-
-  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.Context,
-    as: StarterConsumerContext
-
-  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.Entry,
-    as: StarterConsumerEntry
-
   alias ClusterMurmur.Triggers.EventDispatchPlanner.Plan
-  alias ClusterMurmur.Triggers.EventTriggerAuthorizer.Authorization
 
   defmodule ConversationRuntime do
     @moduledoc false
@@ -148,28 +125,8 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
 
   @max_candidates 100
   @max_matches 256
-  @claim_lease_seconds 60
-  @claim_token_bytes 32
-  @validation_at ~U[2026-01-01 00:00:00.000000Z]
-  @terminal_skip_reasons [:already_terminal, :cooldown, :dedupe_window]
-  @nonterminal_skip_reasons [:execution_in_progress]
-  @failure_reasons [
-    :authorization_failed,
-    :event_conflict,
-    :event_not_found,
-    :invalid_execution,
-    :storage_unavailable
-  ]
-  @candidate_keys EventDispatchCandidate.__struct__() |> Map.keys()
-  @candidate_key_count length(@candidate_keys)
-  @claim_keys EventDispatchClaim.__struct__() |> Map.keys()
-  @claim_key_count length(@claim_keys)
-  @dispatch_keys EventDispatch.__struct__() |> Map.keys()
-  @dispatch_key_count length(@dispatch_keys)
   @context_keys Context.__struct__() |> Map.keys()
   @context_key_count length(@context_keys)
-  @conversation_runtime_keys ConversationRuntime.__struct__() |> Map.keys()
-  @conversation_runtime_key_count length(@conversation_runtime_keys)
   @adapter_keys Adapters.__struct__() |> Map.keys()
   @adapter_key_count length(@adapter_keys)
   @result_keys Result.__struct__() |> Map.keys()
@@ -204,7 +161,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
              context.adapters
            ),
          :ok <- validate_cooldown_store(context.adapters.cooldown_store),
-         :ok <- validate_conversation_runtime(context) do
+         :ok <- EventDispatchConsumerContext.validate_conversation_runtime(context) do
       :ok
     else
       _failure -> {:error, :invalid_event_dispatch_cycle}
@@ -241,15 +198,15 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
          {:ok, cooldowns} <-
            PersonaCooldownSnapshot.load(configuration, context.adapters.cooldown_store),
          context <- with_cooldowns(context, cooldowns),
-         {:ok, candidates} <- list_candidates(adapters.dispatches, now),
-         {:ok, events} <- load_events(candidates, adapters.events, now, nil, [], 0),
+         {:ok, candidates, events} <-
+           EventDispatchBatchLoader.load(adapters.dispatches, adapters.events, now),
          {:ok, %Plan{} = plan} <- plan(candidates, events, configuration, now),
-         {:ok, consumer, consumer_context} <- build_consumer_context(plan, context, now),
-         :ok <- preflight_consumer(consumer, plan, configuration, consumer_context),
+         {:ok, consumer, consumer_context} <-
+           EventDispatchConsumerContext.prepare(plan, configuration, context, now),
          result <-
-           execute(
+           EventDispatchExecutor.execute(
              plan,
-             configuration.event_policy,
+             configuration,
              now,
              consumer,
              consumer_context,
@@ -349,88 +306,6 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
       Enum.all?(functions, fn {name, arity} -> function_exported?(module, name, arity) end)
   end
 
-  defp list_candidates(dispatches, now) do
-    case dispatches.list_available(now) do
-      {:ok, candidates} when is_list(candidates) ->
-        {:ok, candidates}
-
-      {:error, reason} when reason in [:invalid_dispatch, :storage_unavailable] ->
-        {:error, :event_dispatch_failed}
-
-      _failure ->
-        {:error, :invalid_event_dispatch_cycle}
-    end
-  rescue
-    _error -> {:error, :event_dispatch_failed}
-  catch
-    _kind, _reason -> {:error, :event_dispatch_failed}
-  end
-
-  defp load_events([], _events, _now, _previous, loaded, _count),
-    do: {:ok, Enum.reverse(loaded)}
-
-  defp load_events(
-         [%EventDispatchCandidate{} = candidate | candidates],
-         events,
-         now,
-         previous,
-         loaded,
-         count
-       )
-       when count < @max_candidates do
-    with :ok <- validate_candidate(candidate, now, previous),
-         {:ok, %Event{} = event} <- fetch_event(events, candidate.event_id),
-         true <- event.id == candidate.event_id do
-      load_events(candidates, events, now, candidate, [event | loaded], count + 1)
-    else
-      {:error, :event_dispatch_failed} = error -> error
-      _failure -> {:error, :invalid_event_dispatch_cycle}
-    end
-  end
-
-  defp load_events(_candidates, _events, _now, _previous, _loaded, _count),
-    do: {:error, :invalid_event_dispatch_cycle}
-
-  defp fetch_event(events, event_id) do
-    case events.fetch(event_id) do
-      {:ok, %Event{} = event} ->
-        {:ok, event}
-
-      {:error, reason}
-      when reason in [:event_not_found, :invalid_event_record, :storage_unavailable] ->
-        {:error, :event_dispatch_failed}
-
-      _failure ->
-        {:error, :invalid_event_dispatch_cycle}
-    end
-  rescue
-    _error -> {:error, :event_dispatch_failed}
-  catch
-    _kind, _reason -> {:error, :event_dispatch_failed}
-  end
-
-  defp validate_candidate(candidate, now, previous) do
-    with true <- exact_candidate?(candidate),
-         :ok <- Validator.validate_id(candidate.event_id),
-         :ok <- DateTimeValidator.validate_storage_utc(candidate.enqueued_at),
-         true <- DateTime.compare(candidate.enqueued_at, now) in [:lt, :eq],
-         true <- after_previous?(candidate, previous) do
-      :ok
-    else
-      _failure -> {:error, :invalid_event_dispatch_cycle}
-    end
-  end
-
-  defp after_previous?(_candidate, nil), do: true
-
-  defp after_previous?(candidate, previous) do
-    case DateTime.compare(candidate.enqueued_at, previous.enqueued_at) do
-      :gt -> true
-      :eq -> candidate.event_id > previous.event_id
-      :lt -> false
-    end
-  end
-
   defp plan(candidates, events, configuration, now) do
     case EventDispatchPlanner.plan(candidates, events, configuration, now) do
       {:ok, %Plan{} = plan} -> {:ok, plan}
@@ -438,381 +313,9 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
     end
   end
 
-  defp build_consumer_context(plan, context, now) do
-    with {:ok, inputs} <- build_inputs(plan.entries, context.shared_input, now) do
-      case context.conversation_runtime do
-        nil -> build_starter_context(plan, inputs, context.adapters, now)
-        %ConversationRuntime{} = runtime -> build_conversation_context(plan, inputs, runtime, now)
-        _invalid -> {:error, :invalid_event_dispatch_cycle}
-      end
-    end
-  end
-
-  defp build_inputs(entries, shared, now) do
-    entries
-    |> expected_matches()
-    |> Enum.reduce_while({:ok, []}, fn {event, trigger}, {:ok, inputs} ->
-      case EventConversationIdentity.derive(event, trigger, now) do
-        {:ok, conversation_id} ->
-          {:cont, {:ok, [build_input(shared, conversation_id, now) | inputs]}}
-
-        _failure ->
-          {:halt, {:error, :invalid_event_dispatch_cycle}}
-      end
-    end)
-    |> case do
-      {:ok, inputs} -> {:ok, Enum.reverse(inputs)}
-      error -> error
-    end
-  end
-
-  defp build_starter_context(plan, inputs, adapters, now) do
-    matches = expected_matches(plan.entries)
-
-    if length(inputs) == length(matches) do
-      entries =
-        Enum.zip_with(inputs, matches, fn input, {event, trigger} ->
-          %StarterConsumerEntry{input: input, event: event, trigger: trigger, executed_at: now}
-        end)
-
-      {:ok, AuthorizedStarterPipelineConsumer,
-       %StarterConsumerContext{entries: entries, adapters: adapters}}
-    else
-      {:error, :invalid_event_dispatch_cycle}
-    end
-  end
-
-  defp build_conversation_context(plan, inputs, runtime, now) do
-    with {:ok, turns} <- ResponderTurnSchedule.project(runtime.schedule, now),
-         matches <- expected_matches(plan.entries),
-         true <- length(inputs) == length(matches) do
-      entries =
-        Enum.zip_with(inputs, matches, fn starter, {event, trigger} ->
-          %ConversationConsumerEntry{
-            input: %ConversationInput{starter: starter, responder_turns: turns},
-            event: event,
-            trigger: trigger,
-            executed_at: now
-          }
-        end)
-
-      {:ok, AuthorizedConversationPipelineConsumer,
-       %ConversationConsumerContext{entries: entries, adapters: runtime.adapters}}
-    else
-      _failure -> {:error, :invalid_event_dispatch_cycle}
-    end
-  end
-
-  defp expected_matches(entries) do
-    Enum.flat_map(entries, fn entry ->
-      Enum.map(entry.triggers, fn trigger -> {entry.event, trigger} end)
-    end)
-  end
-
-  defp build_input(%SharedInput{} = shared, conversation_id, now) do
-    %Input{
-      authorization: nil,
-      configuration: shared.configuration,
-      cooldowns: shared.cooldowns,
-      conversation_id: conversation_id,
-      provider_settings: shared.provider_settings,
-      webhook_settings: shared.webhook_settings,
-      generated_at: now,
-      publication_started_at: now,
-      publication_completed_at: now,
-      generation_transport: shared.generation_transport,
-      publication_transport: shared.publication_transport
-    }
-  end
-
-  defp preflight_consumer(consumer, plan, configuration, context) do
-    case consumer.preflight(plan, configuration, context) do
-      :ok -> :ok
-      _failure -> {:error, :invalid_event_dispatch_cycle}
-    end
-  rescue
-    _error -> {:error, :invalid_event_dispatch_cycle}
-  catch
-    _kind, _reason -> {:error, :invalid_event_dispatch_cycle}
-  end
-
-  defp execute(plan, event_policy, now, consumer, consumer_context, adapters) do
-    initial = %Result{
-      candidate_count: plan.candidate_count,
-      claimed_count: 0,
-      completed_count: 0,
-      candidate_failure_count: 0,
-      planned_match_count: plan.match_count,
-      attempted_match_count: 0,
-      dispatched_count: 0,
-      skipped_count: 0,
-      dispatch_failure_count: 0,
-      dedupe_suppressed_count: 0
-    }
-
-    {result, _next_index} =
-      Enum.reduce(plan.entries, {initial, 0}, fn entry, {result, match_index} ->
-        execute_entry(
-          entry,
-          match_index,
-          result,
-          event_policy,
-          now,
-          consumer,
-          consumer_context,
-          adapters
-        )
-      end)
-
-    result
-  end
-
-  defp execute_entry(
-         entry,
-         match_index,
-         result,
-         event_policy,
-         now,
-         consumer,
-         consumer_context,
-         adapters
-       ) do
-    next_index = match_index + length(entry.triggers)
-
-    case claim(adapters.dispatches, entry.candidate, now) do
-      {:ok, claim} ->
-        {result, terminal?} =
-          dispatch_matches(
-            entry,
-            match_index,
-            %{result | claimed_count: result.claimed_count + 1},
-            event_policy,
-            now,
-            consumer,
-            consumer_context,
-            adapters.authorizer
-          )
-
-        result =
-          if terminal? and complete(adapters.dispatches, claim, now) == :ok do
-            %{result | completed_count: result.completed_count + 1}
-          else
-            %{result | candidate_failure_count: result.candidate_failure_count + 1}
-          end
-
-        {result, next_index}
-
-      :error ->
-        {%{result | candidate_failure_count: result.candidate_failure_count + 1}, next_index}
-    end
-  end
-
-  defp dispatch_matches(
-         entry,
-         match_index,
-         result,
-         event_policy,
-         now,
-         consumer,
-         context,
-         authorizer
-       ) do
-    entry.triggers
-    |> Enum.with_index(match_index)
-    |> Enum.reduce({result, true}, fn {trigger, index}, {result, terminal?} ->
-      case authorize_and_consume(
-             authorizer,
-             consumer,
-             context,
-             entry.event,
-             trigger,
-             event_policy,
-             now,
-             index
-           ) do
-        :dispatched ->
-          {%{
-             result
-             | attempted_match_count: result.attempted_match_count + 1,
-               dispatched_count: result.dispatched_count + 1
-           }, terminal?}
-
-        {:skipped, reason} ->
-          {%{
-             result
-             | attempted_match_count: result.attempted_match_count + 1,
-               skipped_count: result.skipped_count + 1,
-               dedupe_suppressed_count:
-                 result.dedupe_suppressed_count + if(reason == :dedupe_window, do: 1, else: 0)
-           }, terminal?}
-
-        :failed ->
-          {%{
-             result
-             | attempted_match_count: result.attempted_match_count + 1,
-               dispatch_failure_count: result.dispatch_failure_count + 1
-           }, false}
-      end
-    end)
-  end
-
-  defp authorize_and_consume(
-         authorizer,
-         consumer,
-         context,
-         event,
-         trigger,
-         event_policy,
-         now,
-         index
-       ) do
-    case authorizer.authorize(trigger, event, now, event_policy) do
-      {:ok, %Authorization{} = authorization} ->
-        if valid_authorization?(authorization, event, trigger, event_policy, now),
-          do: consume(consumer, authorization, index, context),
-          else: :failed
-
-      {:skip, reason} when reason in @terminal_skip_reasons ->
-        {:skipped, reason}
-
-      {:skip, reason} when reason in @nonterminal_skip_reasons ->
-        :failed
-
-      {:error, reason} when reason in @failure_reasons ->
-        :failed
-
-      _failure ->
-        :failed
-    end
-  rescue
-    _error -> :failed
-  catch
-    _kind, _reason -> :failed
-  end
-
-  defp consume(consumer, authorization, index, context) do
-    case consumer.consume(authorization, index, context) do
-      :ok -> :dispatched
-      _failure -> :failed
-    end
-  rescue
-    _error -> :failed
-  catch
-    _kind, _reason -> :failed
-  end
-
-  defp valid_authorization?(authorization, event, trigger, event_policy, now) do
-    EventTriggerAuthorizer.validate(authorization) == :ok and
-      authorization.plan.event === event and authorization.plan.trigger === trigger and
-      authorization.plan.event_policy === event_policy and
-      authorization.plan.executed_at === now
-  end
-
-  defp claim(dispatches, candidate, now) do
-    case dispatches.claim(candidate, now) do
-      {:ok, %EventDispatchClaim{} = claim} ->
-        if valid_claim?(claim, candidate, now), do: {:ok, claim}, else: :error
-
-      _failure ->
-        :error
-    end
-  rescue
-    _error -> :error
-  catch
-    _kind, _reason -> :error
-  end
-
-  defp valid_claim?(claim, candidate, now) do
-    map_size(claim) == @claim_key_count and Enum.all?(@claim_keys, &Map.has_key?(claim, &1)) and
-      claim.event_id == candidate.event_id and
-      same_datetime?(claim.enqueued_at, candidate.enqueued_at) and valid_token?(claim.token) and
-      same_datetime?(claim.started_at, now) and
-      DateTimeValidator.validate_storage_utc(claim.expires_at) == :ok and
-      same_datetime?(claim.expires_at, DateTime.add(now, @claim_lease_seconds, :second))
-  rescue
-    _error -> false
-  catch
-    _kind, _reason -> false
-  end
-
-  defp valid_token?(token) when is_binary(token) do
-    case Base.url_decode64(token, padding: false) do
-      {:ok, decoded} -> byte_size(decoded) == @claim_token_bytes
-      :error -> false
-    end
-  end
-
-  defp valid_token?(_token), do: false
-
-  defp complete(dispatches, claim, now) do
-    case dispatches.complete(claim, now) do
-      {:ok, %EventDispatch{} = dispatch} ->
-        if completed_dispatch?(dispatch, claim, now), do: :ok, else: :error
-
-      _failure ->
-        :error
-    end
-  rescue
-    _error -> :error
-  catch
-    _kind, _reason -> :error
-  end
-
-  defp completed_dispatch?(dispatch, claim, now) do
-    map_size(dispatch) == @dispatch_key_count and
-      Enum.all?(@dispatch_keys, &Map.has_key?(dispatch, &1)) and
-      dispatch.event_id == claim.event_id and
-      same_datetime?(dispatch.enqueued_at, claim.enqueued_at) and
-      dispatch.status == :completed and dispatch.claim_token == nil and
-      dispatch.claim_started_at == nil and dispatch.claim_expires_at == nil and
-      same_datetime?(dispatch.completed_at, now)
-  end
-
-  defp same_datetime?(%DateTime{} = left, %DateTime{} = right),
-    do: DateTime.compare(left, right) == :eq
-
-  defp same_datetime?(_left, _right), do: false
-
-  defp validate_conversation_runtime(%Context{conversation_runtime: nil}), do: :ok
-
-  defp validate_conversation_runtime(%Context{
-         adapters: starter_adapters,
-         shared_input: shared,
-         conversation_runtime: %ConversationRuntime{} = runtime
-       }) do
-    with true <- exact_conversation_runtime?(runtime),
-         true <- runtime.adapters.starter === starter_adapters,
-         {:ok, turns} <- ResponderTurnSchedule.project(runtime.schedule, @validation_at),
-         starter = build_input(shared, "conversation-validation", @validation_at),
-         input = %ConversationInput{starter: starter, responder_turns: turns},
-         :ok <-
-           AuthorizedConversationPipeline.validate_shared_runtime(
-             input,
-             runtime.adapters,
-             @validation_at
-           ) do
-      :ok
-    else
-      _failure -> {:error, :invalid_event_dispatch_cycle}
-    end
-  end
-
-  defp validate_conversation_runtime(_context),
-    do: {:error, :invalid_event_dispatch_cycle}
-
-  defp exact_candidate?(candidate) do
-    map_size(candidate) == @candidate_key_count and
-      Enum.all?(@candidate_keys, &Map.has_key?(candidate, &1))
-  end
-
   defp exact_context?(context) do
     map_size(context) == @context_key_count and
       Enum.all?(@context_keys, &Map.has_key?(context, &1))
-  end
-
-  defp exact_conversation_runtime?(runtime) do
-    map_size(runtime) == @conversation_runtime_key_count and
-      Enum.all?(@conversation_runtime_keys, &Map.has_key?(runtime, &1))
   end
 
   defp exact_adapters?(adapters) do
