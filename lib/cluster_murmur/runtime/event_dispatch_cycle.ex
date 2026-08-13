@@ -206,12 +206,11 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
          result <-
            EventDispatchExecutor.execute(
              plan,
-             configuration.event_policy,
+             configuration,
              now,
              consumer,
              consumer_context,
-             adapters.dispatches,
-             adapters.authorizer
+             adapters
            ),
          :ok <- validate_result(result) do
       {:ok, result}

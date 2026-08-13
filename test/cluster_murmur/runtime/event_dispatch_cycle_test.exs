@@ -10,6 +10,7 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
 
   alias ClusterMurmur.Runtime.EventDispatchCycle
   alias ClusterMurmur.Runtime.EventDispatchCycle.{Adapters, Context, ConversationRuntime, Result}
+  alias ClusterMurmur.Runtime.EventDispatchExecutor
   alias ClusterMurmur.Runtime.ResponderTurnCycle.Adapters, as: ResponderAdapters
   alias ClusterMurmur.Runtime.ResponderTurnSchedule
   alias ClusterMurmur.Runtime.ResponderTurnSchedule.Step
@@ -32,6 +33,8 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
 
   alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.Context,
     as: StarterConsumerContext
+
+  alias ClusterMurmur.Triggers.EventDispatchPlanner.Plan
 
   @now ~U[2026-08-08 17:00:00.000000Z]
 
@@ -532,6 +535,40 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycleTest do
       assert EventDispatchCycle.validate_result(invalid) ==
                {:error, :invalid_event_dispatch_cycle}
     end
+  end
+
+  test "rejects direct execution without an exact bounded plan or fixed consumer" do
+    configuration = RuntimeFixture.configuration()
+
+    plan = %Plan{
+      executed_at: @now,
+      candidate_count: 0,
+      matched_event_count: 0,
+      match_count: 0,
+      entries: []
+    }
+
+    consumer_context = %StarterConsumerContext{entries: [], adapters: pipeline_adapters()}
+
+    assert EventDispatchExecutor.execute(
+             Map.put(plan, :private, true),
+             configuration,
+             @now,
+             StarterConsumer,
+             consumer_context,
+             adapters()
+           ) == {:error, :invalid_event_dispatch_cycle}
+
+    assert EventDispatchExecutor.execute(
+             plan,
+             configuration,
+             @now,
+             __MODULE__,
+             consumer_context,
+             adapters()
+           ) == {:error, :invalid_event_dispatch_cycle}
+
+    assert Process.get({__MODULE__, :trace}) == []
   end
 
   defp put_batch(events) do

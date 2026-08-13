@@ -1,11 +1,24 @@
 defmodule ClusterMurmur.Runtime.EventDispatchExecutor do
   @moduledoc false
 
-  alias ClusterMurmur.Config.EventPolicy
+  alias ClusterMurmur.Config.Configuration
   alias ClusterMurmur.DateTimeValidator
   alias ClusterMurmur.Persistence.{EventDispatch, EventDispatchClaim}
-  alias ClusterMurmur.Runtime.EventDispatchCycle.Result
-  alias ClusterMurmur.Triggers.EventTriggerAuthorizer
+  alias ClusterMurmur.Runtime.EventDispatchCycle.{Adapters, Result}
+
+  alias ClusterMurmur.Triggers.{
+    AuthorizedConversationPipelineConsumer,
+    AuthorizedStarterPipelineConsumer,
+    EventDispatchPlanner,
+    EventTriggerAuthorizer
+  }
+
+  alias ClusterMurmur.Triggers.AuthorizedConversationPipelineConsumer.Context,
+    as: ConversationContext
+
+  alias ClusterMurmur.Triggers.AuthorizedStarterPipelineConsumer.Context,
+    as: StarterContext
+
   alias ClusterMurmur.Triggers.EventDispatchPlanner.Plan
   alias ClusterMurmur.Triggers.EventTriggerAuthorizer.Authorization
 
@@ -24,20 +37,57 @@ defmodule ClusterMurmur.Runtime.EventDispatchExecutor do
   @claim_key_count length(@claim_keys)
   @dispatch_keys EventDispatch.__struct__() |> Map.keys()
   @dispatch_key_count length(@dispatch_keys)
+  @adapter_keys Adapters.__struct__() |> Map.keys()
+  @adapter_key_count length(@adapter_keys)
 
-  @spec execute(Plan.t(), EventPolicy.t(), DateTime.t(), module(), struct(), module(), module()) ::
+  @spec execute(Plan.t(), Configuration.t(), DateTime.t(), module(), struct(), Adapters.t()) ::
           Result.t() | {:error, :invalid_event_dispatch_cycle}
   def execute(
         %Plan{} = plan,
-        %EventPolicy{} = event_policy,
+        %Configuration{} = configuration,
         %DateTime{} = now,
         consumer,
         consumer_context,
-        dispatches,
-        authorizer
+        %Adapters{} = adapters
       )
-      when is_atom(consumer) and is_struct(consumer_context) and is_atom(dispatches) and
-             is_atom(authorizer) do
+      when consumer in [
+             AuthorizedStarterPipelineConsumer,
+             AuthorizedConversationPipelineConsumer
+           ] do
+    with :ok <- validate_execution(plan, configuration, now, consumer, consumer_context, adapters) do
+      execute_validated(
+        plan,
+        configuration.event_policy,
+        now,
+        consumer,
+        consumer_context,
+        adapters
+      )
+    end
+  rescue
+    _error -> {:error, :invalid_event_dispatch_cycle}
+  catch
+    _kind, _reason -> {:error, :invalid_event_dispatch_cycle}
+  end
+
+  def execute(_plan, _configuration, _now, _consumer, _consumer_context, _adapters),
+    do: {:error, :invalid_event_dispatch_cycle}
+
+  defp validate_execution(plan, configuration, now, consumer, consumer_context, adapters) do
+    with true <- plan.executed_at === now,
+         :ok <- EventDispatchPlanner.validate(plan, configuration),
+         true <- exact_adapters?(adapters),
+         true <- valid_module?(adapters.dispatches, claim: 2, complete: 2),
+         true <- valid_module?(adapters.authorizer, authorize: 4),
+         true <- correlated_consumer_context?(consumer, consumer_context),
+         :ok <- consumer.preflight(plan, configuration, consumer_context) do
+      :ok
+    else
+      _failure -> {:error, :invalid_event_dispatch_cycle}
+    end
+  end
+
+  defp execute_validated(plan, event_policy, now, consumer, consumer_context, adapters) do
     initial = %Result{
       candidate_count: plan.candidate_count,
       claimed_count: 0,
@@ -61,24 +111,13 @@ defmodule ClusterMurmur.Runtime.EventDispatchExecutor do
           now,
           consumer,
           consumer_context,
-          dispatches,
-          authorizer
+          adapters.dispatches,
+          adapters.authorizer
         )
       end)
 
     result
   end
-
-  def execute(
-        _plan,
-        _event_policy,
-        _now,
-        _consumer,
-        _consumer_context,
-        _dispatches,
-        _authorizer
-      ),
-      do: {:error, :invalid_event_dispatch_cycle}
 
   defp execute_entry(
          entry,
@@ -286,4 +325,25 @@ defmodule ClusterMurmur.Runtime.EventDispatchExecutor do
     do: DateTime.compare(left, right) == :eq
 
   defp same_datetime?(_left, _right), do: false
+
+  defp correlated_consumer_context?(AuthorizedStarterPipelineConsumer, %StarterContext{}),
+    do: true
+
+  defp correlated_consumer_context?(
+         AuthorizedConversationPipelineConsumer,
+         %ConversationContext{}
+       ),
+       do: true
+
+  defp correlated_consumer_context?(_consumer, _context), do: false
+
+  defp valid_module?(module, functions) do
+    is_atom(module) and Code.ensure_loaded?(module) and
+      Enum.all?(functions, fn {name, arity} -> function_exported?(module, name, arity) end)
+  end
+
+  defp exact_adapters?(adapters) do
+    map_size(adapters) == @adapter_key_count and
+      Enum.all?(@adapter_keys, &Map.has_key?(adapters, &1))
+  end
 end
