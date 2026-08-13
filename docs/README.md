@@ -1,41 +1,49 @@
 # Documentation
 
 Start with the root [README](../README.md) for the project summary and local
-development commands. Use the documents below for details.
+development commands. This index separates current guidance from historical
+evidence so readers do not need to infer which document is authoritative.
 
-## By task
+## Choose a path
 
-- Review the historical `v0.1.0-alpha.1` scope and known limitations:
-  [public-alpha.md](public-alpha.md).
-- Write or validate public configuration:
-  [configuration.md](configuration.md).
-- Build artifacts, prepare SQLite, or review runtime controls:
-  [deployment.md](deployment.md).
-- Adapt the non-deployable hardened Kubernetes base:
-  [deploy/kubernetes](../deploy/kubernetes/README.md).
-- Publish or verify a digest-pinned tagged image, SBOM, and provenance:
-  [deployment.md](deployment.md#published-release-artifacts).
-- Run the isolated observer-to-publication example:
-  [examples/isolated-end-to-end](../examples/isolated-end-to-end/README.md).
-- Understand architecture and component ownership: [DESIGN.md](../DESIGN.md).
+### Evaluate or configure Cluster Murmur
+
+- Understand architecture and component ownership: [system design](../DESIGN.md).
+- Write or validate public configuration: [configuration reference](configuration.md).
 - Check exact runtime invariants and acceptance criteria:
-  [mvp-contract.md](mvp-contract.md).
-- Review trust boundaries, sensitive data handling, and vulnerability reporting:
-  [SECURITY.md](../SECURITY.md).
-- Understand retained Dialyzer filters:
-  [dialyzer-boundaries.md](dialyzer-boundaries.md).
-- Review prepared and shipped changes: [CHANGELOG.md](../CHANGELOG.md), the
-  prepared [v0.2.0-alpha.4 release notes](release-notes-v0.2.0-alpha.4.md), the
-  superseded [v0.2.0-alpha.3 release notes](release-notes-v0.2.0-alpha.3.md),
-  [v0.2.0-alpha.2 release notes](release-notes-v0.2.0-alpha.2.md), and
-  [v0.2.0-alpha.1 release notes](release-notes-v0.2.0-alpha.1.md), plus
-  the historical
-  [v0.1.0-alpha.1 release notes](release-notes-v0.1.0-alpha.1.md).
+  [MVP runtime contract](mvp-contract.md).
+- Run the isolated observer-to-publication example:
+  [isolated end-to-end example](../examples/isolated-end-to-end/README.md).
 
-## Document roles
+### Build, operate, or release it
 
-The configuration reference and MVP contract are deliberately comprehensive
-normative references. `DESIGN.md` explains the overall target architecture,
-including work beyond the public alpha. `docs/adr/` records individual material
-decisions and their context. Release notes summarize one published revision and
-must not replace the normative documents.
+- Build artifacts, prepare SQLite, and review runtime controls:
+  [deployment and artifact guide](deployment.md).
+- Adapt the non-deployable hardened Kubernetes base:
+  [Kubernetes example](../deploy/kubernetes/README.md).
+- Publish or verify a digest-pinned image, SBOM, and provenance:
+  [published release artifacts](deployment.md#published-release-artifacts).
+- Review trust boundaries and report vulnerabilities:
+  [security policy](../SECURITY.md).
+- Understand retained static-analysis exceptions:
+  [Dialyzer boundaries](dialyzer-boundaries.md).
+
+### Investigate history
+
+- Review shipped changes: [changelog](../CHANGELOG.md).
+- Browse tagged boundaries and release evidence in the
+  [project history](history/README.md).
+- Find the reason behind a material design choice in the
+  [categorized ADR index](adr/README.md).
+
+## Authority and document roles
+
+The configuration reference defines accepted deployment input. The MVP runtime
+contract defines testable behavior. The deployment guide defines the supported
+artifact and operational procedure. These current normative references take
+precedence over historical release notes and amended ADRs.
+
+The system design explains how current components fit together. ADRs preserve
+why material decisions were made. Release notes and the public alpha boundary
+describe particular tagged revisions and must not be treated as current
+configuration or operational guidance.
