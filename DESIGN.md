@@ -305,22 +305,26 @@ variables that point to mounted secret files.
 
 ```text
 ClusterMurmur.Supervisor
+|-- HealthServer
+|-- ReadyMarker
 |-- ClusterMurmur.Repo
-|-- ClusterMurmur.Config.Registry
-|-- ClusterMurmur.Personas.Registry
-|-- ClusterMurmur.Events.Bus
-|-- ClusterMurmur.Events.StateTracker
-|-- ClusterMurmur.Observations.Supervisor
-|-- ClusterMurmur.Triggers.Supervisor
-|-- ClusterMurmur.Conversations.Registry
-|-- ClusterMurmur.Conversations.Supervisor
-|-- ClusterMurmur.Generation.RateLimiter
-`-- ClusterMurmur.Discord.Publisher
+`-- RecoveredRuntimeSupervisor
+    |-- PollScheduler
+    |-- EventDispatchScheduler
+    |-- RecurringScheduleScheduler
+    |-- StochasticScheduler
+    |-- EventRetentionScheduler
+    `-- ReadinessLease
 ```
 
-The default strategy is `:one_for_one`. Conversations run below a
-`DynamicSupervisor`, start on demand, and terminate after reaching a terminal
-state. Personas remain configuration data.
+The root uses `:rest_for_one` so repository replacement also replaces every
+dependent runtime worker. The recovered runtime runs recovery and schedule
+initialization before starting any of its five significant schedulers. If one
+scheduler terminates, the shared supervisor closes and its parent reruns all
+startup gates before replacement. Readiness is leased only after those workers
+start; liveness remains available around repository and runtime replacement.
+Personas and conversations remain validated data and durable lifecycle records,
+not dynamically selected supervision modules.
 
 ## Future question boundary
 
@@ -367,19 +371,11 @@ baseline entries; every retained exact filter is classified in
 complexity policy and standalone schema/example fixtures remain later
 incremental gates.
 
-## Implementation phases
+## Evolution and history
 
-1. Foundation: Mix project, configuration, schema, Ecto/SQLite, behaviours, and
-   core domain models.
-2. Observations and events: MCP adapter, pollers, state tracker, extractor,
-   event store, and dedupe.
-3. Triggers: matcher, event groups, cron, shifted exponential schedules, and
-   persisted cooldowns.
-4. Conversations: weighted persona selection, dynamic processes, budgets, and
-   deterministic templates.
-5. LLM and Discord: provider, prompts, output validation, fallback, and webhook
-   publication.
-6. Productionization: OCI image, hardening, metrics, structured logging,
-   retention, CI, and release process.
-7. Mention extension: Gateway consumer, persona resolution, question
-   coordinator, tool policy, and bounded tool-call loop.
+The standalone alpha implements the architecture described above. The
+[changelog](CHANGELOG.md) and [release history](docs/history/README.md) record
+shipped increments. The [ADR index](docs/adr/README.md) groups the material
+decisions that produced the current design. Potential post-MVP extensions are
+explicitly non-normative until a reviewed contract and ADR define their bounded
+behavior.

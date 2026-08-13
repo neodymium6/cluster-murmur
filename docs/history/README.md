@@ -1,0 +1,26 @@
+# Project history
+
+These documents describe particular tagged revisions. They are retained as
+release evidence and do not replace the current configuration, runtime
+contract, or deployment guidance.
+
+## Released standalone alpha
+
+- [`v0.2.0-alpha.4`](../release-notes-v0.2.0-alpha.4.md) is the published
+  standalone alpha.
+- [`v0.2.0-alpha.3`](../release-notes-v0.2.0-alpha.3.md) was superseded after an
+  OCI referrer-tag collision prevented attestations.
+- [`v0.2.0-alpha.2`](../release-notes-v0.2.0-alpha.2.md) was superseded after a
+  registry request limit interrupted publication.
+- [`v0.2.0-alpha.1`](../release-notes-v0.2.0-alpha.1.md) was superseded after a
+  runner registry configuration affected the first tagged build.
+
+## Historical engine alpha
+
+- [`v0.1.0-alpha.1` release notes](../release-notes-v0.1.0-alpha.1.md) summarize
+  the composable engine release.
+- [The `v0.1.0-alpha.1` public boundary](../public-alpha.md) records its exact
+  capabilities, exclusions, and completion evidence.
+
+The root [changelog](../../CHANGELOG.md) is the chronological summary across
+all versions.

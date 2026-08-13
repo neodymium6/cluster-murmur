@@ -31,13 +31,8 @@ evidence so readers do not need to infer which document is authoritative.
 ### Investigate history
 
 - Review shipped changes: [changelog](../CHANGELOG.md).
-- Review the historical `v0.1.0-alpha.1` scope:
-  [public alpha boundary](public-alpha.md).
-- Read version-specific evidence: [v0.2.0-alpha.4](release-notes-v0.2.0-alpha.4.md),
-  [v0.2.0-alpha.3](release-notes-v0.2.0-alpha.3.md),
-  [v0.2.0-alpha.2](release-notes-v0.2.0-alpha.2.md),
-  [v0.2.0-alpha.1](release-notes-v0.2.0-alpha.1.md), and
-  [v0.1.0-alpha.1](release-notes-v0.1.0-alpha.1.md).
+- Browse tagged boundaries and release evidence in the
+  [project history](history/README.md).
 - Find the reason behind a material design choice in the
   [categorized ADR index](adr/README.md).
 
