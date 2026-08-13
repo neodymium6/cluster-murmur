@@ -71,7 +71,9 @@ automated checks or a safe local integration test:
 15. The OCI container runs as non-root with the documented filesystem and
     capability restrictions.
 16. Formatting, tests, Credo, Dialyzer, configuration validation, and other
-    mature CI checks documented in `DESIGN.md` pass.
+    mature CI checks documented in the
+    [verification strategy](../design/production-and-evolution.md#verification-strategy)
+    pass.
 
 Acceptance testing must use fake adapters or an explicitly approved isolated
 environment. It must not publish to Discord or connect to live infrastructure

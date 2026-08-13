@@ -75,7 +75,8 @@ reaches the random adapter.
 
 All conversations must enforce the configured limits for turns, participants,
 duration, LLM calls, persona continuity, cooldowns, and re-entry. The default
-limits are specified in `configuration.md`.
+limits are specified in the
+[paths and runtime defaults reference](../configuration/paths-and-defaults.md).
 
 The director checks the relevant budget before every generation, publication,
 and continuation. An LLM response cannot extend a conversation. A terminal
