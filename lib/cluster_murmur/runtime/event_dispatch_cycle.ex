@@ -10,17 +10,19 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
 
   alias ClusterMurmur.Config.Configuration
   alias ClusterMurmur.DateTimeValidator
-  alias ClusterMurmur.Events.{Event, Validator}
 
   alias ClusterMurmur.Persistence.{
     EventDispatch,
-    EventDispatchCandidate,
     EventDispatchClaim,
     EventDispatchStore,
     EventStore
   }
 
-  alias ClusterMurmur.Runtime.{PersonaCooldownSnapshot, ResponderTurnSchedule}
+  alias ClusterMurmur.Runtime.{
+    EventDispatchBatchLoader,
+    PersonaCooldownSnapshot,
+    ResponderTurnSchedule
+  }
 
   alias ClusterMurmur.Triggers.{
     AuthorizedConversationPipeline,
@@ -160,8 +162,6 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
     :invalid_execution,
     :storage_unavailable
   ]
-  @candidate_keys EventDispatchCandidate.__struct__() |> Map.keys()
-  @candidate_key_count length(@candidate_keys)
   @claim_keys EventDispatchClaim.__struct__() |> Map.keys()
   @claim_key_count length(@claim_keys)
   @dispatch_keys EventDispatch.__struct__() |> Map.keys()
@@ -241,8 +241,8 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
          {:ok, cooldowns} <-
            PersonaCooldownSnapshot.load(configuration, context.adapters.cooldown_store),
          context <- with_cooldowns(context, cooldowns),
-         {:ok, candidates} <- list_candidates(adapters.dispatches, now),
-         {:ok, events} <- load_events(candidates, adapters.events, now, nil, [], 0),
+         {:ok, candidates, events} <-
+           EventDispatchBatchLoader.load(adapters.dispatches, adapters.events, now),
          {:ok, %Plan{} = plan} <- plan(candidates, events, configuration, now),
          {:ok, consumer, consumer_context} <- build_consumer_context(plan, context, now),
          :ok <- preflight_consumer(consumer, plan, configuration, consumer_context),
@@ -347,88 +347,6 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
   defp valid_module?(module, functions) do
     is_atom(module) and Code.ensure_loaded?(module) and
       Enum.all?(functions, fn {name, arity} -> function_exported?(module, name, arity) end)
-  end
-
-  defp list_candidates(dispatches, now) do
-    case dispatches.list_available(now) do
-      {:ok, candidates} when is_list(candidates) ->
-        {:ok, candidates}
-
-      {:error, reason} when reason in [:invalid_dispatch, :storage_unavailable] ->
-        {:error, :event_dispatch_failed}
-
-      _failure ->
-        {:error, :invalid_event_dispatch_cycle}
-    end
-  rescue
-    _error -> {:error, :event_dispatch_failed}
-  catch
-    _kind, _reason -> {:error, :event_dispatch_failed}
-  end
-
-  defp load_events([], _events, _now, _previous, loaded, _count),
-    do: {:ok, Enum.reverse(loaded)}
-
-  defp load_events(
-         [%EventDispatchCandidate{} = candidate | candidates],
-         events,
-         now,
-         previous,
-         loaded,
-         count
-       )
-       when count < @max_candidates do
-    with :ok <- validate_candidate(candidate, now, previous),
-         {:ok, %Event{} = event} <- fetch_event(events, candidate.event_id),
-         true <- event.id == candidate.event_id do
-      load_events(candidates, events, now, candidate, [event | loaded], count + 1)
-    else
-      {:error, :event_dispatch_failed} = error -> error
-      _failure -> {:error, :invalid_event_dispatch_cycle}
-    end
-  end
-
-  defp load_events(_candidates, _events, _now, _previous, _loaded, _count),
-    do: {:error, :invalid_event_dispatch_cycle}
-
-  defp fetch_event(events, event_id) do
-    case events.fetch(event_id) do
-      {:ok, %Event{} = event} ->
-        {:ok, event}
-
-      {:error, reason}
-      when reason in [:event_not_found, :invalid_event_record, :storage_unavailable] ->
-        {:error, :event_dispatch_failed}
-
-      _failure ->
-        {:error, :invalid_event_dispatch_cycle}
-    end
-  rescue
-    _error -> {:error, :event_dispatch_failed}
-  catch
-    _kind, _reason -> {:error, :event_dispatch_failed}
-  end
-
-  defp validate_candidate(candidate, now, previous) do
-    with true <- exact_candidate?(candidate),
-         :ok <- Validator.validate_id(candidate.event_id),
-         :ok <- DateTimeValidator.validate_storage_utc(candidate.enqueued_at),
-         true <- DateTime.compare(candidate.enqueued_at, now) in [:lt, :eq],
-         true <- after_previous?(candidate, previous) do
-      :ok
-    else
-      _failure -> {:error, :invalid_event_dispatch_cycle}
-    end
-  end
-
-  defp after_previous?(_candidate, nil), do: true
-
-  defp after_previous?(candidate, previous) do
-    case DateTime.compare(candidate.enqueued_at, previous.enqueued_at) do
-      :gt -> true
-      :eq -> candidate.event_id > previous.event_id
-      :lt -> false
-    end
   end
 
   defp plan(candidates, events, configuration, now) do
@@ -799,11 +717,6 @@ defmodule ClusterMurmur.Runtime.EventDispatchCycle do
 
   defp validate_conversation_runtime(_context),
     do: {:error, :invalid_event_dispatch_cycle}
-
-  defp exact_candidate?(candidate) do
-    map_size(candidate) == @candidate_key_count and
-      Enum.all?(@candidate_keys, &Map.has_key?(candidate, &1))
-  end
 
   defp exact_context?(context) do
     map_size(context) == @context_key_count and
