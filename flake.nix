@@ -313,6 +313,7 @@
                 export CLUSTER_MURMUR_RESPONDER_GENERATION_DELAY='0ms'
                 export CLUSTER_MURMUR_RESPONDER_PUBLICATION_START_DELAY='1s'
                 export CLUSTER_MURMUR_RESPONDER_PUBLICATION_COMPLETE_DELAY='2s'
+                export SSL_CERT_FILE='${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt'
 
                 test -x "$release_bin"
                 test ! -e "${productionRelease}/releases/COOKIE"
