@@ -4,7 +4,7 @@ Date: 2026-08-11
 
 ## Status
 
-Accepted
+Accepted; CA-store initialization amended by ADR 0222
 
 ## Context
 

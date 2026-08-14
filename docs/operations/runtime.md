@@ -85,6 +85,15 @@ The deployment must provide:
 - orchestrator probe timing, metrics, logging, and restart integration; and
 - platform-specific storage, network, and rollout policy.
 
+Before constructing any standalone child, startup initializes the OTP CA
+certificate store used by all three fixed HTTPS transports. When
+`SSL_CERT_FILE` is set, it must name an absolute, UTF-8, NUL-free regular file
+no larger than 4 MiB; startup loads that bundle explicitly and requires the
+resulting store to contain at least one certificate. When the variable is
+absent, the platform-provided OTP store must already produce at least one
+certificate. Missing, unreadable, empty, oversized, or unusable configured
+bundles fail startup with a stable error before any scheduler can consume work.
+
 Startup binds the fixed probe listener, then orders the SQLite repository before
 one recovery-gated supervisor. That supervisor completes global recovery and
 recurring and stochastic schedule initialization before it starts poll,
