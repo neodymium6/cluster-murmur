@@ -1,123 +1,132 @@
 # Cluster Murmur
 
-Cluster Murmur is an event-driven character conversation orchestrator. It turns
-read-only observations into short, persona-driven Discord messages and bounded
-conversations.
+Cluster Murmur gives observed systems a cast of characters. When a read-only
+observer reports a meaningful change, configured personas comment on the
+supplied facts and may hold a short conversation in Discord.
 
-## Status
+It is ambient character software for experiencing what is happening around a
+running system. It is not a monitoring system, an incident-response tool, or an
+autonomous infrastructure agent.
+
+## From a system change to a conversation
+
+Suppose an observer reports that a workload changed from healthy to degraded.
+Cluster Murmur can turn that fact into an exchange like this:
+
+> **Observed fact:** A workload became degraded.
+>
+> **Mira:** "One of the workloads seems a little unwell."
+>
+> **Noa:** "I noticed it too. Let's see what happens next."
+
+This exchange is illustrative. The characters, tone, triggers, and destination
+come from deployment-owned configuration; the application supplies the facts
+that the characters are allowed to express.
+
+The complete path is deliberately narrow:
+
+```text
+read-only observation
+        -> application-defined event
+        -> matching trigger and personas
+        -> short, bounded conversation
+        -> Discord message
+```
+
+Application code decides whether an observation represents an event, which
+trigger matches, who may participate, and whether anything should be
+published. A model may express only the supplied facts in a persona's voice.
+
+## What it is for
+
+Cluster Murmur is intended for:
+
+- giving a running system a sense of character and presence;
+- turning selected state changes into approachable, character-driven
+  commentary; and
+- creating occasional, bounded conversations rather than a stream of raw
+  telemetry.
+
+It deliberately does not replace alerts, dashboards, logs, or incident
+response. It cannot remediate a system or provide generic shell, SSH,
+`kubectl`, SQL, PromQL, or HTTP access. Infrastructure observation remains a
+separate read-only responsibility.
+
+## Safety model
+
+Every conversation is bounded by turns, participants, duration, model calls,
+cooldowns, response sizes, and stored history, and it always has an explicit
+no-reply path. Observation data is allowlisted before it reaches generation,
+and publication uses fixed transports with mentions disabled.
+
+Observation data and generated prompts may still be sensitive. Public
+configuration must not contain credentials, webhook URLs, private endpoints,
+real cluster identities, or private persona content. See the
+[system design](DESIGN.md) and [security policy](SECURITY.md) for the complete
+trust boundary.
+
+## Try it without external effects
+
+The isolated end-to-end example exercises the path from a synthetic degraded
+observation to a captured Discord-shaped publication. It uses loopback
+listeners, fake credentials, and an in-process destination; it does not connect
+to infrastructure, a model provider, or Discord.
+
+```bash
+nix develop
+mix deps.get
+mix test test/cluster_murmur/runtime/isolated_end_to_end_test.exs
+```
+
+See the [example walkthrough](examples/isolated-end-to-end/README.md) for the
+asserted lifecycle and isolation boundaries.
+
+## Project status
 
 Cluster Murmur is a public standalone alpha. The current source version is
-`0.2.0-alpha.4`; published artifacts remain listed on the
+`0.2.0-alpha.4`; published artifacts are listed on the
 [GitHub Releases page](https://github.com/neodymium6/cluster-murmur/releases).
 
-The standalone alpha provides a fail-closed entry point using fixed transports,
-recovery-gated runtime assembly, bounded operational signals, and documented
-single-writer deployment controls. Credentials, endpoints, routing, storage,
-and rollout policy remain deployment-owned inputs.
+The standalone alpha includes fixed observer, OpenAI-compatible, and Discord
+transports; bounded orchestration; durable SQLite state; restart recovery;
+operational probes; and packaged release artifacts. Credentials, endpoints,
+routing, storage, and rollout policy remain deployment-owned inputs.
 
 Do not connect this revision to production, sensitive infrastructure, model
 providers, or Discord without reviewing the exact deployment configuration,
 environment, and revision.
 
-## Capabilities
+## Development and builds
 
-- Strict, bounded version 1 configuration loading and startup preparation.
-- Deterministic observation ingestion, event extraction, deduplication, trigger
-  evaluation, persona selection, and conversation planning.
-- Explicit starter, responder, generation, publication, scheduling, retention,
-  and restart-recovery boundaries.
-- Hard limits on turns, participants, duration, LLM calls, cooldowns, response
-  sizes, and stored history, with explicit no-reply outcomes and no implicit
-  provider or publication retries.
-- Single-writer SQLite persistence with packaged migrations and conservative
-  deletion of only unreferenced events.
-- Fixed OpenAI-compatible and Discord request/response boundaries, allowlisted
-  facts, deterministic fallback text, disabled mentions, and redacted errors.
-- Fixed production transports and a recovery-gated runtime entry point, with
-  opt-in component boundaries exercised independently using fake adapters.
-- Fixed value-free liveness, readiness, and startup probes for the production
-  runtime without a generic management interface.
-- A nondistributed OTP release, hardened OCI image definition, and CI checks for
-  dependencies, source, tests, migrations, release behavior, and image metadata.
-
-Current runtime inputs and assembly are documented in the
-[configuration reference](docs/configuration.md) and
-[deployment guide](docs/deployment.md). The
-[public alpha boundary](docs/public-alpha.md) records the narrower historical
-scope of `v0.1.0-alpha.1`.
-
-## Safety boundary
-
-Cluster Murmur owns normalized observation ingestion, factual event decisions,
-trigger policy, bounded conversation orchestration, expression of supplied
-facts, publication planning, and short-term conversation memory.
-
-Infrastructure access and diagnostics remain in a separate read-only observer.
-The engine does not expose generic shell, SSH, `kubectl`, SQL, arbitrary PromQL,
-arbitrary HTTP passthrough, or autonomous remediation. Application code decides
-facts and actions; an LLM may only express the facts it is given.
-
-Observation data and prompts may be sensitive. Public configuration must not
-contain credentials, webhook URLs, private endpoints, real cluster identities,
-or private persona content.
-
-## Quick start
-
-Enter the pinned development environment and fetch locked Mix dependencies:
+Install repository hooks and run the standard checks from the pinned
+development environment:
 
 ```bash
 nix develop
 mix deps.get
-```
-
-Install repository hooks and run all checks:
-
-```bash
 just init
 just check
 ```
 
-Run only the dependency retirement and security-advisory gate with
-`just audit`.
+Run the dependency retirement and security-advisory gate with `just audit`.
+Build the packaged OTP release with `nix build .#cluster-murmur`. On Linux,
+build the Docker-compatible image archive with `nix build .#container-image`.
 
-Build the packaged OTP release:
-
-```bash
-nix build .#cluster-murmur
-```
-
-On Linux, build the Docker-compatible image archive:
-
-```bash
-nix build .#container-image
-```
-
-Building an artifact does not authorize running it against live systems. See
-the [deployment and artifact guide](docs/deployment.md) for migrations, storage,
-container controls, and deployment-owned inputs.
-The [hardened Kubernetes example](deploy/kubernetes/README.md) records the
-supported single-writer rollout and offline backup shape using placeholders
-that require a private reviewed overlay.
-Pushing a reviewed version-matching tag prepares one `linux/amd64` image and a
-draft GitHub Release with digest metadata, an SPDX SBOM, and signed provenance.
-Publishing the reviewed draft triggers public-distribution verification as
-documented in the
-[artifact guide](docs/deployment.md#published-release-artifacts).
-The [isolated end-to-end example](examples/isolated-end-to-end/README.md)
-exercises the complete observation-to-publication lifecycle without any live
-external effect.
+Building an artifact does not authorize running it against live systems. The
+[deployment and artifact guide](docs/deployment.md) covers migrations, storage,
+container controls, release publication, and deployment-owned inputs.
 
 ## Documentation
 
 Use the [documentation index](docs/README.md) to choose the right level of
 detail. The main references are:
 
-- [Public alpha boundary](docs/public-alpha.md)
+- [System design](DESIGN.md)
 - [Configuration reference](docs/configuration.md)
 - [Deployment and artifact guide](docs/deployment.md)
-- [Hardened Kubernetes example](deploy/kubernetes/README.md)
-- [System design](DESIGN.md)
 - [MVP runtime contract](docs/mvp-contract.md)
+- [Hardened Kubernetes example](deploy/kubernetes/README.md)
+- [Public alpha boundary](docs/public-alpha.md)
 - [Security policy](SECURITY.md)
 - [Changelog](CHANGELOG.md)
 - [Architecture decisions](docs/adr/)
