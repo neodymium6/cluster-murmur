@@ -572,6 +572,7 @@
                   "CLUSTER_MURMUR_RESPONDER_TURN_INTERVAL=5s"
                   "CLUSTER_MURMUR_STOCHASTIC_INTERVAL=30s"
                   "DISCORD_WEBHOOK_SECRET_FILE=$config_root/webhook"
+                  "ERL_AFLAGS=-public_key cacerts_path '\"/cluster-murmur-smoke-missing-cacerts.pem\"'"
                   "HOME=$runtime_tmp"
                   "LANG=C.UTF-8"
                   "LC_ALL=C.UTF-8"
@@ -595,6 +596,7 @@
                   "$rootfs${expectedEntrypoint}" -- \
                   "$rootfs${expectedCommand}" start_iex <<'EOF'
                 IO.puts("CONTAINER_SMOKE=#{Application.spec(:cluster_murmur, :vsn)}:#{Node.alive?()}")
+                IO.puts("CONTAINER_CACERTS_OVERRIDE=#{Application.get_env(:public_key, :cacerts_path) == ~c\"/cluster-murmur-smoke-missing-cacerts.pem\"}")
                 IO.puts("CONTAINER_CACERTS=#{match?([_certificate | _remaining], :public_key.cacerts_get())}")
                 {:ok, probe_socket} = :gen_tcp.connect({127, 0, 0, 1}, 45687, [:binary, active: false], 1000)
                 :ok = :gen_tcp.send(probe_socket, "GET /startupz HTTP/1.1\r\n\r\n")
@@ -604,6 +606,7 @@
                 EOF
                 )"
                 grep -Fq "CONTAINER_SMOKE=${version}:false" <<< "$smoke_output"
+                grep -Fq "CONTAINER_CACERTS_OVERRIDE=true" <<< "$smoke_output"
                 grep -Fq "CONTAINER_CACERTS=true" <<< "$smoke_output"
                 grep -Fq "CONTAINER_STARTUP=true" <<< "$smoke_output"
                 touch "$out"
