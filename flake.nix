@@ -313,6 +313,7 @@
                 export CLUSTER_MURMUR_RESPONDER_GENERATION_DELAY='0ms'
                 export CLUSTER_MURMUR_RESPONDER_PUBLICATION_START_DELAY='1s'
                 export CLUSTER_MURMUR_RESPONDER_PUBLICATION_COMPLETE_DELAY='2s'
+                export SSL_CERT_FILE='${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt'
 
                 test -x "$release_bin"
                 test ! -e "${productionRelease}/releases/COOKIE"
@@ -523,6 +524,14 @@
                 mkdir -p "$runtime_tmp/release"
                 chmod 0700 "$runtime_tmp/release"
 
+                smoke_ca_bundle="$runtime_tmp/smoke-ca.pem"
+                awk '
+                  /-----BEGIN CERTIFICATE-----/ { copying = 1 }
+                  copying { print }
+                  /-----END CERTIFICATE-----/ { exit }
+                ' ${expectedCertificate} > "$smoke_ca_bundle"
+                test -s "$smoke_ca_bundle"
+
                 config_root="$runtime_tmp/standalone-config"
                 mkdir -p "$config_root"
                 cat > "$config_root/cluster-murmur.yaml" <<'EOF'
@@ -579,7 +588,7 @@
                   "LLM_BASE_URL=https://llm.example.invalid/v1"
                   "LLM_MODEL=example-model"
                   "RELEASE_TMP=$runtime_tmp/release"
-                  "SSL_CERT_FILE=${expectedCertificate}"
+                  "SSL_CERT_FILE=$smoke_ca_bundle"
                   "TMPDIR=$runtime_tmp"
                 )
 
@@ -595,6 +604,9 @@
                   "$rootfs${expectedEntrypoint}" -- \
                   "$rootfs${expectedCommand}" start_iex <<'EOF'
                 IO.puts("CONTAINER_SMOKE=#{Application.spec(:cluster_murmur, :vsn)}:#{Node.alive?()}")
+                [{:Certificate, expected_ca_der, :not_encrypted}] =
+                  System.fetch_env!("SSL_CERT_FILE") |> File.read!() |> :public_key.pem_decode()
+                IO.puts("CONTAINER_CACERTS=#{match?([{:cert, ^expected_ca_der, _decoded}], :public_key.cacerts_get())}")
                 {:ok, probe_socket} = :gen_tcp.connect({127, 0, 0, 1}, 45687, [:binary, active: false], 1000)
                 :ok = :gen_tcp.send(probe_socket, "GET /startupz HTTP/1.1\r\n\r\n")
                 {:ok, probe_response} = :gen_tcp.recv(probe_socket, 0, 1000)
@@ -603,6 +615,7 @@
                 EOF
                 )"
                 grep -Fq "CONTAINER_SMOKE=${version}:false" <<< "$smoke_output"
+                grep -Fq "CONTAINER_CACERTS=true" <<< "$smoke_output"
                 grep -Fq "CONTAINER_STARTUP=true" <<< "$smoke_output"
                 touch "$out"
               '';

@@ -3,7 +3,7 @@ defmodule ClusterMurmur.Application do
 
   use Application
 
-  alias ClusterMurmur.Runtime.{ProductionApplication, RootSupervisor}
+  alias ClusterMurmur.Runtime.{CACertificateStore, ProductionApplication, RootSupervisor}
 
   @impl true
   def start(_type, _args) do
@@ -14,9 +14,16 @@ defmodule ClusterMurmur.Application do
 
   defp child_specs do
     case Application.fetch_env(:cluster_murmur, :standalone_runtime) do
-      {:ok, true} -> ProductionApplication.child_specs()
-      {:ok, false} -> {:ok, [ClusterMurmur.Repo]}
-      _invalid -> {:error, :invalid_application}
+      {:ok, true} ->
+        with :ok <- CACertificateStore.initialize() do
+          ProductionApplication.child_specs()
+        end
+
+      {:ok, false} ->
+        {:ok, [ClusterMurmur.Repo]}
+
+      _invalid ->
+        {:error, :invalid_application}
     end
   end
 end

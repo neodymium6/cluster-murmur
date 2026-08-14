@@ -4,7 +4,7 @@ Date: 2026-08-09
 
 ## Status
 
-Accepted
+Accepted; CA-store startup verification amended by ADR 0222
 
 ## Context
 

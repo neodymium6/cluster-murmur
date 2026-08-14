@@ -52,14 +52,18 @@ The scratch-based image:
 
 - runs as numeric user and group `65532:65532`;
 - starts the nondistributed release through Tini;
+- includes a CA bundle and points `SSL_CERT_FILE` at its immutable Nix store
+  path;
 - declares no ports, volumes, health check, credentials, or deployment
   configuration; and
 - includes standard OCI labels and the complete runtime closure.
 
 Repository checks validate the archive metadata and closure, remove write
 permission except from the intended temporary and data paths, migrate an
-isolated database, and smoke-run the extracted entrypoint. These archive-level
-checks do not apply container-runtime mount, identity, or privilege controls.
+isolated database, and smoke-run the extracted entrypoint. The startup smoke
+also requires OTP to expose a non-empty CA certificate store after loading the
+configured bundle. These archive-level checks do not apply container-runtime
+mount, identity, or privilege controls.
 
 ## Published release artifacts
 
