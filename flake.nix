@@ -595,6 +595,7 @@
                   "$rootfs${expectedEntrypoint}" -- \
                   "$rootfs${expectedCommand}" start_iex <<'EOF'
                 IO.puts("CONTAINER_SMOKE=#{Application.spec(:cluster_murmur, :vsn)}:#{Node.alive?()}")
+                IO.puts("CONTAINER_CACERTS=#{match?([_certificate | _remaining], :public_key.cacerts_get())}")
                 {:ok, probe_socket} = :gen_tcp.connect({127, 0, 0, 1}, 45687, [:binary, active: false], 1000)
                 :ok = :gen_tcp.send(probe_socket, "GET /startupz HTTP/1.1\r\n\r\n")
                 {:ok, probe_response} = :gen_tcp.recv(probe_socket, 0, 1000)
@@ -603,6 +604,7 @@
                 EOF
                 )"
                 grep -Fq "CONTAINER_SMOKE=${version}:false" <<< "$smoke_output"
+                grep -Fq "CONTAINER_CACERTS=true" <<< "$smoke_output"
                 grep -Fq "CONTAINER_STARTUP=true" <<< "$smoke_output"
                 touch "$out"
               '';
