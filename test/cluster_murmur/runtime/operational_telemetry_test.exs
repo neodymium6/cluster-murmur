@@ -5,7 +5,14 @@ defmodule ClusterMurmur.Runtime.OperationalTelemetryTest do
 
   alias ClusterMurmur.Discord.WebhookHTTPTransport
   alias ClusterMurmur.Discord.WebhookResponse
-  alias ClusterMurmur.Generation.{OpenAICompatibleHTTPTransport, OpenAICompatibleResponse}
+
+  alias ClusterMurmur.Generation.{
+    OpenAICompatibleHTTPTransport,
+    OpenAICompatibleResponse,
+    PersonaProjection,
+    ProviderResultResolver
+  }
+
   alias ClusterMurmur.Observers.MCPHTTPTransport
   alias ClusterMurmur.Runtime.OperationalTelemetry
 
@@ -151,6 +158,75 @@ defmodule ClusterMurmur.Runtime.OperationalTelemetryTest do
     refute log =~ "must-not-appear"
   end
 
+  test "reports accepted and fallback generation decisions without content" do
+    attach([:cluster_murmur, :generation, :decision])
+
+    log =
+      capture_log(fn ->
+        assert OperationalTelemetry.generation_decision({:llm, "must-not-appear"}) ==
+                 {:llm, "must-not-appear"}
+
+        assert OperationalTelemetry.generation_decision({:fallback, :provider_failure}) ==
+                 {:fallback, :provider_failure}
+      end)
+
+    assert_generation(:accepted, nil)
+    assert_generation(:fallback, :provider_failure)
+    assert log =~ "generation decision completed"
+    refute log =~ "must-not-appear"
+  end
+
+  test "reports decode-success normalization rejection with a redacted fixed reason" do
+    attach([:cluster_murmur, :generation, :decision])
+    private_output = "https://private.example.invalid/must-not-appear"
+
+    response = %OpenAICompatibleResponse{
+      status: 200,
+      body: Jason.encode!(%{"choices" => [%{"message" => %{"content" => private_output}}]})
+    }
+
+    assert {:ok, ^private_output} = OpenAICompatibleResponse.decode(response)
+
+    assert {:ok, decision} =
+             ProviderResultResolver.resolve(
+               {:ok, private_output},
+               %PersonaProjection{
+                 display_name: "Observer",
+                 instructions: "Speak briefly from supplied facts only."
+               },
+               2_000
+             )
+
+    assert decision == {:fallback, :unsafe_output_form}
+
+    log =
+      capture_log(fn ->
+        assert OperationalTelemetry.generation_decision(decision) == decision
+      end)
+
+    assert_generation(:fallback, :unsafe_output_form)
+    assert log =~ "error_class=unsafe_output_form"
+    refute log =~ private_output
+    refute log =~ "must-not-appear"
+  end
+
+  test "ignores arbitrary generation decisions without inspecting them" do
+    attach([:cluster_murmur, :generation, :decision])
+    secret = "must-not-appear"
+
+    log =
+      capture_log(fn ->
+        assert OperationalTelemetry.generation_decision({:fallback, secret}) ==
+                 {:fallback, secret}
+
+        assert OperationalTelemetry.generation_decision({:caller_selected, secret}) ==
+                 {:caller_selected, secret}
+      end)
+
+    refute_receive {:telemetry, _event, _measurements, _metadata}
+    refute log =~ secret
+  end
+
   defp assert_external(component, outcome, error_class) do
     assert_receive {:telemetry, [:cluster_murmur, :external, :request, :stop], measurements,
                     metadata}
@@ -158,6 +234,16 @@ defmodule ClusterMurmur.Runtime.OperationalTelemetryTest do
     assert measurements.count == 1
     assert is_integer(measurements.duration) and measurements.duration >= 0
     assert metadata == %{component: component, outcome: outcome, error_class: error_class}
+  end
+
+  defp assert_generation(outcome, error_class) do
+    assert_receive {:telemetry, [:cluster_murmur, :generation, :decision], %{count: 1}, metadata}
+
+    assert metadata == %{
+             component: :model_generation,
+             outcome: outcome,
+             error_class: error_class
+           }
   end
 
   defp attach(event) do

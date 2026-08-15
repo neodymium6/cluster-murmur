@@ -9,31 +9,42 @@ defmodule ClusterMurmur.OperationalJSONFormatter do
   @behaviour :logger_formatter
 
   @levels [:alert, :critical, :debug, :emergency, :error, :info, :notice, :warning]
-  @messages ["external request completed", "runtime cycle completed"]
+  @messages [
+    "external request completed",
+    "generation decision completed",
+    "runtime cycle completed"
+  ]
   @components [
     :discord_webhook,
     :event_dispatch,
     :event_retention,
+    :model_generation,
     :model_provider,
     :observer_mcp,
     :poll,
     :recurring_schedule,
     :stochastic_schedule
   ]
-  @outcomes [:error, :not_sent, :ok, :rejected, :unknown]
+  @outcomes [:accepted, :error, :fallback, :not_sent, :ok, :rejected, :unknown]
   @error_classes [
     :authentication_failed,
+    :blank_output,
+    :character_limit_exceeded,
     :dispatch_failed,
     :invalid_cycle,
     :invalid_request,
     :invalid_response,
+    :invalid_provider_output,
+    :invalid_unicode,
     :outcome_unknown,
     :poll_failed,
+    :provider_failure,
     :rate_limited,
     :retention_failed,
     :timeout,
     :token_exhausted,
-    :unavailable
+    :unavailable,
+    :unsafe_output_form
   ]
 
   @impl true

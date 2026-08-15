@@ -76,6 +76,34 @@ defmodule ClusterMurmur.OperationalJSONFormatterTest do
     assert Jason.decode!(encoded)["error_class"] == "token_exhausted"
   end
 
+  test "allows the fixed generation fallback dimensions" do
+    encoded =
+      %{
+        level: :warning,
+        msg: {:string, "generation decision completed"},
+        meta: %{
+          time: 1_723_456_789,
+          component: :model_generation,
+          outcome: :fallback,
+          error_class: :unsafe_output_form,
+          content: "must-not-appear"
+        }
+      }
+      |> OperationalJSONFormatter.format(%{})
+      |> IO.iodata_to_binary()
+
+    assert Jason.decode!(encoded) == %{
+             "time" => 1_723_456_789,
+             "level" => "warning",
+             "message" => "generation decision completed",
+             "component" => "model_generation",
+             "outcome" => "fallback",
+             "error_class" => "unsafe_output_form"
+           }
+
+    refute encoded =~ "must-not-appear"
+  end
+
   test "accepts no formatter configuration or malformed event shape" do
     assert OperationalJSONFormatter.check_config(%{}) == :ok
 

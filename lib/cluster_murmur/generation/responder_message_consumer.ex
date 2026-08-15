@@ -50,6 +50,7 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
   }
 
   alias ClusterMurmur.Personas.Persona
+  alias ClusterMurmur.Runtime.OperationalTelemetry
 
   @discord_content_limit 2_000
   @input_keys Input.__struct__() |> Map.keys()
@@ -157,6 +158,7 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
              generation_context.persona,
              @discord_content_limit
            ),
+         decision <- OperationalTelemetry.generation_decision(decision),
          {:ok, generated} <- build_message(decision, plan, context.inserted_at),
          {:ok, {message, conversation}} <- append_reserved(context, plan, generated),
          {:ok, delivery} <- validate_append_result(message, conversation, plan, generated) do
