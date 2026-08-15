@@ -7,6 +7,30 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## Unreleased
 
+## [0.2.0-alpha.5](docs/release-notes-v0.2.0-alpha.5.md) - 2026-08-15
+
+### Runtime TLS
+
+- Initialized OTP's certificate store from the bounded `SSL_CERT_FILE` path
+  before the standalone runtime starts, failing closed when the configured
+  bundle or the resulting trust store is invalid.
+- Extended release and extracted-container checks to verify the configured CA
+  bundle is loaded rather than accidentally relying on a host certificate
+  store.
+
+### Runtime maintenance
+
+- Decomposed the event-dispatch cycle into bounded batch-loading, consumer
+  preparation, and claimed-execution modules while preserving the durable
+  preflight that prevents invalid dispatch execution.
+
+### Documentation
+
+- Reframed the README around Cluster Murmur's product experience, intended
+  uses, safety model, and isolated example.
+- Reorganized configuration, runtime contracts, design, operations, and
+  historical evidence into task-oriented pages with a documentation index.
+
 ## [0.2.0-alpha.4](docs/release-notes-v0.2.0-alpha.4.md) - 2026-08-11
 
 ### OCI attestations
