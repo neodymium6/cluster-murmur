@@ -15,22 +15,36 @@ defmodule ClusterMurmur.Generation.ProviderOutputNormalizer do
   @max_raw_bytes 64 * 1_024
   @max_output_characters 16 * 1_024
 
-  @type error :: :invalid_provider_output
+  @rejection_reasons [
+    :blank_output,
+    :character_limit_exceeded,
+    :invalid_provider_output,
+    :invalid_unicode,
+    :unsafe_output_form
+  ]
+
+  @type error ::
+          :blank_output
+          | :character_limit_exceeded
+          | :invalid_provider_output
+          | :invalid_unicode
+          | :unsafe_output_form
 
   @doc "Returns normalized content under the injected character limit."
   @spec normalize(term(), term(), term()) :: {:ok, String.t()} | {:error, error()}
   def normalize(raw, %PersonaProjection{} = persona, character_limit)
       when is_binary(raw) and byte_size(raw) <= @max_raw_bytes and
              is_integer(character_limit) and character_limit in 1..@max_output_characters do
-    with true <- String.valid?(raw),
+    with :ok <- validate_unicode(raw),
          :ok <- PersonaProjectionValidator.validate(persona),
          prepared <- normalize_spacing(raw),
          display_name <- normalize_spacing(persona.display_name),
          normalized <- strip_speaker_label(prepared, display_name) |> String.trim(),
-         true <- String.length(normalized) <= character_limit,
-         :ok <- MessageValidator.validate_content(normalized) do
+         :ok <- validate_character_limit(normalized, character_limit),
+         :ok <- validate_content(normalized) do
       {:ok, normalized}
     else
+      {:error, reason} when reason in @rejection_reasons -> {:error, reason}
       _failure -> {:error, :invalid_provider_output}
     end
   rescue
@@ -41,6 +55,25 @@ defmodule ClusterMurmur.Generation.ProviderOutputNormalizer do
 
   def normalize(_raw, _persona, _character_limit),
     do: {:error, :invalid_provider_output}
+
+  defp validate_unicode(raw) do
+    if String.valid?(raw), do: :ok, else: {:error, :invalid_unicode}
+  end
+
+  defp validate_character_limit(content, character_limit) do
+    if String.length(content) <= character_limit,
+      do: :ok,
+      else: {:error, :character_limit_exceeded}
+  end
+
+  defp validate_content(content) do
+    case MessageValidator.classify_content(content) do
+      :ok -> :ok
+      {:error, :blank_content} -> {:error, :blank_output}
+      {:error, :unsafe_content} -> {:error, :unsafe_output_form}
+      {:error, :invalid_content} -> {:error, :invalid_provider_output}
+    end
+  end
 
   defp normalize_spacing(raw) do
     raw

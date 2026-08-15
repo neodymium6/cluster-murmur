@@ -239,7 +239,7 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
   defp build_message({:llm, content}, plan, inserted_at),
     do: validate_generated(message(plan, :llm, content, inserted_at))
 
-  defp build_message(:fallback, plan, inserted_at) do
+  defp build_message({:fallback, _reason}, plan, inserted_at) do
     with {:ok, event} <- root_event(plan.input.continuation) do
       event
       |> FallbackGenerator.generate(plan.conversation.id, plan.responder.id, inserted_at)

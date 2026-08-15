@@ -109,6 +109,22 @@ defmodule ClusterMurmur.Messages.ValidatorTest do
     assert Validator.validate_content(123) == {:error, :invalid_message}
   end
 
+  test "classifies content with fixed non-content-bearing reasons" do
+    assert Validator.classify_content("The latest bounded fact is ready.") == :ok
+
+    for content <- ["", " \n ", "\u200B"] do
+      assert Validator.classify_content(content) == {:error, :blank_content}
+    end
+
+    for content <- [123, <<255>>, String.duplicate("a", 16 * 1_024 + 1)] do
+      assert Validator.classify_content(content) == {:error, :invalid_content}
+    end
+
+    for content <- ["https://example.invalid", "hello @everyone", "visit 192.0.2.10"] do
+      assert Validator.classify_content(content) == {:error, :unsafe_content}
+    end
+  end
+
   test "bounds domain scanning work for adversarial maximum-size content" do
     valid = message(:llm, nil)
     adversarial = String.duplicate("a.", 8_192)

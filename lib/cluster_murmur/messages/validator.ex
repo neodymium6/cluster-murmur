@@ -32,6 +32,7 @@ defmodule ClusterMurmur.Messages.Validator do
   @max_snowflake 18_446_744_073_709_551_615
 
   @type error :: :invalid_message
+  @type content_error :: :blank_content | :invalid_content | :unsafe_content
 
   @doc "Validates one exact bounded message and its safe output content."
   @spec validate(term()) :: :ok | {:error, error()}
@@ -62,12 +63,34 @@ defmodule ClusterMurmur.Messages.Validator do
   @doc "Validates bounded output content without constructing a message."
   @spec validate_content(term()) :: :ok | {:error, error()}
   def validate_content(content) do
-    if valid_content?(content), do: :ok, else: {:error, :invalid_message}
+    case classify_content(content) do
+      :ok -> :ok
+      {:error, _reason} -> {:error, :invalid_message}
+    end
   rescue
     _error -> {:error, :invalid_message}
   catch
     _kind, _reason -> {:error, :invalid_message}
   end
+
+  @doc "Classifies output content using fixed non-content-bearing reasons."
+  @spec classify_content(term()) :: :ok | {:error, content_error()}
+  def classify_content(content) when is_binary(content) do
+    cond do
+      byte_size(content) == 0 -> {:error, :blank_content}
+      byte_size(content) > @max_content_bytes -> {:error, :invalid_content}
+      not String.valid?(content) -> {:error, :invalid_content}
+      blank?(content) -> {:error, :blank_content}
+      unsafe_output?(content) -> {:error, :unsafe_content}
+      true -> :ok
+    end
+  rescue
+    _error -> {:error, :invalid_content}
+  catch
+    _kind, _reason -> {:error, :invalid_content}
+  end
+
+  def classify_content(_content), do: {:error, :invalid_content}
 
   defp exact_message?(message) do
     map_size(message) == @message_key_count and
@@ -81,12 +104,7 @@ defmodule ClusterMurmur.Messages.Validator do
 
   defp valid_portable_id?(_value), do: false
 
-  defp valid_content?(content)
-       when is_binary(content) and byte_size(content) in 1..@max_content_bytes do
-    String.valid?(content) and not blank?(content) and not unsafe_output?(content)
-  end
-
-  defp valid_content?(_content), do: false
+  defp valid_content?(content), do: classify_content(content) == :ok
 
   defp blank?(content) do
     content
