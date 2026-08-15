@@ -127,9 +127,20 @@ Before publication, deterministic validation must:
 - reject empty output;
 - enforce a configured character limit;
 - suppress Discord user, role, and broadcast mentions;
-- suppress URLs;
+- suppress URLs, domain-like forms, and IP addresses, including forms that use
+  Unicode domain separators;
 - remove control characters; and
 - reduce redundant use of the speaker's own display name.
+
+For domain detection, a complete line containing two or more closed Japanese
+sentences made only from Japanese scripts and bounded Japanese punctuation may
+use ideographic full stops as sentence boundaries. Latin characters, fixed
+Japanese network-reference cues, inter-sentence whitespace, or path punctuation
+keep the line under domain detection. All other ideographic, fullwidth, and
+halfwidth dot forms remain equivalent to an ASCII dot for domain detection, and
+every such form remains equivalent to an ASCII dot for URL and IP-address
+detection. This narrow structural exception admits ordinary Japanese prose
+without removing the default Unicode-dot rejection.
 
 Provider failure, timeout, malformed response, or rejected output falls back
 to a deterministic template generated only from confirmed facts. Fallbacks

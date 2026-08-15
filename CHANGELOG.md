@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## Unreleased
 
+### Output validation
+
+- Allowed bounded Japanese sentence chains with ideographic full stops without
+  weakening Unicode-dot domain and IP rejection.
+
 ## [0.2.0-alpha.8](docs/release-notes-v0.2.0-alpha.8.md) - 2026-08-15
 
 ### Generation diagnostics
