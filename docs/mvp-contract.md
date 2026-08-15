@@ -6,7 +6,7 @@ explain material decisions; these contract pages define testable runtime
 invariants and completion criteria.
 
 The keywords **must**, **must not**, **should**, and **may** are normative. The
-complete set describes source version `0.2.0-alpha.5`. The
+complete set describes source version `0.2.0-alpha.6`. The
 [v0.1.0-alpha.1 boundary](public-alpha.md) records a narrower historical subset
 and does not narrow this current contract.
 

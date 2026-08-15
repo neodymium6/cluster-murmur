@@ -7,6 +7,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## Unreleased
 
+## [0.2.0-alpha.6](docs/release-notes-v0.2.0-alpha.6.md) - 2026-08-15
+
 ### LLM compatibility
 
 - Send the current Chat Completions `max_completion_tokens` field so supported
