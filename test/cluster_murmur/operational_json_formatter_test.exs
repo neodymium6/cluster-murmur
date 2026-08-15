@@ -58,6 +58,24 @@ defmodule ClusterMurmur.OperationalJSONFormatterTest do
     refute encoded =~ secret
   end
 
+  test "allows the fixed token-exhaustion error class" do
+    encoded =
+      %{
+        level: :warning,
+        msg: {:string, "external request completed"},
+        meta: %{
+          time: 1_723_456_789,
+          component: :model_provider,
+          outcome: :error,
+          error_class: :token_exhausted
+        }
+      }
+      |> OperationalJSONFormatter.format(%{})
+      |> IO.iodata_to_binary()
+
+    assert Jason.decode!(encoded)["error_class"] == "token_exhausted"
+  end
+
   test "accepts no formatter configuration or malformed event shape" do
     assert OperationalJSONFormatter.check_config(%{}) == :ok
 

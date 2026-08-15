@@ -8,6 +8,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleResponse do
   """
 
   alias ClusterMurmur.Events.BoundedJsonDecoder
+  alias ClusterMurmur.DomainLimits
   alias ClusterMurmur.ExternalError
   alias ClusterMurmur.Generation.OpenAICompatibleRequest
 
@@ -17,6 +18,14 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleResponse do
 
   @response_keys [:__struct__, :body, :status]
   @response_key_count length(@response_keys)
+  @finish_reasons %{
+    "content_filter" => :content_filter,
+    "function_call" => :function_call,
+    "length" => :length,
+    "stop" => :stop,
+    "tool_calls" => :tool_calls
+  }
+  @max_safe_integer DomainLimits.max_safe_integer()
 
   @type t :: %__MODULE__{status: integer(), body: binary()}
   @type result :: {:ok, String.t()} | {:error, ExternalError.t()}
@@ -57,20 +66,98 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleResponse do
   defp decode_success(body) do
     with {:ok, budget} <- BoundedJsonDecoder.initial_budget([]),
          {:ok, decoded, _remaining_budget} <- BoundedJsonDecoder.decode(body, budget),
-         {:ok, content} <- extract_content(decoded) do
-      {:ok, content}
+         {:ok, completion} <- extract_completion(decoded) do
+      classify_completion(completion)
     else
       _failure -> {:error, :invalid_response}
     end
   end
 
-  defp extract_content(%{
-         "choices" => [
-           %{"message" => %{"content" => content}}
-         ]
-       })
-       when is_binary(content),
+  defp extract_completion(%{"choices" => [choice]} = decoded) when is_map(choice) do
+    with {:ok, content} <- extract_content(choice),
+         {:ok, finish_reason} <- extract_finish_reason(choice),
+         {:ok, completion_tokens, reasoning_tokens} <- extract_usage(decoded) do
+      {:ok,
+       %{
+         content: content,
+         finish_reason: finish_reason,
+         completion_tokens: completion_tokens,
+         reasoning_tokens: reasoning_tokens
+       }}
+    end
+  end
+
+  defp extract_completion(_decoded), do: {:error, :invalid_response}
+
+  defp extract_content(%{"message" => %{"content" => content}})
+       when is_binary(content) or is_nil(content),
        do: {:ok, content}
 
-  defp extract_content(_decoded), do: {:error, :invalid_response}
+  defp extract_content(_choice), do: {:error, :invalid_response}
+
+  defp extract_finish_reason(choice) do
+    case Map.fetch(choice, "finish_reason") do
+      :error -> {:ok, nil}
+      {:ok, value} when is_binary(value) -> Map.fetch(@finish_reasons, value)
+      {:ok, _invalid} -> {:error, :invalid_response}
+    end
+  end
+
+  defp extract_usage(decoded) do
+    case Map.fetch(decoded, "usage") do
+      :error -> {:ok, nil, nil}
+      {:ok, nil} -> {:ok, nil, nil}
+      {:ok, usage} when is_map(usage) -> extract_usage_tokens(usage)
+      {:ok, _invalid} -> {:error, :invalid_response}
+    end
+  end
+
+  defp extract_usage_tokens(usage) do
+    with {:ok, completion_tokens} <- optional_nonnegative_integer(usage, "completion_tokens"),
+         {:ok, reasoning_tokens} <- extract_reasoning_tokens(usage),
+         true <-
+           is_nil(completion_tokens) or is_nil(reasoning_tokens) or
+             reasoning_tokens <= completion_tokens do
+      {:ok, completion_tokens, reasoning_tokens}
+    else
+      _failure -> {:error, :invalid_response}
+    end
+  end
+
+  defp extract_reasoning_tokens(usage) do
+    case Map.fetch(usage, "completion_tokens_details") do
+      :error ->
+        {:ok, nil}
+
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, details} when is_map(details) ->
+        optional_nonnegative_integer(details, "reasoning_tokens")
+
+      {:ok, _invalid} ->
+        {:error, :invalid_response}
+    end
+  end
+
+  defp optional_nonnegative_integer(map, key) do
+    case Map.fetch(map, key) do
+      :error -> {:ok, nil}
+      {:ok, value} when is_integer(value) and value in 0..@max_safe_integer -> {:ok, value}
+      {:ok, _invalid} -> {:error, :invalid_response}
+    end
+  end
+
+  defp classify_completion(%{content: content, finish_reason: :length})
+       when is_nil(content),
+       do: {:error, :token_exhausted}
+
+  defp classify_completion(%{content: content, finish_reason: :length})
+       when is_binary(content) do
+    if String.trim(content) == "", do: {:error, :token_exhausted}, else: {:ok, content}
+  end
+
+  defp classify_completion(%{content: content}) when is_binary(content), do: {:ok, content}
+
+  defp classify_completion(_completion), do: {:error, :invalid_response}
 end

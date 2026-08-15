@@ -1,5 +1,10 @@
 # ADR 0114: Decode Bounded OpenAI-Compatible Responses
 
+## Status
+
+Accepted; safe completion metadata and token-exhaustion classification amended
+by [ADR 0225](0225-classify-reasoning-token-exhaustion.md).
+
 ## Context
 
 The fixed provider request permits a bounded response body, but raw provider

@@ -4,7 +4,8 @@ Date: 2026-08-11
 
 ## Status
 
-Accepted
+Accepted; model token-exhaustion classification amended by
+[ADR 0225](0225-classify-reasoning-token-exhaustion.md).
 
 ## Context
 

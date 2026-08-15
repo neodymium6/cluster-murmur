@@ -32,6 +32,7 @@ defmodule ClusterMurmur.OperationalJSONFormatter do
     :rate_limited,
     :retention_failed,
     :timeout,
+    :token_exhausted,
     :unavailable
   ]
 

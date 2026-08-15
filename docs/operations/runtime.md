@@ -129,13 +129,17 @@ Cycle components are `poll`, `event_dispatch`, `recurring_schedule`,
 `error`, `rejected`, `not_sent`, and `unknown`. Error classes are absent on
 success or are one of `invalid_cycle`, `poll_failed`, `dispatch_failed`,
 `retention_failed`, `authentication_failed`, `invalid_request`, `rate_limited`,
-`timeout`, `unavailable`, `invalid_response`, and `outcome_unknown`.
+`timeout`, `token_exhausted`, `unavailable`, `invalid_response`, and
+`outcome_unknown`.
 
 The release also emits `runtime cycle completed` and `external request
 completed` through Logger with the same structured fields. Model and Discord
 HTTP responses are classified before logging, so a non-success response is not
 reported as `ok`. Successful outcomes use `info`; other terminal outcomes use
-`warning`.
+`warning`. A model response with blank content and a `length` finish reason is
+reported as `outcome=error error_class=token_exhausted`; other output rejected
+later by normalization retains the provider's `ok` transport outcome. Token
+counts, finish reasons, and response bodies are not logged.
 
 Production formats each log as one JSON object per line. The formatter retains
 only time, level, the two fixed operational messages, and allowlisted telemetry
