@@ -64,7 +64,9 @@ selection and conversation policy do not depend directly on Ecto queries.
 The OpenAI-compatible provider adapter revalidates one fixed request before one
 injected transport call. It performs no retry and returns only decoded content
 or stable external error classes; raw provider responses and diagnostics remain
-inside the adapter boundary.
+inside the adapter boundary. The fixed Chat Completions JSON maps the bounded
+provider setting `max_output_tokens` to `max_completion_tokens`; callers cannot
+select the deprecated token field or add provider-specific parameters.
 
 The live transport reconstructs the closed prompt projection and revalidates
 the complete request against fixed settings, makes one deadline-bounded HTTP/1

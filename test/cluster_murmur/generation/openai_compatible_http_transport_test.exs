@@ -29,7 +29,10 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleHTTPTransportTest do
     assert String.downcase(raw_request) =~ "content-type: application/json"
 
     [_headers, encoded] = String.split(raw_request, "\r\n\r\n", parts: 2)
-    assert :json.decode(encoded)["model"] == "example-model"
+    decoded = :json.decode(encoded)
+    assert decoded["model"] == "example-model"
+    assert decoded["max_completion_tokens"] == 300
+    refute Map.has_key?(decoded, "max_tokens")
   end
 
   test "requires JSON only for successful responses" do

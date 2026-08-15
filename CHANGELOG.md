@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## Unreleased
 
+### LLM compatibility
+
+- Send the current Chat Completions `max_completion_tokens` field so supported
+  OpenAI reasoning models do not reject the fixed generation request.
+
 ## [0.2.0-alpha.5](docs/release-notes-v0.2.0-alpha.5.md) - 2026-08-15
 
 ### Runtime TLS
