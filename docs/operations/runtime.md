@@ -117,11 +117,13 @@ and must not be extended with arbitrary handlers.
 
 The runtime emits `[:cluster_murmur, :runtime, :cycle, :stop]` for every poll,
 event-dispatch, recurring, stochastic, and retention cycle. The three fixed live
-transports emit `[:cluster_murmur, :external, :request, :stop]`. Both events
-contain `count: 1` and `duration` in native monotonic time units. Their metadata
-is limited to the documented finite `component`, `outcome`, and `error_class`
-atoms. Convert durations with `System.convert_time_unit/3` in a trusted metrics
-handler.
+transports emit `[:cluster_murmur, :external, :request, :stop]`. Those two
+events contain `count: 1` and `duration` in native monotonic time units. After
+provider result resolution, starter and responder generation emit
+`[:cluster_murmur, :generation, :decision]` with only `count: 1`. All three
+events limit metadata to the documented finite `component`, `outcome`, and
+`error_class` atoms. Convert durations with `System.convert_time_unit/3` in a
+trusted metrics handler.
 
 Cycle components are `poll`, `event_dispatch`, `recurring_schedule`,
 `stochastic_schedule`, and `event_retention`; external components are
@@ -132,17 +134,26 @@ success or are one of `invalid_cycle`, `poll_failed`, `dispatch_failed`,
 `timeout`, `token_exhausted`, `unavailable`, `invalid_response`, and
 `outcome_unknown`.
 
-The release also emits `runtime cycle completed` and `external request
-completed` through Logger with the same structured fields. Model and Discord
-HTTP responses are classified before logging, so a non-success response is not
-reported as `ok`. Successful outcomes use `info`; other terminal outcomes use
-`warning`. A model response with blank content and a `length` finish reason is
-reported as `outcome=error error_class=token_exhausted`; other output rejected
-later by normalization retains the provider's `ok` transport outcome. Token
-counts, finish reasons, and response bodies are not logged.
+The generation component is `model_generation`. Its outcome is `accepted` with
+no error class, or `fallback` with one of `provider_failure`, `blank_output`,
+`character_limit_exceeded`, `invalid_unicode`, `unsafe_output_form`, or
+`invalid_provider_output`. These values identify the resolution stage and a
+content-free normalization reason; they never contain model output or provider
+diagnostics.
+
+The release also emits `runtime cycle completed`, `external request completed`,
+and `generation decision completed` through Logger with the same structured
+fields. Model and Discord HTTP responses are classified before logging, so a
+non-success response is not reported as `ok`. Successful or accepted outcomes
+use `info`; other terminal outcomes use `warning`. A model response with blank
+content and a `length` finish reason is reported as
+`outcome=error error_class=token_exhausted`; output rejected later by
+normalization retains the provider's `ok` transport outcome and adds a separate
+`fallback` generation decision. Token counts, finish reasons, response bodies,
+and rejected content are not logged.
 
 Production formats each log as one JSON object per line. The formatter retains
-only time, level, the two fixed operational messages, and allowlisted telemetry
+only time, level, the three fixed operational messages, and allowlisted telemetry
 metadata. It replaces every other message with `application event` and drops
 all other metadata rather than serializing it. No result, request, response,
 exception, endpoint, credential, prompt, observation, event, participant, or
