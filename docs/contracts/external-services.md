@@ -138,8 +138,13 @@ Generation execution revalidates that plan and exact provider settings,
 including exact provider, timeout, and output-token correlation with current
 public configuration. It calls one injected provider exactly once and resolves
 output under Discord's content limit. Accepted output becomes an unpublished
-`llm` message; every provider
-failure or rejected output becomes the fixed deterministic fallback message.
+`llm` message. After response decoding, the pure result resolver distinguishes
+accepted output, provider-failure fallback, and output-normalization fallback.
+Normalization rejection uses only fixed content-free classes for blank output,
+the character limit, invalid Unicode, unsafe output form, or an otherwise
+invalid provider result. It never returns rejected content or provider
+diagnostics. Every fallback class still becomes the same fixed deterministic
+fallback message.
 The returned redacted capability retains neither credentials nor transport
 values and performs no persistence or publication.
 Before publication, the generated capability is revalidated and its original

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted. Amended by [ADR 0226](0226-classify-provider-output-rejections.md).
 
 ## Context
 
