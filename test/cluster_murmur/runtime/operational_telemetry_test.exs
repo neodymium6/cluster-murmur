@@ -176,7 +176,7 @@ defmodule ClusterMurmur.Runtime.OperationalTelemetryTest do
     refute log =~ "must-not-appear"
   end
 
-  test "reports decode-success normalization rejection with a redacted fixed reason" do
+  test "reports accepted network-looking output without leaking provider content" do
     attach([:cluster_murmur, :generation, :decision])
     private_output = "https://private.example.invalid/must-not-appear"
 
@@ -197,15 +197,15 @@ defmodule ClusterMurmur.Runtime.OperationalTelemetryTest do
                2_000
              )
 
-    assert decision == {:fallback, :unsafe_output_form}
+    assert decision == {:llm, private_output}
 
     log =
       capture_log(fn ->
         assert OperationalTelemetry.generation_decision(decision) == decision
       end)
 
-    assert_generation(:fallback, :unsafe_output_form)
-    assert log =~ "error_class=unsafe_output_form"
+    assert_generation(:accepted, nil)
+    refute log =~ "error_class="
     refute log =~ private_output
     refute log =~ "must-not-appear"
   end

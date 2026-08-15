@@ -123,7 +123,7 @@ defmodule ClusterMurmur.Persistence.MessageStoreTest do
     for rejected <- [
           nil,
           Map.put(valid, :unexpected_private_value, "private"),
-          %{valid | content: "https://example.com"},
+          %{valid | content: "hidden\tcontrol"},
           %{valid | discord_message_id: "12345"},
           %{valid | conversation_id: "another-conversation"},
           %{valid | inserted_at: ~U[2026-08-05 11:59:59.999999Z]}
@@ -190,7 +190,7 @@ defmodule ClusterMurmur.Persistence.MessageStoreTest do
     assert {1, nil} =
              Repo.update_all(
                from(record in MessageRecord, where: record.conversation_id == ^conversation.id),
-               set: [content: "https://example.com"]
+               set: [content: "hidden\tcontrol"]
              )
 
     assert MessageStore.append(

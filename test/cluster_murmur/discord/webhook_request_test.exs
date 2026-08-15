@@ -106,7 +106,6 @@ defmodule ClusterMurmur.Discord.WebhookRequestTest do
     forged_payloads = [
       Map.put(request.json, "extra", true),
       put_in(request.json, ["allowed_mentions", "parse"], ["everyone"]),
-      %{request.json | "content" => "@everyone"},
       %{request.json | "username" => String.duplicate("x", 81)},
       %{request.json | "avatar_url" => nil},
       %{request.json | "avatar_url" => "http://example.com/avatar.png"}
@@ -116,6 +115,12 @@ defmodule ClusterMurmur.Discord.WebhookRequestTest do
       assert WebhookRequest.validate_for_transport(%{request | json: payload}, settings) ==
                {:error, :invalid_webhook_request}
     end
+
+    mention_payload = %{request.json | "content" => "Hello @everyone and <@123>"}
+    assert mention_payload["allowed_mentions"] == %{"parse" => []}
+
+    assert WebhookRequest.validate_for_transport(%{request | json: mention_payload}, settings) ==
+             :ok
 
     assert WebhookRequest.validate_for_transport(request, other_settings()) ==
              {:error, :invalid_webhook_request}

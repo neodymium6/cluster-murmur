@@ -85,7 +85,7 @@ defmodule ClusterMurmur.OperationalJSONFormatterTest do
           time: 1_723_456_789,
           component: :model_generation,
           outcome: :fallback,
-          error_class: :unsafe_output_form,
+          error_class: :invalid_unicode,
           content: "must-not-appear"
         }
       }
@@ -98,7 +98,7 @@ defmodule ClusterMurmur.OperationalJSONFormatterTest do
              "message" => "generation decision completed",
              "component" => "model_generation",
              "outcome" => "fallback",
-             "error_class" => "unsafe_output_form"
+             "error_class" => "invalid_unicode"
            }
 
     refute encoded =~ "must-not-appear"

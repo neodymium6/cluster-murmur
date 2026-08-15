@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted. Amended by [ADR 0229](0229-treat-generated-text-as-inert-content.md).
 
 ## Context
 
@@ -30,6 +30,6 @@ updates, prompt history loading, or retention deletion in this change.
 Database constraints preserve the fixed shape, hard scalar bounds, and common
 ASCII and Unicode blank-only encodings even for direct writes. Application
 validation remains responsible for complete Unicode visible-content semantics,
-normalization, and unsafe output-form rejection. Later stores must translate
-SQLite foreign-key failures generically and validate loaded records before
-returning them.
+normalization, and forbidden control-character rejection. Later stores must
+translate SQLite foreign-key failures generically and validate loaded records
+before returning them.

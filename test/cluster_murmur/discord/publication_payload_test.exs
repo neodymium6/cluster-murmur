@@ -22,6 +22,18 @@ defmodule ClusterMurmur.Discord.PublicationPayloadTest do
     assert payload.avatar_url == "https://example.com/avatar.png"
   end
 
+  test "preserves inert network and mention-looking content with parsing disabled" do
+    for content <- [
+          "Visit https://example.invalid",
+          "Target 192.0.2.10 recovered.",
+          "Hello @everyone and <@123>"
+        ] do
+      assert {:ok, payload} = PublicationPayload.build(message(content: content), persona())
+      assert payload.content == content
+      assert payload.allowed_mentions == %{parse: []}
+    end
+  end
+
   test "requires an exact unpublished runtime message" do
     valid = message()
 
@@ -30,8 +42,7 @@ defmodule ClusterMurmur.Discord.PublicationPayloadTest do
       %{},
       %{valid | discord_message_id: "123"},
       %{valid | content: ""},
-      %{valid | content: "@everyone confirmed"},
-      %{valid | content: "https://example.invalid"},
+      %{valid | content: "hidden\tcontrol"},
       Map.put(valid, :private, true)
     ]
 

@@ -31,8 +31,7 @@ defmodule ClusterMurmur.Runtime.OperationalTelemetry do
     :character_limit_exceeded,
     :invalid_provider_output,
     :invalid_unicode,
-    :provider_failure,
-    :unsafe_output_form
+    :provider_failure
   ]
 
   @doc "Records one completed bounded scheduler cycle."

@@ -4,7 +4,7 @@ Date: 2026-08-15
 
 ## Status
 
-Accepted.
+Accepted. Amended by [ADR 0229](0229-treat-generated-text-as-inert-content.md).
 
 ## Context
 

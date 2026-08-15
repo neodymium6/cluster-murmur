@@ -2,7 +2,7 @@ defmodule ClusterMurmur.Messages.Validator do
   @moduledoc """
   Validates one bounded generated message without exposing supplied content.
 
-  This hard runtime boundary rejects URL and Discord mention forms before
+  This hard runtime boundary rejects structurally invalid content before
   persistence. A configured publication character limit may be stricter.
   """
 
@@ -15,43 +15,7 @@ defmodule ClusterMurmur.Messages.Validator do
   @id_pattern ~r/\A[A-Za-z0-9][A-Za-z0-9._-]*\z/
   @snowflake_pattern ~r/\A[1-9][0-9]{0,19}\z/
   @forbidden_control_pattern ~r/[\x{0000}-\x{0009}\x{000B}-\x{001F}\x{007F}-\x{009F}]/u
-  @forbidden_scheme_pattern ~r/[A-Za-z][A-Za-z0-9+.-]*:[^\s]/u
-  @forbidden_network_path_pattern ~r/\/\/[^\s\/]+(?:\/[^\s]*)?/u
-  @unicode_dot_pattern ~r/[。．｡]/u
-  @japanese_sentence_endings [
-    "です",
-    "ます",
-    "ません",
-    "でした",
-    "ました",
-    "でしょう",
-    "ください",
-    "である",
-    "だった",
-    "だ",
-    "ない",
-    "した",
-    "いる",
-    "ある"
-  ]
-  @japanese_sentence_body_pattern ~r/\A[\p{Han}\p{Hiragana}\p{Katakana}\p{N}\p{M}ー々〆ヵヶ、！？「」『』（）・]+\z/u
-  @japanese_reference_cues [
-    "参照",
-    "リンク",
-    "ドメイン",
-    "ホスト",
-    "アドレス",
-    "アクセス",
-    "接続",
-    "サイト"
-  ]
-  @domain_token_separator_pattern ~r/[^\p{L}\p{N}\p{M}\p{Cf}.\-]+/u
-  @domain_ignorable_pattern ~r/[\p{M}\p{Cf}]/u
-  @domain_label_pattern ~r/\A[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?\z/u
-  @domain_suffix_pattern ~r/\A\p{L}[\p{L}\p{N}-]*\z/u
   @visible_content_pattern ~r/[^\p{Z}\p{C}\p{M}]/u
-  @forbidden_ip_pattern ~r/(?<![0-9])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9])/u
-  @forbidden_mention_pattern ~r/(?:@everyone|@here|<@!?[0-9]+>|<@&[0-9]+>)/u
   @origins [:llm, :fallback]
   @max_id_bytes DomainLimits.max_id_bytes()
   @max_content_bytes 16 * 1_024
@@ -59,7 +23,7 @@ defmodule ClusterMurmur.Messages.Validator do
   @max_snowflake 18_446_744_073_709_551_615
 
   @type error :: :invalid_message
-  @type content_error :: :blank_content | :invalid_content | :unsafe_content
+  @type content_error :: :blank_content | :invalid_content
 
   @doc "Validates one exact bounded message and its safe output content."
   @spec validate(term()) :: :ok | {:error, error()}
@@ -108,7 +72,7 @@ defmodule ClusterMurmur.Messages.Validator do
       byte_size(content) > @max_content_bytes -> {:error, :invalid_content}
       not String.valid?(content) -> {:error, :invalid_content}
       blank?(content) -> {:error, :blank_content}
-      unsafe_output?(content) -> {:error, :unsafe_content}
+      forbidden_control?(content) -> {:error, :invalid_content}
       true -> :ok
     end
   rescue
@@ -139,68 +103,10 @@ defmodule ClusterMurmur.Messages.Validator do
     |> then(&(not Regex.match?(@visible_content_pattern, &1)))
   end
 
-  defp unsafe_output?(content) do
-    normalized = String.normalize(content, :nfkc)
-    network_normalized = Regex.replace(@unicode_dot_pattern, normalized, ".")
-
-    domain_normalized = normalize_domain_scan(normalized)
-
-    Regex.match?(@forbidden_control_pattern, network_normalized) or
-      Regex.match?(@forbidden_scheme_pattern, network_normalized) or
-      Regex.match?(@forbidden_network_path_pattern, network_normalized) or
-      domain_like?(domain_normalized) or
-      Regex.match?(@forbidden_ip_pattern, network_normalized) or
-      Regex.match?(@forbidden_mention_pattern, network_normalized)
-  end
-
-  defp normalize_domain_scan(content) do
+  defp forbidden_control?(content) do
     content
-    |> String.split("\n", trim: false)
-    |> Enum.map_join("\n", fn line ->
-      if japanese_sentence_chain?(line),
-        do: Regex.replace(@unicode_dot_pattern, line, " "),
-        else: Regex.replace(@unicode_dot_pattern, line, ".")
-    end)
-  end
-
-  defp japanese_sentence_chain?(line) do
-    clauses = line |> String.trim() |> String.split("。", trim: false)
-
-    case Enum.split(clauses, -1) do
-      {completed, [""]} when length(completed) >= 2 ->
-        Enum.all?(completed, &japanese_sentence_clause?/1)
-
-      _other ->
-        false
-    end
-  end
-
-  defp japanese_sentence_clause?(clause) do
-    Regex.match?(@japanese_sentence_body_pattern, clause) and
-      Enum.any?(@japanese_sentence_endings, &String.ends_with?(clause, &1)) and
-      Enum.all?(@japanese_reference_cues, &(not String.contains?(clause, &1)))
-  end
-
-  defp domain_like?(content) do
-    content
-    |> String.split(@domain_token_separator_pattern, trim: true)
-    |> Enum.any?(&domain_token?/1)
-  end
-
-  defp domain_token?(token) do
-    token
-    |> String.trim("-")
-    |> String.split(".", trim: false)
-    |> Enum.reduce_while(false, fn label, previous_label? ->
-      detection_label = Regex.replace(@domain_ignorable_pattern, label, "")
-      valid_label? = Regex.match?(@domain_label_pattern, detection_label)
-
-      if previous_label? and valid_label? and
-           Regex.match?(@domain_suffix_pattern, detection_label),
-         do: {:halt, :domain},
-         else: {:cont, valid_label?}
-    end)
-    |> Kernel.==(:domain)
+    |> String.normalize(:nfkc)
+    |> then(&Regex.match?(@forbidden_control_pattern, &1))
   end
 
   defp valid_discord_id?(nil), do: true

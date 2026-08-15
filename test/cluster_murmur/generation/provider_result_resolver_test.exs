@@ -32,9 +32,9 @@ defmodule ClusterMurmur.Generation.ProviderResultResolverTest do
   test "chooses fallback when successful provider text is rejected" do
     for {raw, reason} <- [
           {"", :blank_output},
-          {"https://example.invalid", :unsafe_output_form},
           {"three", :character_limit_exceeded},
           {String.duplicate("a", 64 * 1_024 + 1), :invalid_provider_output},
+          {%{}, :invalid_provider_output},
           {<<255>>, :invalid_unicode}
         ] do
       limit = if reason == :character_limit_exceeded, do: 4, else: 2_000

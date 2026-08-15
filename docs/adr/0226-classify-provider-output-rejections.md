@@ -3,7 +3,8 @@
 ## Status
 
 Accepted. Amended by
-[ADR 0227](0227-emit-redacted-generation-decisions.md).
+[ADR 0227](0227-emit-redacted-generation-decisions.md) and
+[ADR 0229](0229-treat-generated-text-as-inert-content.md).
 
 ## Context
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Amends [ADR 0066](0066-validate-runtime-messages.md).
+Superseded by [ADR 0229](0229-treat-generated-text-as-inert-content.md).
 
 ## Context
 

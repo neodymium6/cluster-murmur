@@ -17,8 +17,7 @@ defmodule ClusterMurmur.Generation.ProviderResultResolver do
     :blank_output,
     :character_limit_exceeded,
     :invalid_provider_output,
-    :invalid_unicode,
-    :unsafe_output_form
+    :invalid_unicode
   ]
 
   @type fallback_reason ::
@@ -27,7 +26,6 @@ defmodule ClusterMurmur.Generation.ProviderResultResolver do
           | :invalid_provider_output
           | :invalid_unicode
           | :provider_failure
-          | :unsafe_output_form
   @type decision :: {:llm, String.t()} | {:fallback, fallback_reason()}
   @type error :: :invalid_provider_resolution
 

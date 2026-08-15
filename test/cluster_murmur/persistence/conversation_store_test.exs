@@ -258,7 +258,7 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
     assert {1, nil} =
              Repo.update_all(
                from(record in MessageRecord, where: record.conversation_id == ^advanced.id),
-               set: [content: "https://example.com"]
+               set: [content: "hidden\tcontrol"]
              )
 
     assert ConversationStore.wait(advanced) == {:error, :invalid_message_record}
@@ -486,7 +486,7 @@ defmodule ClusterMurmur.Persistence.ConversationStoreTest do
     assert {1, nil} =
              Repo.update_all(
                from(record in MessageRecord, where: record.conversation_id == ^started.id),
-               set: [content: "https://example.com"]
+               set: [content: "hidden\tcontrol"]
              )
 
     assert ConversationStore.complete(advanced, ~U[2026-08-05 12:02:00.000000Z]) ==

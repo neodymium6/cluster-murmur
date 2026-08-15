@@ -7,6 +7,13 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## Unreleased
 
+### Generated content policy
+
+- Treated bounded network- and mention-looking generated text as inert content
+  while retaining capability restrictions and mention-disabled publication.
+- Removed the content-semantic `unsafe_content` classifier and the unreachable
+  `unsafe_output_form` generation fallback class.
+
 ## [0.2.0-alpha.9](docs/release-notes-v0.2.0-alpha.9.md) - 2026-08-15
 
 ### Output validation
