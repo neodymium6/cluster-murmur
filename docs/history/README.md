@@ -6,8 +6,11 @@ contract, or deployment guidance.
 
 ## Released standalone alpha
 
-- [`v0.2.0-alpha.6`](../release-notes-v0.2.0-alpha.6.md) is the current
+- [`v0.2.0-alpha.7`](../release-notes-v0.2.0-alpha.7.md) is the current
   standalone alpha.
+- [`v0.2.0-alpha.6`](../release-notes-v0.2.0-alpha.6.md) was superseded after
+  bounded reasoning budgets, effort controls, and token-exhaustion diagnostics
+  were added.
 - [`v0.2.0-alpha.5`](../release-notes-v0.2.0-alpha.5.md) was superseded after
   the Chat Completions output-token field was updated for current models.
 - [`v0.2.0-alpha.4`](../release-notes-v0.2.0-alpha.4.md) was superseded after
