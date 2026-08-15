@@ -106,7 +106,7 @@ defmodule ClusterMurmur.Conversations.ValidatorTest do
 
     for messages <- [
           [%{"content" => "private"}],
-          [%{message | content: "https://example.com"}],
+          [%{message | content: "hidden\tcontrol"}],
           [%{message | conversation_id: "another-conversation"}],
           [%{message | persona_id: "outsider"}],
           [%{message | inserted_at: ~U[2026-08-05 11:59:59Z]}],

@@ -145,7 +145,7 @@ defmodule ClusterMurmur.Persistence.ConversationMessageHistoryTest do
     assert {1, nil} =
              Repo.update_all(
                from(record in MessageRecord, where: record.conversation_id == ^conversation.id),
-               set: [content: "https://example.com"]
+               set: [content: "hidden\tcontrol"]
              )
 
     assert MessageStore.list_for_conversation(advanced) ==

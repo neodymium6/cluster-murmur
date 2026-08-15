@@ -42,7 +42,7 @@ defmodule ClusterMurmur.Persistence.MessageRecordValidatorTest do
           %{valid | conversation_id: "invalid id"},
           %{valid | persona_id: ""},
           %{valid | origin: :system},
-          %{valid | content: "https://example.com"},
+          %{valid | content: "hidden\tcontrol"},
           %{valid | discord_message_id: "0"},
           %{valid | inserted_at: %{valid.inserted_at | hour: 24}},
           %{valid | inserted_at: %{valid.inserted_at | microsecond: {0, 0}}}

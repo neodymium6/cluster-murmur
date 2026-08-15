@@ -31,7 +31,7 @@ defmodule ClusterMurmur.Messages.ValidatorTest do
     end
   end
 
-  test "enforces bounded nonblank UTF-8 content without unsafe output forms" do
+  test "enforces bounded nonblank UTF-8 content and rejects controls" do
     valid = message(:llm, nil)
 
     invalid_content = [
@@ -43,33 +43,6 @@ defmodule ClusterMurmur.Messages.ValidatorTest do
       <<255>>,
       "hidden\0control",
       "hidden\tcontrol",
-      "visit _https://example.invalid",
-      "visit https://example.com",
-      "visit ftp://example.invalid",
-      "[click](https:localhost)",
-      "[click](//localhost/path)",
-      "data:text/plain,hello",
-      "file:/etc/passwd",
-      "visit WWW.EXAMPLE.COM",
-      "visit example.com/path",
-      "visit example.invalid",
-      "visit example.com.",
-      "visit example.com..",
-      "visit example.com.1",
-      "visit service.x/path",
-      "visit example.\u200Dcom",
-      "visit example.\u200Ccom",
-      "visit example.\u0301com",
-      "visit 192.0.2.10",
-      "visit 例え.テスト",
-      "visit 例え。テスト",
-      "visit हिन्दी.भारत",
-      "visit হিন্দি.ভারত",
-      "hello @everyone",
-      "hello @here",
-      "hello <@123>",
-      "hello <@!123>",
-      "hello <@&123>",
       String.duplicate("a", 16 * 1_024 + 1)
     ]
 
@@ -77,7 +50,16 @@ defmodule ClusterMurmur.Messages.ValidatorTest do
       assert Validator.validate(%{valid | content: content}) == {:error, :invalid_message}
     end
 
-    assert Validator.validate(%{valid | content: "A bounded line.\nA second line."}) == :ok
+    for content <- [
+          "A bounded line.\nA second line.",
+          "visit https://example.com/path",
+          "visit example.com",
+          "visit 192.0.2.10",
+          "visit 例え。テスト",
+          "hello @everyone and <@123>"
+        ] do
+      assert Validator.validate(%{valid | content: content}) == :ok
+    end
   end
 
   test "allows only an optional bounded decimal Discord message ID" do
@@ -105,7 +87,7 @@ defmodule ClusterMurmur.Messages.ValidatorTest do
 
   test "validates content without requiring message metadata" do
     assert Validator.validate_content("The latest bounded fact is ready.") == :ok
-    assert Validator.validate_content("https://example.invalid") == {:error, :invalid_message}
+    assert Validator.validate_content("https://example.invalid") == :ok
     assert Validator.validate_content(123) == {:error, :invalid_message}
   end
 
@@ -120,21 +102,17 @@ defmodule ClusterMurmur.Messages.ValidatorTest do
       assert Validator.classify_content(content) == {:error, :invalid_content}
     end
 
-    for content <- ["https://example.invalid", "hello @everyone", "visit 192.0.2.10"] do
-      assert Validator.classify_content(content) == {:error, :unsafe_content}
+    for content <- ["hidden\0control", "hidden\tcontrol"] do
+      assert Validator.classify_content(content) == {:error, :invalid_content}
     end
   end
 
-  test "distinguishes Japanese sentence full stops from Unicode domain separators" do
+  test "accepts Japanese prose and network-looking text without semantic classification" do
     for content <- [
           "今日は正常です。クラスタは静かです。",
           "処理が完了しました。次の実行を待ちます。",
-          "異常はありません｡監視を続けます｡"
-        ] do
-      assert Validator.classify_content(content) == :ok
-    end
-
-    for content <- [
+          "異常はありません｡監視を続けます｡",
+          "確認したよ。気になるね。",
           "例え。テスト",
           "visit 例え。テスト",
           "visit 例え。テスト。",
@@ -151,17 +129,17 @@ defmodule ClusterMurmur.Messages.ValidatorTest do
           "サイトは例えです。テストます。",
           "アクセスは例えです。テストます。"
         ] do
-      assert Validator.classify_content(content) == {:error, :unsafe_content}
+      assert Validator.classify_content(content) == :ok
     end
   end
 
-  test "bounds domain scanning work for adversarial maximum-size content" do
+  test "bounds maximum-size content classification work" do
     valid = message(:llm, nil)
     adversarial = String.duplicate("a.", 8_192)
     japanese_near_miss = String.duplicate("1だ。", 2_300) <> "1"
 
     task = Task.async(fn -> Validator.validate(%{valid | content: adversarial}) end)
-    assert Task.await(task, 1_000) == {:error, :invalid_message}
+    assert Task.await(task, 1_000) == :ok
 
     task = Task.async(fn -> Validator.classify_content(japanese_near_miss) end)
     assert Task.await(task, 1_000) == :ok

@@ -27,7 +27,7 @@ defmodule ClusterMurmur.Persistence.MessageRecordTest do
       Map.put(valid, :unexpected_private_value, "private"),
       %{valid | conversation_id: "invalid id"},
       %{valid | origin: :system},
-      %{valid | content: "https://example.com"},
+      %{valid | content: "hidden\tcontrol"},
       %{valid | discord_message_id: "0"},
       %{valid | inserted_at: %{valid.inserted_at | hour: 24}}
     ]

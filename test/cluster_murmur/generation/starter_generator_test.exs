@@ -58,14 +58,14 @@ defmodule ClusterMurmur.Generation.StarterGeneratorTest do
     refute inspect(generated) =~ "clearly-fake-api-key"
   end
 
-  test "uses deterministic fallback for provider failures and rejected output" do
+  test "uses deterministic fallback for provider failures and structurally rejected output" do
     configuration = RuntimeFixture.configuration()
     plan = RuntimeFixture.generation_plan(configuration)
     settings = RuntimeFixture.provider_settings()
 
     for transport <- [
           fn _request -> {:error, :timeout} end,
-          fn _request -> {:ok, "https://example.invalid/private"} end
+          fn _request -> {:ok, <<255>>} end
         ] do
       assert {:ok, generated} =
                StarterGenerator.generate(

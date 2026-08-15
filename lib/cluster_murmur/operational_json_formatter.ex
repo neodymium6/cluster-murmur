@@ -43,8 +43,7 @@ defmodule ClusterMurmur.OperationalJSONFormatter do
     :retention_failed,
     :timeout,
     :token_exhausted,
-    :unavailable,
-    :unsafe_output_form
+    :unavailable
   ]
 
   @impl true

@@ -19,8 +19,7 @@ defmodule ClusterMurmur.Generation.ProviderOutputNormalizer do
     :blank_output,
     :character_limit_exceeded,
     :invalid_provider_output,
-    :invalid_unicode,
-    :unsafe_output_form
+    :invalid_unicode
   ]
 
   @type error ::
@@ -28,7 +27,6 @@ defmodule ClusterMurmur.Generation.ProviderOutputNormalizer do
           | :character_limit_exceeded
           | :invalid_provider_output
           | :invalid_unicode
-          | :unsafe_output_form
 
   @doc "Returns normalized content under the injected character limit."
   @spec normalize(term(), term(), term()) :: {:ok, String.t()} | {:error, error()}
@@ -70,7 +68,6 @@ defmodule ClusterMurmur.Generation.ProviderOutputNormalizer do
     case MessageValidator.classify_content(content) do
       :ok -> :ok
       {:error, :blank_content} -> {:error, :blank_output}
-      {:error, :unsafe_content} -> {:error, :unsafe_output_form}
       {:error, :invalid_content} -> {:error, :invalid_provider_output}
     end
   end

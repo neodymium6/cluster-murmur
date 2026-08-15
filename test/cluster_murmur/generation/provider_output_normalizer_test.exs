@@ -54,30 +54,28 @@ defmodule ClusterMurmur.Generation.ProviderOutputNormalizerTest do
            ) == {:ok, "The latest run completed."}
   end
 
-  test "delegates final content policy to the shared message validator" do
+  test "accepts inert network and mention-looking text" do
     for raw <- [
           "Visit https://example.invalid",
           "Visit example.com",
           "Target 192.0.2.10 recovered.",
           "Hello @everyone"
         ] do
-      assert ProviderOutputNormalizer.normalize(raw, persona(), 2_000) ==
-               {:error, :unsafe_output_form}
+      assert ProviderOutputNormalizer.normalize(raw, persona(), 2_000) == {:ok, raw}
     end
 
     assert ProviderOutputNormalizer.normalize("Host 127.1 recovered.", persona(), 2_000) ==
              {:ok, "Host 127.1 recovered."}
   end
 
-  test "accepts ordinary Japanese prose while rejecting Unicode-dot domains" do
-    assert ProviderOutputNormalizer.normalize(
-             "今日は正常です。クラスタは静かです。",
-             persona(),
-             2_000
-           ) == {:ok, "今日は正常です。クラスタは静かです。"}
-
-    assert ProviderOutputNormalizer.normalize("visit 例え。テスト", persona(), 2_000) ==
-             {:error, :unsafe_output_form}
+  test "accepts formal and colloquial Japanese prose without classifying punctuation" do
+    for raw <- [
+          "今日は正常です。クラスタは静かです。",
+          "確認したよ。気になるね。",
+          "visit 例え。テスト"
+        ] do
+      assert ProviderOutputNormalizer.normalize(raw, persona(), 2_000) == {:ok, raw}
+    end
   end
 
   test "classifies blank output after mechanical normalization" do

@@ -163,7 +163,7 @@ defmodule ClusterMurmur.Persistence.PersonaMessageHistoryTest do
     assert {1, nil} =
              Repo.update_all(
                from(record in MessageRecord, where: record.persona_id == "observer"),
-               set: [content: "https://example.com"]
+               set: [content: "hidden\tcontrol"]
              )
 
     assert MessageStore.list_for_persona(
