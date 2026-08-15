@@ -6,8 +6,10 @@ contract, or deployment guidance.
 
 ## Released standalone alpha
 
-- [`v0.2.0-alpha.7`](../release-notes-v0.2.0-alpha.7.md) is the current
+- [`v0.2.0-alpha.8`](../release-notes-v0.2.0-alpha.8.md) is the current
   standalone alpha.
+- [`v0.2.0-alpha.7`](../release-notes-v0.2.0-alpha.7.md) was superseded after
+  privacy-safe post-decode fallback diagnostics were added.
 - [`v0.2.0-alpha.6`](../release-notes-v0.2.0-alpha.6.md) was superseded after
   bounded reasoning budgets, effort controls, and token-exhaustion diagnostics
   were added.
