@@ -6,8 +6,11 @@ contract, or deployment guidance.
 
 ## Released standalone alpha
 
-- [`v0.2.0-alpha.8`](../release-notes-v0.2.0-alpha.8.md) is the current
+- [`v0.2.0-alpha.9`](../release-notes-v0.2.0-alpha.9.md) is the current
   standalone alpha.
+- [`v0.2.0-alpha.8`](../release-notes-v0.2.0-alpha.8.md) was superseded after
+  Japanese sentence-ending full stops were disambiguated from Unicode-dot
+  network references.
 - [`v0.2.0-alpha.7`](../release-notes-v0.2.0-alpha.7.md) was superseded after
   privacy-safe post-decode fallback diagnostics were added.
 - [`v0.2.0-alpha.6`](../release-notes-v0.2.0-alpha.6.md) was superseded after
