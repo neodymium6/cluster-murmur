@@ -6,8 +6,10 @@ contract, or deployment guidance.
 
 ## Released standalone alpha
 
-- [`v0.2.0-alpha.5`](../release-notes-v0.2.0-alpha.5.md) is the current
+- [`v0.2.0-alpha.6`](../release-notes-v0.2.0-alpha.6.md) is the current
   standalone alpha.
+- [`v0.2.0-alpha.5`](../release-notes-v0.2.0-alpha.5.md) was superseded after
+  the Chat Completions output-token field was updated for current models.
 - [`v0.2.0-alpha.4`](../release-notes-v0.2.0-alpha.4.md) was superseded after
   the runtime trust-store fix and documentation reorganization.
 - [`v0.2.0-alpha.3`](../release-notes-v0.2.0-alpha.3.md) was superseded after an
