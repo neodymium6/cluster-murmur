@@ -43,7 +43,11 @@ opens one HTTP/1 connection per generation. HTTPS uses operating-system CA and
 hostname verification. Responses are limited to 16 KiB of headers, 64 KiB of
 body, 96 KiB of total HTTP parser input, and the configured overall timeout.
 The adapter does not follow redirects, retry, use deployment proxy settings,
-pool connections, or expose arbitrary request values.
+pool connections, or expose arbitrary request values. For successful responses,
+present finish reasons must be closed values and present completion and
+reasoning token counts must be bounded nonnegative integers. A `length`
+completion with no visible content becomes the stable `token_exhausted` error;
+raw content, usage payloads, and provider diagnostics remain private.
 
 ## Discord routing
 

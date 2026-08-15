@@ -76,6 +76,14 @@ POST, verifies TLS when selected, and bounds response headers, body bytes, and
 total parser input. It provides no generic HTTP method, URL, header, retry,
 redirect, proxy, or pooling interface.
 
+Successful model responses may include one closed `finish_reason` and bounded
+nonnegative `completion_tokens` and `reasoning_tokens` usage counts. These
+values are validated inside the response boundary and are not returned or
+logged. Null or blank message content with `finish_reason: "length"` returns
+the stable `token_exhausted` class. Visible partial content remains eligible
+for normalization; other blank content retains the existing normalization
+fallback.
+
 Discord publication claims one exact durable `started` attempt immediately
 before invoking the injected transport. Only the compare-and-set winner may
 dispatch. HTTP responses that prove rejection are known failures; malformed
