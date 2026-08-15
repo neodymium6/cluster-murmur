@@ -6,8 +6,11 @@ contract, or deployment guidance.
 
 ## Released standalone alpha
 
-- [`v0.2.0-alpha.10`](../release-notes-v0.2.0-alpha.10.md) is the current
+- [`v0.2.0-alpha.11`](../release-notes-v0.2.0-alpha.11.md) is the current
   standalone alpha.
+- [`v0.2.0-alpha.10`](../release-notes-v0.2.0-alpha.10.md) was superseded after
+  absent prompt facts were omitted and prompt-facing timestamp presentation
+  became configurable without changing canonical UTC event time.
 - [`v0.2.0-alpha.9`](../release-notes-v0.2.0-alpha.9.md) was superseded after
   bounded generated text was separated from application capabilities and
   Discord mention expansion.
