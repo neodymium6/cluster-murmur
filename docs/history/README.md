@@ -6,8 +6,11 @@ contract, or deployment guidance.
 
 ## Released standalone alpha
 
-- [`v0.2.0-alpha.9`](../release-notes-v0.2.0-alpha.9.md) is the current
+- [`v0.2.0-alpha.10`](../release-notes-v0.2.0-alpha.10.md) is the current
   standalone alpha.
+- [`v0.2.0-alpha.9`](../release-notes-v0.2.0-alpha.9.md) was superseded after
+  bounded generated text was separated from application capabilities and
+  Discord mention expansion.
 - [`v0.2.0-alpha.8`](../release-notes-v0.2.0-alpha.8.md) was superseded after
   Japanese sentence-ending full stops were disambiguated from Unicode-dot
   network references.
