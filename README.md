@@ -84,7 +84,7 @@ asserted lifecycle and isolation boundaries.
 ## Project status
 
 Cluster Murmur is a public standalone alpha. The current source version is
-`0.2.0-alpha.10`; published artifacts are listed on the
+`0.2.0-alpha.11`; published artifacts are listed on the
 [GitHub Releases page](https://github.com/neodymium6/cluster-murmur/releases).
 
 The standalone alpha includes fixed observer, OpenAI-compatible, and Discord

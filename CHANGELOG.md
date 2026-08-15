@@ -7,6 +7,15 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## Unreleased
 
+## [0.2.0-alpha.11](docs/release-notes-v0.2.0-alpha.11.md) - 2026-08-15
+
+### Generation facts
+
+- Omitted absent optional event facts from prompts instead of presenting JSON
+  `null` values as confirmed facts.
+- Added a validated deployment-wide presentation timezone while preserving
+  canonical UTC timestamps for event storage and identity.
+
 ## [0.2.0-alpha.10](docs/release-notes-v0.2.0-alpha.10.md) - 2026-08-15
 
 ### Generated content policy
