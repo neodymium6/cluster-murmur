@@ -1,7 +1,7 @@
 defmodule ClusterMurmur.Generation.FactProjectionValidator do
   @moduledoc """
   Validates one exact allowlisted generation-fact projection and converts it to
-  a fixed prompt-data map.
+  a bounded prompt-data map that omits absent optional facts.
   """
 
   alias ClusterMurmur.Events.Event
@@ -38,7 +38,7 @@ defmodule ClusterMurmur.Generation.FactProjectionValidator do
 
   def validate(_projection), do: {:error, :invalid_fact_projection}
 
-  @doc "Returns a fixed string-keyed prompt-data map after complete validation."
+  @doc "Returns an allowlisted string-keyed prompt-data map after complete validation."
   @spec to_prompt_map(term()) :: {:ok, map()} | {:error, error()}
   def to_prompt_map(projection) do
     case validate(projection) do
@@ -93,6 +93,7 @@ defmodule ClusterMurmur.Generation.FactProjectionValidator do
       "severity" => projection.severity,
       "subject" => projection.subject
     }
+    |> Map.reject(fn {_key, value} -> is_nil(value) end)
   end
 
   defp validate_tree(value, _depth, nodes)

@@ -184,6 +184,36 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequestTest do
              {:error, :invalid_provider_request}
   end
 
+  test "round-trips a prompt whose optional facts are absent" do
+    prompt = %{
+      prompt()
+      | confirmed_facts: %{
+          "details" => %{"attempt" => 2},
+          "event_type" => "schedule.reminder",
+          "occurred_at" => "2026-08-05T12:00:00.000000Z"
+        }
+    }
+
+    assert {:ok, request} = OpenAICompatibleRequest.encode(prompt, settings())
+    assert OpenAICompatibleRequest.validate_for_transport(request, settings()) == :ok
+
+    [_, user] = request.json["messages"]
+    decoded = :json.decode(user["content"])
+
+    refute Map.has_key?(decoded["confirmed_facts"], "previous_state")
+    refute Map.has_key?(decoded["confirmed_facts"], "current_state")
+  end
+
+  test "rejects explicit null and unknown optional fact fields" do
+    for facts <- [
+          Map.put(prompt().confirmed_facts, "previous_state", nil),
+          Map.put(prompt().confirmed_facts, "unknown", "value")
+        ] do
+      assert OpenAICompatibleRequest.encode(%{prompt() | confirmed_facts: facts}, settings()) ==
+               {:error, :invalid_prompt_request}
+    end
+  end
+
   defp prompt do
     %PromptRequest{
       system_instruction: PromptAssembler.system_instruction(),
