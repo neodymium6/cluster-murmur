@@ -156,7 +156,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequest do
   def validate_for_transport(_request, _settings), do: {:error, :invalid_provider_request}
 
   defp reconstruct_prompt(%{
-         "max_tokens" => _max_tokens,
+         "max_completion_tokens" => _max_completion_tokens,
          "messages" => [
            %{"content" => system_instruction, "role" => "system"} = system_message,
            %{"content" => encoded_data, "role" => "user"} = user_message
@@ -282,7 +282,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequest do
 
   defp request_json(prompt, settings) do
     %{
-      "max_tokens" => settings.max_output_tokens,
+      "max_completion_tokens" => settings.max_output_tokens,
       "messages" => [
         %{"content" => prompt.system_instruction, "role" => "system"},
         %{"content" => encode_json(prompt_data(prompt)), "role" => "user"}

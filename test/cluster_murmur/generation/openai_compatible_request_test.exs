@@ -20,7 +20,8 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequestTest do
     assert request.overall_timeout_ms == 20_000
     assert request.max_response_bytes == 64 * 1_024
     assert request.json["model"] == "example-model"
-    assert request.json["max_tokens"] == 300
+    assert request.json["max_completion_tokens"] == 300
+    refute Map.has_key?(request.json, "max_tokens")
 
     assert [system, user] = request.json["messages"]
     assert system == %{"content" => PromptAssembler.system_instruction(), "role" => "system"}
@@ -112,6 +113,13 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequestTest do
       %{request | method: :get},
       %{request | url: "https://other.example.invalid/v1/chat/completions"},
       %{request | headers: []},
+      %{
+        request
+        | json:
+            request.json
+            |> Map.delete("max_completion_tokens")
+            |> Map.put("max_tokens", 300)
+      },
       %{request | json: Map.put(request.json, "temperature", 2)},
       %{request | connect_timeout_ms: 60_000},
       %{request | receive_timeout_ms: 60_000},
