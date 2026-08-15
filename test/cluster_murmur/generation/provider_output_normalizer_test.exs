@@ -62,32 +62,46 @@ defmodule ClusterMurmur.Generation.ProviderOutputNormalizerTest do
           "Hello @everyone"
         ] do
       assert ProviderOutputNormalizer.normalize(raw, persona(), 2_000) ==
-               {:error, :invalid_provider_output}
+               {:error, :unsafe_output_form}
     end
 
     assert ProviderOutputNormalizer.normalize("Host 127.1 recovered.", persona(), 2_000) ==
              {:ok, "Host 127.1 recovered."}
   end
 
-  test "rejects blank, malformed, and oversized responses" do
+  test "classifies blank output after mechanical normalization" do
     for raw <- [
           "",
           " \t\r ",
           "Observer:",
-          "Observer - ",
-          <<255>>,
-          String.duplicate("a", 64 * 1_024 + 1)
+          "Observer - "
         ] do
       assert ProviderOutputNormalizer.normalize(raw, persona(), 2_000) ==
-               {:error, :invalid_provider_output}
+               {:error, :blank_output}
     end
+  end
+
+  test "classifies invalid Unicode without exposing content" do
+    result = ProviderOutputNormalizer.normalize(<<255>>, persona(), 2_000)
+    assert result == {:error, :invalid_unicode}
+    refute inspect(result) =~ <<255>>
+  end
+
+  test "rejects oversized raw responses with the generic bounded class" do
+    assert ProviderOutputNormalizer.normalize(
+             String.duplicate("a", 64 * 1_024 + 1),
+             persona(),
+             2_000
+           ) == {:error, :invalid_provider_output}
   end
 
   test "enforces the injected character limit after normalization" do
     assert ProviderOutputNormalizer.normalize("éé", persona(), 2) == {:ok, "éé"}
 
+    assert ProviderOutputNormalizer.normalize("three", persona(), 4) ==
+             {:error, :character_limit_exceeded}
+
     for {raw, limit} <- [
-          {"three", 4},
           {"bounded", 0},
           {"bounded", 16 * 1_024 + 1},
           {"bounded", 2.0}

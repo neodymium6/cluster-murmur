@@ -164,7 +164,7 @@ defmodule ClusterMurmur.Generation.StarterGenerator do
       else: {:error, :invalid_starter_message}
   end
 
-  defp build_message(:fallback, plan, inserted_at) do
+  defp build_message({:fallback, _reason}, plan, inserted_at) do
     FallbackGenerator.generate(
       plan.started.plan.authorization.plan.event,
       plan.started.conversation.id,

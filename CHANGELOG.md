@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## Unreleased
 
+### Generation diagnostics
+
+- Classified provider failures and privacy-safe output-normalization rejection
+  reasons without changing deterministic fallback content.
+
 ## [0.2.0-alpha.7](docs/release-notes-v0.2.0-alpha.7.md) - 2026-08-15
 
 ### LLM reasoning

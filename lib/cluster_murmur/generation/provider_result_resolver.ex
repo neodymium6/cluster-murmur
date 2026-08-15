@@ -13,8 +13,22 @@ defmodule ClusterMurmur.Generation.ProviderResultResolver do
   }
 
   @max_output_characters 16 * 1_024
+  @normalization_reasons [
+    :blank_output,
+    :character_limit_exceeded,
+    :invalid_provider_output,
+    :invalid_unicode,
+    :unsafe_output_form
+  ]
 
-  @type decision :: {:llm, String.t()} | :fallback
+  @type fallback_reason ::
+          :blank_output
+          | :character_limit_exceeded
+          | :invalid_provider_output
+          | :invalid_unicode
+          | :provider_failure
+          | :unsafe_output_form
+  @type decision :: {:llm, String.t()} | {:fallback, fallback_reason()}
   @type error :: :invalid_provider_resolution
 
   @doc "Returns normalized LLM text or a diagnostics-free fallback decision."
@@ -38,10 +52,10 @@ defmodule ClusterMurmur.Generation.ProviderResultResolver do
   defp resolve_result({:ok, raw}, persona, character_limit) do
     case ProviderOutputNormalizer.normalize(raw, persona, character_limit) do
       {:ok, content} -> {:ok, {:llm, content}}
-      {:error, :invalid_provider_output} -> {:ok, :fallback}
+      {:error, reason} when reason in @normalization_reasons -> {:ok, {:fallback, reason}}
     end
   end
 
   defp resolve_result(_provider_failure, _persona, _character_limit),
-    do: {:ok, :fallback}
+    do: {:ok, {:fallback, :provider_failure}}
 end

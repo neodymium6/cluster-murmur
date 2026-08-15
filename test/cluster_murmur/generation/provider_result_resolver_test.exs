@@ -24,20 +24,23 @@ defmodule ClusterMurmur.Generation.ProviderResultResolverTest do
           {:unexpected, "private-provider-payload"}
         ] do
       decision = ProviderResultResolver.resolve(result, persona(), 2_000)
-      assert decision == {:ok, :fallback}
+      assert decision == {:ok, {:fallback, :provider_failure}}
       refute inspect(decision) =~ "private"
     end
   end
 
   test "chooses fallback when successful provider text is rejected" do
-    for raw <- [
-          "",
-          "https://example.invalid",
-          String.duplicate("a", 64 * 1_024 + 1),
-          <<255>>
+    for {raw, reason} <- [
+          {"", :blank_output},
+          {"https://example.invalid", :unsafe_output_form},
+          {"three", :character_limit_exceeded},
+          {String.duplicate("a", 64 * 1_024 + 1), :invalid_provider_output},
+          {<<255>>, :invalid_unicode}
         ] do
-      assert ProviderResultResolver.resolve({:ok, raw}, persona(), 2_000) ==
-               {:ok, :fallback}
+      limit = if reason == :character_limit_exceeded, do: 4, else: 2_000
+
+      assert ProviderResultResolver.resolve({:ok, raw}, persona(), limit) ==
+               {:ok, {:fallback, reason}}
     end
   end
 
