@@ -35,16 +35,19 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequest do
   @prompt_keys PromptRequest.__struct__() |> Map.keys()
   @prompt_key_count length(@prompt_keys)
   @persona_keys ["display_name", "instructions"]
-  @fact_keys [
-    "current_state",
+  @required_fact_keys [
     "details",
     "event_type",
+    "occurred_at"
+  ]
+  @optional_fact_keys [
+    "current_state",
     "group",
-    "occurred_at",
     "previous_state",
     "severity",
     "subject"
   ]
+  @fact_keys @required_fact_keys ++ @optional_fact_keys
   @creative_keys ["conversation_kind", "mood"]
   @conversation_line_keys ["content", "speaker"]
 
@@ -229,7 +232,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequest do
   end
 
   defp valid_facts?(value) do
-    with true <- exact_map_keys?(value, @fact_keys),
+    with true <- valid_fact_keys?(value),
          {:ok, occurred_at} <- parse_occurred_at(value["occurred_at"]),
          projection = %FactProjection{
            event_type: value["event_type"],
@@ -247,6 +250,15 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequest do
       _failure -> false
     end
   end
+
+  defp valid_fact_keys?(value) when is_map(value) and not is_struct(value) do
+    keys = Map.keys(value)
+
+    Enum.all?(@required_fact_keys, &Map.has_key?(value, &1)) and
+      Enum.all?(keys, &(&1 in @fact_keys))
+  end
+
+  defp valid_fact_keys?(_value), do: false
 
   defp parse_occurred_at(value)
        when is_binary(value) and byte_size(value) in 1..64 do

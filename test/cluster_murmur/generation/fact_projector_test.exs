@@ -51,15 +51,28 @@ defmodule ClusterMurmur.Generation.FactProjectorTest do
     end
   end
 
-  test "preserves nil optional facts in the fixed shape" do
+  test "omits absent optional facts from the prompt map" do
     assert {:ok, projection} =
              event(subject: nil, group: nil, severity: nil)
              |> FactProjector.project()
 
     assert {:ok, prompt_facts} = FactProjectionValidator.to_prompt_map(projection)
-    assert prompt_facts["subject"] == nil
-    assert prompt_facts["group"] == nil
-    assert prompt_facts["severity"] == nil
+
+    assert prompt_facts == %{
+             "details" => %{},
+             "event_type" => "observation.recovered",
+             "occurred_at" => "2026-08-05T12:00:00.000000Z"
+           }
+
+    for omitted <- [
+          "subject",
+          "group",
+          "severity",
+          "previous_state",
+          "current_state"
+        ] do
+      refute Map.has_key?(prompt_facts, omitted)
+    end
   end
 
   test "rejects invalid events before projection" do

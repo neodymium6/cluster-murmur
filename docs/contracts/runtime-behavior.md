@@ -118,6 +118,10 @@ conversation history. The logical input has this shape:
 }
 ```
 
+Prompt-facing fact maps omit optional fields whose values are absent. They do
+not encode absence as JSON `null`, a string such as `unknown`, or a synthesized
+state. Non-null transition states remain present.
+
 The LLM may add humor, metaphor, light irony, fictional emotion, or short
 in-world dialogue. It must not invent a cause, measurement, repair, recovery,
 credential, endpoint, or MCP action.
