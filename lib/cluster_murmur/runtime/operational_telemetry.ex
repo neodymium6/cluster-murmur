@@ -15,6 +15,7 @@ defmodule ClusterMurmur.Runtime.OperationalTelemetry do
 
   @cycle_event [:cluster_murmur, :runtime, :cycle, :stop]
   @external_event [:cluster_murmur, :external, :request, :stop]
+  @generation_event [:cluster_murmur, :generation, :decision]
 
   @cycle_errors %{
     poll: [nil, :invalid_cycle, :poll_failed],
@@ -25,6 +26,14 @@ defmodule ClusterMurmur.Runtime.OperationalTelemetry do
   }
 
   @external_sources [:discord_webhook, :model_provider, :observer_mcp]
+  @generation_fallback_reasons [
+    :blank_output,
+    :character_limit_exceeded,
+    :invalid_provider_output,
+    :invalid_unicode,
+    :provider_failure,
+    :unsafe_output_form
+  ]
 
   @doc "Records one completed bounded scheduler cycle."
   @spec cycle(atom(), integer(), atom() | nil) :: :ok
@@ -57,6 +66,21 @@ defmodule ClusterMurmur.Runtime.OperationalTelemetry do
     _error -> result
   catch
     _kind, _reason -> result
+  end
+
+  @doc "Records one fixed generation decision and returns it unchanged."
+  @spec generation_decision(term()) :: term()
+  def generation_decision(decision) do
+    with {:ok, outcome, error_class} <- generation_outcome(decision) do
+      metadata = %{component: :model_generation, outcome: outcome, error_class: error_class}
+      emit(@generation_event, %{count: 1}, metadata, "generation decision completed")
+    end
+
+    decision
+  rescue
+    _error -> decision
+  catch
+    _kind, _reason -> decision
   end
 
   defp cycle_outcome(component, error_class) do
@@ -121,6 +145,13 @@ defmodule ClusterMurmur.Runtime.OperationalTelemetry do
 
   defp external_outcome(_source, _result), do: {:error, :invalid_operational_telemetry}
 
+  defp generation_outcome({:llm, content}) when is_binary(content), do: {:ok, :accepted, nil}
+
+  defp generation_outcome({:fallback, reason}) when reason in @generation_fallback_reasons,
+    do: {:ok, :fallback, reason}
+
+  defp generation_outcome(_decision), do: {:error, :invalid_operational_telemetry}
+
   defp measurements(started_at) when is_integer(started_at) do
     duration = System.monotonic_time() - started_at
 
@@ -134,7 +165,7 @@ defmodule ClusterMurmur.Runtime.OperationalTelemetry do
   defp emit(event, measurements, metadata, message) do
     :telemetry.execute(event, measurements, metadata)
 
-    level = if metadata.outcome == :ok, do: :info, else: :warning
+    level = if metadata.outcome in [:accepted, :ok], do: :info, else: :warning
 
     Logger.log(level, message,
       component: metadata.component,

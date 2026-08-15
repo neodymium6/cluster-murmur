@@ -144,7 +144,10 @@ Normalization rejection uses only fixed content-free classes for blank output,
 the character limit, invalid Unicode, unsafe output form, or an otherwise
 invalid provider result. It never returns rejected content or provider
 diagnostics. Every fallback class still becomes the same fixed deterministic
-fallback message.
+fallback message. Immediately after successful resolution, generation
+orchestration emits one fixed accepted-or-fallback decision event containing
+only a count and the finite decision class. Rejected content and all provider
+values remain outside its metric and structured log.
 The returned redacted capability retains neither credentials nor transport
 values and performs no persistence or publication.
 Before publication, the generated capability is revalidated and its original

@@ -23,7 +23,7 @@ amended.
 | 0128–0151 | Starter and responder generation, publication, and bounded conversation pipelines |
 | 0152–0175 | Recovery gates, stochastic and dispatch cycles, deduplication, and event retention |
 | 0176–0192 | Recurring schedules, runtime initialization, packaging, and unified scheduler startup |
-| 0193–0226 | Fixed live transports, production assembly, operations, release publication, end-to-end verification, TLS startup, provider compatibility, and redacted generation diagnostics |
+| 0193–0227 | Fixed live transports, production assembly, operations, release publication, end-to-end verification, TLS startup, provider compatibility, and redacted generation diagnostics |
 
 File names describe the individual decision within each series. Use repository
 search for a component or invariant rather than reading the directory in

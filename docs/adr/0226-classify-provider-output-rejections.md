@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted.
+Accepted. Amended by
+[ADR 0227](0227-emit-redacted-generation-decisions.md).
 
 ## Context
 

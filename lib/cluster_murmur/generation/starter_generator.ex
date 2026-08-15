@@ -21,6 +21,7 @@ defmodule ClusterMurmur.Generation.StarterGenerator do
   alias ClusterMurmur.Generation.StarterGenerationPlanner.Plan
   alias ClusterMurmur.Messages.Message
   alias ClusterMurmur.Messages.Validator, as: MessageValidator
+  alias ClusterMurmur.Runtime.OperationalTelemetry
 
   @discord_content_limit 2_000
 
@@ -71,6 +72,7 @@ defmodule ClusterMurmur.Generation.StarterGenerator do
              plan.context.persona,
              @discord_content_limit
            ),
+         decision <- OperationalTelemetry.generation_decision(decision),
          {:ok, message} <- build_message(decision, plan, inserted_at),
          generated = %Generated{plan: plan, message: message},
          :ok <- validate(generated, configuration, cooldowns) do
