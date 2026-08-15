@@ -3,7 +3,9 @@
 ## Status
 
 Accepted; output-token encoding amended by
-[ADR 0223](0223-use-current-chat-completion-token-limit.md).
+[ADR 0223](0223-use-current-chat-completion-token-limit.md), and the closed
+optional reasoning field amended by
+[ADR 0224](0224-bound-reasoning-generation-settings.md).
 
 ## Context
 

@@ -7,6 +7,11 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## Unreleased
 
+### LLM reasoning
+
+- Raised the finite completion-token ceiling to 32,768 and added an optional
+  closed reasoning-effort setting without changing requests that omit it.
+
 ## [0.2.0-alpha.6](docs/release-notes-v0.2.0-alpha.6.md) - 2026-08-15
 
 ### LLM compatibility

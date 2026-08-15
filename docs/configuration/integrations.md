@@ -14,30 +14,36 @@ llm:
   model_env: CLUSTER_MURMUR_LLM_MODEL
   api_key_file_env: CLUSTER_MURMUR_LLM_API_KEY_FILE
   timeout: 20s
-  max_output_tokens: 300
+  max_output_tokens: 32768
+  reasoning_effort: low
 ```
 
 `base_url_env` and `model_env` name environment variables containing deployment
 values. `api_key_file_env` names an environment variable whose value is the
 path to a mounted secret file. The API key itself is never accepted in YAML or
-as a direct environment-variable value. The manifest parser requires this exact
-mapping, supports only `openai_compatible`, bounds `timeout` to 1 through
-120,000 milliseconds after duration parsing, and bounds `max_output_tokens` to
-1 through 4,096. The normalized redacted value enters the complete startup
-configuration. The runtime settings boundary accepts it directly, resolves the
-three deployment values with fixed bounds, and does not make a provider
-connection.
+as a direct environment-variable value. The manifest parser requires the six
+base fields shown above, supports only `openai_compatible`, bounds `timeout` to
+1 through 120,000 milliseconds after duration parsing, and bounds
+`max_output_tokens` to 1 through 32,768. `reasoning_effort` is optional and
+accepts only `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`.
+Supported effort values vary by model, so operators must select a value accepted
+by their configured endpoint. Omitting it preserves the provider's default and
+does not add the field to the request. The normalized redacted value enters the
+complete startup configuration. The runtime settings boundary accepts it
+directly, resolves the three deployment values with fixed bounds, and does not
+make a provider connection.
 
 The shipped live adapter appends only `/chat/completions`. Its fixed JSON shape
 maps `max_output_tokens` to the current Chat Completions
 `max_completion_tokens` field; it does not send the deprecated `max_tokens`
-field. The adapter reconstructs the closed prompt projection and revalidates
-the settings and complete encoded request before dispatch. It opens one HTTP/1
-connection per generation. HTTPS uses operating-system CA and hostname
-verification. Responses are limited to 16 KiB of headers, 64 KiB of body, 96
-KiB of total HTTP parser input, and the configured overall timeout. The adapter
-does not follow redirects, retry, use deployment proxy settings, pool
-connections, or expose arbitrary request values.
+field. When configured, it maps the closed effort value to the Chat Completions
+`reasoning_effort` field. The adapter reconstructs the closed prompt projection
+and revalidates the settings and complete encoded request before dispatch. It
+opens one HTTP/1 connection per generation. HTTPS uses operating-system CA and
+hostname verification. Responses are limited to 16 KiB of headers, 64 KiB of
+body, 96 KiB of total HTTP parser input, and the configured overall timeout.
+The adapter does not follow redirects, retry, use deployment proxy settings,
+pool connections, or expose arbitrary request values.
 
 ## Discord routing
 

@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted.
+Accepted; output-token ceiling and optional reasoning effort amended by
+[ADR 0224](0224-bound-reasoning-generation-settings.md).
 
 ## Context
 

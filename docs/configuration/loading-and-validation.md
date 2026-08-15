@@ -64,7 +64,8 @@ llm:
   model_env: CLUSTER_MURMUR_LLM_MODEL
   api_key_file_env: CLUSTER_MURMUR_LLM_API_KEY_FILE
   timeout: 20s
-  max_output_tokens: 300
+  max_output_tokens: 32768
+  reasoning_effort: low
 
 includes:
   event_groups:
