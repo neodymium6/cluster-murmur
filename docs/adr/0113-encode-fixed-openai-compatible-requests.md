@@ -1,5 +1,10 @@
 # ADR 0113: Encode Fixed OpenAI-Compatible Requests
 
+## Status
+
+Accepted; output-token encoding amended by
+[ADR 0223](0223-use-current-chat-completion-token-limit.md).
+
 ## Context
 
 The provider behaviour accepts a separated, provider-neutral prompt, while the
