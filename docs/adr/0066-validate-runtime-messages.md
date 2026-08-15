@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted.
+Accepted. Amended by [ADR 0228](0228-disambiguate-japanese-sentence-full-stops.md).
 
 ## Context
 

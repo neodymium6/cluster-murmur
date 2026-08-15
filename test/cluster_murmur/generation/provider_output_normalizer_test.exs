@@ -69,6 +69,17 @@ defmodule ClusterMurmur.Generation.ProviderOutputNormalizerTest do
              {:ok, "Host 127.1 recovered."}
   end
 
+  test "accepts ordinary Japanese prose while rejecting Unicode-dot domains" do
+    assert ProviderOutputNormalizer.normalize(
+             "今日は正常です。クラスタは静かです。",
+             persona(),
+             2_000
+           ) == {:ok, "今日は正常です。クラスタは静かです。"}
+
+    assert ProviderOutputNormalizer.normalize("visit 例え。テスト", persona(), 2_000) ==
+             {:error, :unsafe_output_form}
+  end
+
   test "classifies blank output after mechanical normalization" do
     for raw <- [
           "",

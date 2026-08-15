@@ -18,6 +18,33 @@ defmodule ClusterMurmur.Messages.Validator do
   @forbidden_scheme_pattern ~r/[A-Za-z][A-Za-z0-9+.-]*:[^\s]/u
   @forbidden_network_path_pattern ~r/\/\/[^\s\/]+(?:\/[^\s]*)?/u
   @unicode_dot_pattern ~r/[。．｡]/u
+  @japanese_sentence_endings [
+    "です",
+    "ます",
+    "ません",
+    "でした",
+    "ました",
+    "でしょう",
+    "ください",
+    "である",
+    "だった",
+    "だ",
+    "ない",
+    "した",
+    "いる",
+    "ある"
+  ]
+  @japanese_sentence_body_pattern ~r/\A[\p{Han}\p{Hiragana}\p{Katakana}\p{N}\p{M}ー々〆ヵヶ、！？「」『』（）・]+\z/u
+  @japanese_reference_cues [
+    "参照",
+    "リンク",
+    "ドメイン",
+    "ホスト",
+    "アドレス",
+    "アクセス",
+    "接続",
+    "サイト"
+  ]
   @domain_token_separator_pattern ~r/[^\p{L}\p{N}\p{M}\p{Cf}.\-]+/u
   @domain_ignorable_pattern ~r/[\p{M}\p{Cf}]/u
   @domain_label_pattern ~r/\A[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?\z/u
@@ -113,14 +140,45 @@ defmodule ClusterMurmur.Messages.Validator do
   end
 
   defp unsafe_output?(content) do
-    normalized = @unicode_dot_pattern |> Regex.replace(content, ".") |> String.normalize(:nfkc)
+    normalized = String.normalize(content, :nfkc)
+    network_normalized = Regex.replace(@unicode_dot_pattern, normalized, ".")
 
-    Regex.match?(@forbidden_control_pattern, normalized) or
-      Regex.match?(@forbidden_scheme_pattern, normalized) or
-      Regex.match?(@forbidden_network_path_pattern, normalized) or
-      domain_like?(normalized) or
-      Regex.match?(@forbidden_ip_pattern, normalized) or
-      Regex.match?(@forbidden_mention_pattern, normalized)
+    domain_normalized = normalize_domain_scan(normalized)
+
+    Regex.match?(@forbidden_control_pattern, network_normalized) or
+      Regex.match?(@forbidden_scheme_pattern, network_normalized) or
+      Regex.match?(@forbidden_network_path_pattern, network_normalized) or
+      domain_like?(domain_normalized) or
+      Regex.match?(@forbidden_ip_pattern, network_normalized) or
+      Regex.match?(@forbidden_mention_pattern, network_normalized)
+  end
+
+  defp normalize_domain_scan(content) do
+    content
+    |> String.split("\n", trim: false)
+    |> Enum.map_join("\n", fn line ->
+      if japanese_sentence_chain?(line),
+        do: Regex.replace(@unicode_dot_pattern, line, " "),
+        else: Regex.replace(@unicode_dot_pattern, line, ".")
+    end)
+  end
+
+  defp japanese_sentence_chain?(line) do
+    clauses = line |> String.trim() |> String.split("。", trim: false)
+
+    case Enum.split(clauses, -1) do
+      {completed, [""]} when length(completed) >= 2 ->
+        Enum.all?(completed, &japanese_sentence_clause?/1)
+
+      _other ->
+        false
+    end
+  end
+
+  defp japanese_sentence_clause?(clause) do
+    Regex.match?(@japanese_sentence_body_pattern, clause) and
+      Enum.any?(@japanese_sentence_endings, &String.ends_with?(clause, &1)) and
+      Enum.all?(@japanese_reference_cues, &(not String.contains?(clause, &1)))
   end
 
   defp domain_like?(content) do

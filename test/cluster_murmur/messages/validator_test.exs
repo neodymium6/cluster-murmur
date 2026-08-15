@@ -125,12 +125,46 @@ defmodule ClusterMurmur.Messages.ValidatorTest do
     end
   end
 
+  test "distinguishes Japanese sentence full stops from Unicode domain separators" do
+    for content <- [
+          "今日は正常です。クラスタは静かです。",
+          "処理が完了しました。次の実行を待ちます。",
+          "異常はありません｡監視を続けます｡"
+        ] do
+      assert Validator.classify_content(content) == :ok
+    end
+
+    for content <- [
+          "例え。テスト",
+          "visit 例え。テスト",
+          "visit 例え。テスト。",
+          "今日は正常です。例え。テスト。",
+          "visit 例え．テスト",
+          "visit 例え｡テスト",
+          "visit 192。0。2。10",
+          "visit 例えです。テストます。",
+          "例えです。テストます/pathです。",
+          "参照先は例えです。テストます。",
+          "リンク先は例えです。テストます。",
+          "リンクは例えです。テストます。",
+          "ドメインは例えです。テストます。",
+          "サイトは例えです。テストます。",
+          "アクセスは例えです。テストます。"
+        ] do
+      assert Validator.classify_content(content) == {:error, :unsafe_content}
+    end
+  end
+
   test "bounds domain scanning work for adversarial maximum-size content" do
     valid = message(:llm, nil)
     adversarial = String.duplicate("a.", 8_192)
+    japanese_near_miss = String.duplicate("1だ。", 2_300) <> "1"
 
     task = Task.async(fn -> Validator.validate(%{valid | content: adversarial}) end)
     assert Task.await(task, 1_000) == {:error, :invalid_message}
+
+    task = Task.async(fn -> Validator.classify_content(japanese_near_miss) end)
+    assert Task.await(task, 1_000) == :ok
   end
 
   test "redacts message content and identifiers from inspection" do
