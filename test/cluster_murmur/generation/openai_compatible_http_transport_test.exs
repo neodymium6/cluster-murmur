@@ -17,6 +17,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleHTTPTransportTest do
     body = success_body("The latest run completed.")
     {settings, request_task} = serve_once(200, "application/json; charset=utf-8", body)
     settings = %{settings | base_url: String.replace(settings.base_url, "127.0.0.1", "localhost")}
+    settings = %{settings | reasoning_effort: :low}
     prompt = prompt()
     transport = fn request -> OpenAICompatibleHTTPTransport.execute(request, settings) end
 
@@ -32,6 +33,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleHTTPTransportTest do
     decoded = :json.decode(encoded)
     assert decoded["model"] == "example-model"
     assert decoded["max_completion_tokens"] == 300
+    assert decoded["reasoning_effort"] == "low"
     refute Map.has_key?(decoded, "max_tokens")
   end
 

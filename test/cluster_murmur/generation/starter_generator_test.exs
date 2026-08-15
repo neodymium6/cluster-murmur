@@ -109,6 +109,7 @@ defmodule ClusterMurmur.Generation.StarterGeneratorTest do
       {plan, configuration, %{settings | api_key: "bad\r\nheader"}, @inserted_at, FakeProvider},
       {plan, configuration, %{settings | timeout_ms: 120_000}, @inserted_at, FakeProvider},
       {plan, configuration, %{settings | max_output_tokens: 4_096}, @inserted_at, FakeProvider},
+      {plan, configuration, %{settings | reasoning_effort: :low}, @inserted_at, FakeProvider},
       {plan, configuration, settings, ~U[2026-08-07 01:59:59.000000Z], FakeProvider},
       {plan, configuration, settings, @inserted_at, String}
     ]
