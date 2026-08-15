@@ -190,7 +190,7 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
 
     with {:ok, event} <- root_event(input.continuation),
          :ok <- PersonaProjectionValidator.validate(persona),
-         {:ok, facts} <- FactProjector.project(event),
+         {:ok, facts} <- FactProjector.project(event, input.configuration.presentation),
          {:ok, history} <- project_history(input.conversation.messages, input.configuration),
          context = %{context | facts: facts, conversation: history},
          :ok <- ContextValidator.validate(context) do

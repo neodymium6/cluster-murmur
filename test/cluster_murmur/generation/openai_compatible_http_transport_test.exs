@@ -277,6 +277,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleHTTPTransportTest do
         "event_type" => "observation.recovered",
         "group" => "recovery",
         "occurred_at" => "2026-08-05T12:00:00.000000Z",
+        "occurred_at_timezone" => "Etc/UTC",
         "previous_state" => %{"state" => "failed"},
         "severity" => "info",
         "subject" => "example-target"

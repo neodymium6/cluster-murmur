@@ -14,7 +14,8 @@ defmodule ClusterMurmur.Config.Configuration do
     DocumentSet,
     EventPolicy,
     EventGroups,
-    LLM
+    LLM,
+    Presentation
   }
 
   alias ClusterMurmur.Config.{ConfigurationValidator, Personas, Routing, StateTracking, Triggers}
@@ -22,6 +23,7 @@ defmodule ClusterMurmur.Config.Configuration do
 
   @default_conversation_defaults ConversationDefaults.default()
   @default_event_policy EventPolicy.default()
+  @default_presentation Presentation.default()
 
   @derive {Inspect, only: [:version]}
   @enforce_keys [
@@ -43,6 +45,7 @@ defmodule ClusterMurmur.Config.Configuration do
     :routing,
     :llm,
     :state_tracking,
+    presentation: @default_presentation,
     conversation_defaults: @default_conversation_defaults,
     event_policy: @default_event_policy
   ]
@@ -56,6 +59,7 @@ defmodule ClusterMurmur.Config.Configuration do
           routing: Routing.t(),
           llm: LLM.t(),
           state_tracking: StateTracking.t(),
+          presentation: Presentation.t(),
           conversation_defaults: ConversationDefaults.t(),
           event_policy: EventPolicy.t()
         }
@@ -87,6 +91,7 @@ defmodule ClusterMurmur.Config.Configuration do
          routing: routing,
          llm: document_set.manifest.llm,
          state_tracking: document_set.manifest.state_tracking,
+         presentation: document_set.manifest.presentation,
          conversation_defaults: document_set.manifest.conversation_defaults,
          event_policy: document_set.manifest.event_policy
        }}

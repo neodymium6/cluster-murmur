@@ -8,7 +8,8 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
     EventPolicy,
     EventGroups,
     LLM,
-    Personas
+    Personas,
+    Presentation
   }
 
   alias ClusterMurmur.Config.{Routing, StateTracking, Triggers, Value}
@@ -40,6 +41,7 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
          :ok <- validate_state_tracking(configuration.state_tracking),
          :ok <- validate_conversation_defaults(configuration.conversation_defaults),
          :ok <- validate_event_policy(configuration.event_policy),
+         :ok <- validate_presentation(configuration.presentation),
          :ok <- validate_event_groups(configuration.event_groups),
          :ok <- validate_personas(configuration.personas),
          :ok <- validate_bindings(configuration.bindings),
@@ -80,6 +82,13 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
     case EventPolicy.validate(policy) do
       :ok -> :ok
       {:error, :invalid_event_policy} -> {:error, :invalid_configuration}
+    end
+  end
+
+  defp validate_presentation(presentation) do
+    case Presentation.validate(presentation) do
+      :ok -> :ok
+      {:error, :invalid_presentation_configuration} -> {:error, :invalid_configuration}
     end
   end
 

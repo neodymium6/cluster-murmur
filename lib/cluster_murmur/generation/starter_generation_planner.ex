@@ -47,7 +47,7 @@ defmodule ClusterMurmur.Generation.StarterGenerationPlanner do
   @spec plan(term(), term(), term()) :: {:ok, Plan.t()} | {:error, error()}
   def plan(%Started{} = started, %Configuration{} = configuration, cooldowns) do
     with :ok <- EventTriggerConversationStarter.validate(started, configuration, cooldowns),
-         {:ok, context} <- build_context(started),
+         {:ok, context} <- build_context(started, configuration),
          {:ok, %PromptRequest{} = request} <- PromptAssembler.assemble(context),
          result = %Plan{started: started, context: context, request: request},
          :ok <- validate(result, configuration, cooldowns) do
@@ -69,7 +69,7 @@ defmodule ClusterMurmur.Generation.StarterGenerationPlanner do
   def validate(%Plan{} = plan, %Configuration{} = configuration, cooldowns) do
     with true <- exact_plan?(plan),
          :ok <- EventTriggerConversationStarter.validate(plan.started, configuration, cooldowns),
-         {:ok, expected_context} <- build_context(plan.started),
+         {:ok, expected_context} <- build_context(plan.started, configuration),
          true <- plan.context === expected_context,
          {:ok, expected_request} <- PromptAssembler.assemble(expected_context),
          true <- plan.request === expected_request do
@@ -86,7 +86,7 @@ defmodule ClusterMurmur.Generation.StarterGenerationPlanner do
   def validate(_plan, _configuration, _cooldowns),
     do: {:error, :invalid_starter_generation}
 
-  defp build_context(started) do
+  defp build_context(started, configuration) do
     event = started.plan.authorization.plan.event
     starter = started.plan.starter
 
@@ -106,7 +106,7 @@ defmodule ClusterMurmur.Generation.StarterGenerationPlanner do
     }
 
     with :ok <- PersonaProjectionValidator.validate(persona),
-         {:ok, facts} <- FactProjector.project(event),
+         {:ok, facts} <- FactProjector.project(event, configuration.presentation),
          context = %{context | facts: facts},
          :ok <- ContextValidator.validate(context) do
       {:ok, context}

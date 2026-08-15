@@ -203,7 +203,8 @@ defmodule ClusterMurmur.Generation.ContextValidatorTest do
           previous_state: %{"state" => "failed"},
           current_state: %{"state" => "healthy"},
           details: %{},
-          occurred_at: ~U[2026-08-05 12:00:00.000000Z]
+          occurred_at: ~U[2026-08-05 12:00:00.000000Z],
+          occurred_at_timezone: "Etc/UTC"
         ],
         overrides
       )

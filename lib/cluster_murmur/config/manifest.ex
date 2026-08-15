@@ -21,6 +21,7 @@ defmodule ClusterMurmur.Config.Manifest do
     "event_policy",
     "includes",
     "llm",
+    "presentation",
     "state_tracking",
     "version"
   ]
@@ -28,6 +29,7 @@ defmodule ClusterMurmur.Config.Manifest do
   @default_state_tracking ClusterMurmur.Config.StateTracking.default()
   @default_conversation_defaults ClusterMurmur.Config.ConversationDefaults.default()
   @default_event_policy ClusterMurmur.Config.EventPolicy.default()
+  @default_presentation ClusterMurmur.Config.Presentation.default()
 
   @derive {Inspect, only: [:version]}
   @enforce_keys [:version, :includes, :llm]
@@ -35,6 +37,7 @@ defmodule ClusterMurmur.Config.Manifest do
     :version,
     :includes,
     :llm,
+    presentation: @default_presentation,
     state_tracking: @default_state_tracking,
     conversation_defaults: @default_conversation_defaults,
     event_policy: @default_event_policy
@@ -54,6 +57,7 @@ defmodule ClusterMurmur.Config.Manifest do
           version: 1,
           includes: includes(),
           llm: ClusterMurmur.Config.LLM.t(),
+          presentation: ClusterMurmur.Config.Presentation.t(),
           state_tracking: ClusterMurmur.Config.StateTracking.t(),
           conversation_defaults: ClusterMurmur.Config.ConversationDefaults.t(),
           event_policy: ClusterMurmur.Config.EventPolicy.t()
@@ -71,6 +75,7 @@ defmodule ClusterMurmur.Config.Manifest do
           | :unknown_manifest_field
           | :unsupported_config_version
           | {:llm, ClusterMurmur.Config.LLM.error()}
+          | {:presentation, ClusterMurmur.Config.Presentation.error()}
           | {:conversation_defaults, ClusterMurmur.Config.ConversationDefaults.error()}
           | {:event_policy, ClusterMurmur.Config.EventPolicy.error()}
           | {:state_tracking, ClusterMurmur.Config.StateTracking.error()}
@@ -82,6 +87,7 @@ defmodule ClusterMurmur.Config.Manifest do
          {:ok, version} <- validate_version(document["version"]),
          {:ok, includes} <- validate_includes(document["includes"]),
          {:ok, llm} <- parse_llm(document["llm"]),
+         {:ok, presentation} <- parse_presentation(document),
          {:ok, state_tracking} <- parse_state_tracking(document),
          {:ok, conversation_defaults} <- parse_conversation_defaults(document),
          {:ok, event_policy} <- parse_event_policy(document) do
@@ -90,6 +96,7 @@ defmodule ClusterMurmur.Config.Manifest do
          version: version,
          includes: includes,
          llm: llm,
+         presentation: presentation,
          state_tracking: state_tracking,
          conversation_defaults: conversation_defaults,
          event_policy: event_policy
@@ -103,6 +110,19 @@ defmodule ClusterMurmur.Config.Manifest do
     case ClusterMurmur.Config.LLM.parse(document) do
       {:ok, llm} -> {:ok, llm}
       {:error, reason} -> {:error, {:llm, reason}}
+    end
+  end
+
+  defp parse_presentation(document) do
+    case Map.fetch(document, "presentation") do
+      :error ->
+        {:ok, ClusterMurmur.Config.Presentation.default()}
+
+      {:ok, value} ->
+        case ClusterMurmur.Config.Presentation.parse(value) do
+          {:ok, presentation} -> {:ok, presentation}
+          {:error, reason} -> {:error, {:presentation, reason}}
+        end
     end
   end
 
