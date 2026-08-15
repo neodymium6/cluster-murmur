@@ -264,6 +264,14 @@ defmodule ClusterMurmur.Runtime.ResponderTurnCycleTest do
     assert ResponderTurnCycle.run(valid, %{adapters(ReplyRandom) | publisher: String}) ==
              {:error, :invalid_responder_turn_cycle}
 
+    assert ResponderTurnCycle.run(
+             %{
+               valid
+               | provider_settings: %{valid.provider_settings | reasoning_effort: :low}
+             },
+             adapters(ReplyRandom)
+           ) == {:error, :invalid_responder_turn_cycle}
+
     assert ResponderTurnCycle.validate_runtime(
              %{valid | generated_at: :private_invalid_time},
              adapters(ReplyRandom)

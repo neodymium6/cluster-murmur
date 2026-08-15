@@ -15,9 +15,12 @@ defmodule ClusterMurmur.Config.LLM do
     "max_output_tokens",
     "model_env",
     "provider",
+    "reasoning_effort",
     "timeout"
   ]
+  @required_document_keys @document_keys -- ["reasoning_effort"]
   @document_key_count length(@document_keys)
+  @required_document_key_count length(@required_document_keys)
   @struct_keys [
     :__struct__,
     :api_key_file_env,
@@ -25,14 +28,17 @@ defmodule ClusterMurmur.Config.LLM do
     :max_output_tokens,
     :model_env,
     :provider,
+    :reasoning_effort,
     :timeout_ms
   ]
   @struct_key_count length(@struct_keys)
   @max_timeout_bytes 32
   @max_timeout_ms 120_000
-  @max_output_tokens 4_096
+  @max_output_tokens 32_768
+  @reasoning_efforts [:none, :minimal, :low, :medium, :high, :xhigh, :max]
+  @reasoning_efforts_by_name Map.new(@reasoning_efforts, &{Atom.to_string(&1), &1})
 
-  @derive {Inspect, only: [:provider, :timeout_ms, :max_output_tokens]}
+  @derive {Inspect, only: [:provider, :timeout_ms, :max_output_tokens, :reasoning_effort]}
   @enforce_keys [
     :provider,
     :base_url_env,
@@ -47,7 +53,8 @@ defmodule ClusterMurmur.Config.LLM do
     :model_env,
     :api_key_file_env,
     :timeout_ms,
-    :max_output_tokens
+    :max_output_tokens,
+    :reasoning_effort
   ]
 
   @type t :: %__MODULE__{
@@ -56,7 +63,8 @@ defmodule ClusterMurmur.Config.LLM do
           model_env: String.t(),
           api_key_file_env: String.t(),
           timeout_ms: pos_integer(),
-          max_output_tokens: pos_integer()
+          max_output_tokens: pos_integer(),
+          reasoning_effort: nil | :none | :minimal | :low | :medium | :high | :xhigh | :max
         }
   @type error :: :invalid_llm_configuration
 
@@ -70,7 +78,8 @@ defmodule ClusterMurmur.Config.LLM do
          {:ok, api_key_file_env} <-
            Value.environment_variable_name(document["api_key_file_env"]),
          {:ok, timeout_ms} <- parse_timeout(document["timeout"]),
-         true <- valid_max_output_tokens?(document["max_output_tokens"]) do
+         true <- valid_max_output_tokens?(document["max_output_tokens"]),
+         {:ok, reasoning_effort} <- parse_reasoning_effort(document) do
       {:ok,
        %__MODULE__{
          provider: :openai_compatible,
@@ -78,7 +87,8 @@ defmodule ClusterMurmur.Config.LLM do
          model_env: model_env,
          api_key_file_env: api_key_file_env,
          timeout_ms: timeout_ms,
-         max_output_tokens: document["max_output_tokens"]
+         max_output_tokens: document["max_output_tokens"],
+         reasoning_effort: reasoning_effort
        }}
     else
       _failure -> {:error, :invalid_llm_configuration}
@@ -97,7 +107,8 @@ defmodule ClusterMurmur.Config.LLM do
     if exact_struct?(llm) and llm.provider == :openai_compatible and
          valid_environment_name?(llm.base_url_env) and valid_environment_name?(llm.model_env) and
          valid_environment_name?(llm.api_key_file_env) and is_integer(llm.timeout_ms) and
-         llm.timeout_ms in 1..@max_timeout_ms and valid_max_output_tokens?(llm.max_output_tokens),
+         llm.timeout_ms in 1..@max_timeout_ms and valid_max_output_tokens?(llm.max_output_tokens) and
+         valid_reasoning_effort?(llm.reasoning_effort),
        do: :ok,
        else: {:error, :invalid_llm_configuration}
   rescue
@@ -120,7 +131,8 @@ defmodule ClusterMurmur.Config.LLM do
            model_env: llm.model_env,
            api_key_file_env: llm.api_key_file_env,
            timeout_ms: llm.timeout_ms,
-           max_output_tokens: llm.max_output_tokens
+           max_output_tokens: llm.max_output_tokens,
+           reasoning_effort: llm.reasoning_effort
          }}
 
       {:error, :invalid_llm_configuration} = error ->
@@ -133,15 +145,16 @@ defmodule ClusterMurmur.Config.LLM do
   def to_document(llm) do
     case validate(llm) do
       :ok ->
-        {:ok,
-         %{
-           "provider" => "openai_compatible",
-           "base_url_env" => llm.base_url_env,
-           "model_env" => llm.model_env,
-           "api_key_file_env" => llm.api_key_file_env,
-           "timeout" => Integer.to_string(llm.timeout_ms) <> "ms",
-           "max_output_tokens" => llm.max_output_tokens
-         }}
+        document = %{
+          "provider" => "openai_compatible",
+          "base_url_env" => llm.base_url_env,
+          "model_env" => llm.model_env,
+          "api_key_file_env" => llm.api_key_file_env,
+          "timeout" => Integer.to_string(llm.timeout_ms) <> "ms",
+          "max_output_tokens" => llm.max_output_tokens
+        }
+
+        {:ok, maybe_put_reasoning_effort(document, llm.reasoning_effort)}
 
       {:error, :invalid_llm_configuration} = error ->
         error
@@ -149,8 +162,9 @@ defmodule ClusterMurmur.Config.LLM do
   end
 
   defp exact_document?(document) do
-    map_size(document) == @document_key_count and
-      Enum.all?(@document_keys, &Map.has_key?(document, &1))
+    map_size(document) in @required_document_key_count..@document_key_count and
+      Enum.all?(@required_document_keys, &Map.has_key?(document, &1)) and
+      Enum.all?(Map.keys(document), &(&1 in @document_keys))
   end
 
   defp exact_struct?(llm) do
@@ -175,4 +189,19 @@ defmodule ClusterMurmur.Config.LLM do
 
   defp valid_max_output_tokens?(value),
     do: is_integer(value) and value in 1..@max_output_tokens
+
+  defp parse_reasoning_effort(document) do
+    case Map.fetch(document, "reasoning_effort") do
+      :error -> {:ok, nil}
+      {:ok, value} when is_binary(value) -> Map.fetch(@reasoning_efforts_by_name, value)
+      {:ok, _invalid} -> :error
+    end
+  end
+
+  defp valid_reasoning_effort?(value), do: is_nil(value) or value in @reasoning_efforts
+
+  defp maybe_put_reasoning_effort(document, nil), do: document
+
+  defp maybe_put_reasoning_effort(document, reasoning_effort),
+    do: Map.put(document, "reasoning_effort", Atom.to_string(reasoning_effort))
 end

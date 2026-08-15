@@ -272,7 +272,8 @@ defmodule ClusterMurmur.Runtime.ResponderTurnCycle do
 
     if ProviderSettings.validate(settings) == :ok and settings.provider === llm.provider and
          settings.timeout_ms === llm.timeout_ms and
-         settings.max_output_tokens === llm.max_output_tokens,
+         settings.max_output_tokens === llm.max_output_tokens and
+         settings.reasoning_effort === llm.reasoning_effort,
        do: :ok,
        else: {:error, :invalid_responder_turn_cycle}
   end

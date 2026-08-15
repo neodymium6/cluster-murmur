@@ -4,7 +4,8 @@ Date: 2026-08-15
 
 ## Status
 
-Accepted
+Accepted; budget and optional reasoning-effort configuration amended by
+[ADR 0224](0224-bound-reasoning-generation-settings.md).
 
 ## Context
 

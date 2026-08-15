@@ -97,6 +97,10 @@ defmodule ClusterMurmur.Runtime.ResponderConversationInitializerTest do
       },
       %{
         valid
+        | provider_settings: %{valid.provider_settings | reasoning_effort: :low}
+      },
+      %{
+        valid
         | configuration: %{
             valid.configuration
             | conversation_defaults: %{

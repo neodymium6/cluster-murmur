@@ -215,15 +215,26 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumerTest do
   test "rejects invalid consumer dependencies during preflight before selection" do
     input = RuntimeFixture.responder_input()
     ClaimStore.seed(input.continuation.conversation)
-    invalid = %{context(input, Provider, fn _request -> :unused end) | message_store: String}
 
-    assert ResponderContinuationPlanner.dispatch(
-             input,
-             ReplyRandom,
-             ClaimStore,
-             ResponderMessageConsumer,
-             invalid
-           ) == {:error, :invalid_responder_continuation}
+    valid_context = context(input, Provider, fn _request -> :unused end)
+
+    invalid_contexts = [
+      %{valid_context | message_store: String},
+      %{
+        valid_context
+        | provider_settings: %{valid_context.provider_settings | reasoning_effort: :low}
+      }
+    ]
+
+    for invalid <- invalid_contexts do
+      assert ResponderContinuationPlanner.dispatch(
+               input,
+               ReplyRandom,
+               ClaimStore,
+               ResponderMessageConsumer,
+               invalid
+             ) == {:error, :invalid_responder_continuation}
+    end
 
     refute_received {:reserved, _record}
     refute_received {:provider_request, _request}

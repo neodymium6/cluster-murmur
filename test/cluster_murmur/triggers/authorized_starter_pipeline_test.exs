@@ -363,6 +363,10 @@ defmodule ClusterMurmur.Triggers.AuthorizedStarterPipelineTest do
     for invalid <- [
           %{valid | publication_completed_at: @generated_at},
           %{valid | provider_settings: %{valid.provider_settings | timeout_ms: 1}},
+          %{
+            valid
+            | provider_settings: %{valid.provider_settings | reasoning_effort: :low}
+          },
           Map.put(valid, :private, true)
         ] do
       assert AuthorizedStarterPipeline.run(invalid, adapters()) ==

@@ -22,6 +22,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequestTest do
     assert request.json["model"] == "example-model"
     assert request.json["max_completion_tokens"] == 300
     refute Map.has_key?(request.json, "max_tokens")
+    refute Map.has_key?(request.json, "reasoning_effort")
 
     assert [system, user] = request.json["messages"]
     assert system == %{"content" => PromptAssembler.system_instruction(), "role" => "system"}
@@ -33,6 +34,16 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequestTest do
              "creative_context" => prompt().creative_context,
              "persona" => prompt().persona
            }
+  end
+
+  test "encodes only an explicitly selected reasoning effort" do
+    for effort <- [:none, :minimal, :low, :medium, :high, :xhigh, :max] do
+      settings = %{settings() | reasoning_effort: effort}
+
+      assert {:ok, request} = OpenAICompatibleRequest.encode(prompt(), settings)
+      assert request.json["reasoning_effort"] == Atom.to_string(effort)
+      assert OpenAICompatibleRequest.validate_for_transport(request, settings) == :ok
+    end
   end
 
   test "joins a normalized trailing-slash base URL and clamps the connect timeout" do
@@ -92,6 +103,8 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequestTest do
       %{settings | model: "example-model\nforged"},
       %{settings | api_key: "fake\r\nforged: header"},
       %{settings | timeout_ms: 0},
+      %{settings | max_output_tokens: 32_769},
+      %{settings | reasoning_effort: :unsupported},
       Map.put(settings, :arbitrary_option, true)
     ]
 
@@ -120,6 +133,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequestTest do
             |> Map.delete("max_completion_tokens")
             |> Map.put("max_tokens", 300)
       },
+      %{request | json: Map.put(request.json, "reasoning_effort", "high")},
       %{request | json: Map.put(request.json, "temperature", 2)},
       %{request | connect_timeout_ms: 60_000},
       %{request | receive_timeout_ms: 60_000},

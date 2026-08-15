@@ -26,6 +26,11 @@ defmodule ClusterMurmur.Generation.ProviderSettingsTest do
     assert settings.api_key == "clearly-fake-api-key-value"
     assert settings.timeout_ms == 20_000
     assert settings.max_output_tokens == 300
+    assert settings.reasoning_effort == nil
+
+    for effort <- [nil, :none, :minimal, :low, :medium, :high, :xhigh, :max] do
+      assert ProviderSettings.validate(%{settings | reasoning_effort: effort}) == :ok
+    end
 
     inspected = inspect(settings)
     assert inspected =~ "provider: :openai_compatible"
@@ -93,7 +98,9 @@ defmodule ClusterMurmur.Generation.ProviderSettingsTest do
       Map.put(valid_config(), :timeout_ms, 0),
       Map.put(valid_config(), :timeout_ms, 120_001),
       Map.put(valid_config(), :max_output_tokens, 0),
-      Map.put(valid_config(), :max_output_tokens, 4_097)
+      Map.put(valid_config(), :max_output_tokens, 32_769),
+      Map.put(valid_config(), :reasoning_effort, :unsupported),
+      Map.put(valid_config(), :reasoning_effort, "low")
     ]
 
     for config <- invalid do
@@ -103,6 +110,15 @@ defmodule ClusterMurmur.Generation.ProviderSettingsTest do
 
     assert ProviderSettings.load(valid_config(), :not_an_environment_reader) ==
              {:error, :invalid_provider_settings}
+  end
+
+  test "loads an explicit bounded reasoning effort", context do
+    config = Map.put(valid_config(), :reasoning_effort, :low)
+
+    assert {:ok, %ProviderSettings{reasoning_effort: :low} = settings} =
+             ProviderSettings.load(config, environment(context.api_key_path))
+
+    assert settings.max_output_tokens == 300
   end
 
   test "rejects missing, malformed, empty, and oversized environment values", context do

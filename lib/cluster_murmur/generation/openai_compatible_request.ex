@@ -281,7 +281,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequest do
     do: is_map(value) and map_size(value) == count and Enum.all?(keys, &Map.has_key?(value, &1))
 
   defp request_json(prompt, settings) do
-    %{
+    request = %{
       "max_completion_tokens" => settings.max_output_tokens,
       "messages" => [
         %{"content" => prompt.system_instruction, "role" => "system"},
@@ -289,7 +289,14 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequest do
       ],
       "model" => settings.model
     }
+
+    maybe_put_reasoning_effort(request, settings.reasoning_effort)
   end
+
+  defp maybe_put_reasoning_effort(request, nil), do: request
+
+  defp maybe_put_reasoning_effort(request, reasoning_effort),
+    do: Map.put(request, "reasoning_effort", Atom.to_string(reasoning_effort))
 
   defp prompt_data(prompt) do
     %{

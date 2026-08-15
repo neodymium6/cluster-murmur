@@ -16,6 +16,7 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
     :max_output_tokens,
     :model_env,
     :provider,
+    :reasoning_effort,
     :timeout_ms
   ]
   @config_key_count length(@config_keys)
@@ -26,6 +27,7 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
     :max_output_tokens,
     :model,
     :provider,
+    :reasoning_effort,
     :timeout_ms
   ]
   @settings_key_count length(@settings_keys)
@@ -33,11 +35,20 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
   @max_model_bytes 256
   @max_api_key_bytes 16 * 1_024
   @max_timeout_ms 120_000
-  @max_output_tokens 4_096
+  @max_output_tokens 32_768
+  @reasoning_efforts [:none, :minimal, :low, :medium, :high, :xhigh, :max]
 
-  @derive {Inspect, only: [:provider, :timeout_ms, :max_output_tokens]}
+  @derive {Inspect, only: [:provider, :timeout_ms, :max_output_tokens, :reasoning_effort]}
   @enforce_keys [:provider, :base_url, :model, :api_key, :timeout_ms, :max_output_tokens]
-  defstruct [:provider, :base_url, :model, :api_key, :timeout_ms, :max_output_tokens]
+  defstruct [
+    :provider,
+    :base_url,
+    :model,
+    :api_key,
+    :timeout_ms,
+    :max_output_tokens,
+    :reasoning_effort
+  ]
 
   @type t :: %__MODULE__{
           provider: :openai_compatible,
@@ -45,7 +56,8 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
           model: String.t(),
           api_key: String.t(),
           timeout_ms: pos_integer(),
-          max_output_tokens: pos_integer()
+          max_output_tokens: pos_integer(),
+          reasoning_effort: nil | :none | :minimal | :low | :medium | :high | :xhigh | :max
         }
 
   @type environment_reader :: MountedSecretReader.environment_reader()
@@ -70,6 +82,8 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
 
   def load(config, environment_reader)
       when is_map(config) and not is_struct(config) and is_function(environment_reader, 1) do
+    config = Map.put_new(config, :reasoning_effort, nil)
+
     with :ok <- validate_config(config),
          {:ok, base_url} <-
            read_environment(
@@ -95,7 +109,8 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
         model: model,
         api_key: api_key,
         timeout_ms: config.timeout_ms,
-        max_output_tokens: config.max_output_tokens
+        max_output_tokens: config.max_output_tokens,
+        reasoning_effort: config.reasoning_effort
       }
 
       case validate(settings) do
@@ -124,7 +139,8 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
          true <- is_integer(settings.timeout_ms) and settings.timeout_ms in 1..@max_timeout_ms,
          true <-
            is_integer(settings.max_output_tokens) and
-             settings.max_output_tokens in 1..@max_output_tokens do
+             settings.max_output_tokens in 1..@max_output_tokens,
+         true <- valid_reasoning_effort?(settings.reasoning_effort) do
       :ok
     else
       _failure -> {:error, :invalid_provider_settings}
@@ -144,7 +160,8 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
          valid_environment_name?(config.api_key_file_env) and
          is_integer(config.timeout_ms) and config.timeout_ms in 1..@max_timeout_ms and
          is_integer(config.max_output_tokens) and
-         config.max_output_tokens in 1..@max_output_tokens do
+         config.max_output_tokens in 1..@max_output_tokens and
+         valid_reasoning_effort?(config.reasoning_effort) do
       :ok
     else
       {:error, :invalid_provider_settings}
@@ -178,6 +195,8 @@ defmodule ClusterMurmur.Generation.ProviderSettings do
   defp valid_environment_name?(value) do
     match?({:ok, _name}, Value.environment_variable_name(value))
   end
+
+  defp valid_reasoning_effort?(value), do: is_nil(value) or value in @reasoning_efforts
 
   defp read_environment(name, environment_reader, max_bytes, missing_error, invalid_error) do
     case environment_reader.(name) do
