@@ -18,6 +18,7 @@ defmodule ClusterMurmur.Generation.ProviderResultResolverTest do
           {:error, :invalid_response},
           {:error, :rate_limited},
           {:error, :timeout},
+          {:error, :token_exhausted},
           {:error, :unavailable},
           {:error, {:unexpected, "private-provider-diagnostic"}},
           {:unexpected, "private-provider-payload"}

@@ -125,6 +125,32 @@ defmodule ClusterMurmur.Runtime.OperationalTelemetryTest do
     refute log =~ "must-not-appear"
   end
 
+  test "reports token exhaustion without logging response content or usage payloads" do
+    attach([:cluster_murmur, :external, :request, :stop])
+
+    result =
+      {:ok,
+       %OpenAICompatibleResponse{
+         status: 200,
+         body:
+           ~s({"choices":[{"finish_reason":"length","message":{"content":"  "}}],"usage":{"completion_tokens":32768,"completion_tokens_details":{"reasoning_tokens":32768}},"private":"must-not-appear"})
+       }}
+
+    log =
+      capture_log(fn ->
+        assert OperationalTelemetry.external_request(
+                 result,
+                 :model_provider,
+                 System.monotonic_time()
+               ) == result
+      end)
+
+    assert_external(:model_provider, :error, :token_exhausted)
+    assert log =~ "error_class=token_exhausted"
+    refute log =~ "32768"
+    refute log =~ "must-not-appear"
+  end
+
   defp assert_external(component, outcome, error_class) do
     assert_receive {:telemetry, [:cluster_murmur, :external, :request, :stop], measurements,
                     metadata}

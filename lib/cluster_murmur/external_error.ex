@@ -13,5 +13,6 @@ defmodule ClusterMurmur.ExternalError do
           | :invalid_response
           | :rate_limited
           | :timeout
+          | :token_exhausted
           | :unavailable
 end

@@ -61,6 +61,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleProviderTest do
     cases = [
       {200, success_body("Approved text."), {:ok, "Approved text."}},
       {200, ~s({"choices":[]}), {:error, :invalid_response}},
+      {200, exhausted_body(), {:error, :token_exhausted}},
       {400, private_error_body(), {:error, :invalid_request}},
       {401, private_error_body(), {:error, :authentication_failed}},
       {408, private_error_body(), {:error, :timeout}},
@@ -128,6 +129,10 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleProviderTest do
   end
 
   defp private_error_body, do: ~s({"error":{"message":"Private provider diagnostic"}})
+
+  defp exhausted_body do
+    ~s({"choices":[{"finish_reason":"length","message":{"content":null}}],"usage":{"completion_tokens":32768,"completion_tokens_details":{"reasoning_tokens":32768}}})
+  end
 
   defp prompt do
     %PromptRequest{

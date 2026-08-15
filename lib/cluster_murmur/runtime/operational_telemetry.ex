@@ -81,7 +81,8 @@ defmodule ClusterMurmur.Runtime.OperationalTelemetry do
       {:error, reason} when reason in [:authentication_failed, :invalid_request, :rate_limited] ->
         {:ok, :rejected, reason}
 
-      {:error, reason} when reason in [:invalid_response, :timeout, :unavailable] ->
+      {:error, reason}
+      when reason in [:invalid_response, :timeout, :token_exhausted, :unavailable] ->
         {:ok, :error, reason}
     end
   end

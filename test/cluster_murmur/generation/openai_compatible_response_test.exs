@@ -17,13 +17,120 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleResponseTest do
             }
           }
         ],
-        "usage" => %{"completion_tokens" => 6, "prompt_tokens" => 42}
+        "usage" => %{
+          "completion_tokens" => 6,
+          "completion_tokens_details" => %{"reasoning_tokens" => 4},
+          "prompt_tokens" => 42
+        }
       }
       |> :json.encode()
       |> IO.iodata_to_binary()
 
     assert OpenAICompatibleResponse.decode(%OpenAICompatibleResponse{status: 200, body: body}) ==
              {:ok, "The latest run completed."}
+  end
+
+  test "classifies blank length completions as token exhaustion" do
+    for content <- [:null, "", " \n\t"] do
+      body =
+        %{
+          "choices" => [
+            %{
+              "finish_reason" => "length",
+              "message" => %{"content" => content}
+            }
+          ],
+          "usage" => %{
+            "completion_tokens" => 4_096,
+            "completion_tokens_details" => %{"reasoning_tokens" => 4_096}
+          }
+        }
+        |> :json.encode()
+        |> IO.iodata_to_binary()
+
+      assert OpenAICompatibleResponse.decode(%OpenAICompatibleResponse{status: 200, body: body}) ==
+               {:error, :token_exhausted}
+    end
+  end
+
+  test "preserves partial length content and non-length blank content" do
+    cases = [
+      {"length", "Partial visible output.", {:ok, "Partial visible output."}},
+      {"stop", "", {:ok, ""}},
+      {"tool_calls", "Visible tool summary.", {:ok, "Visible tool summary."}},
+      {"content_filter", "Visible safe output.", {:ok, "Visible safe output."}},
+      {"function_call", "Visible legacy output.", {:ok, "Visible legacy output."}},
+      {nil, "", {:ok, ""}}
+    ]
+
+    for {finish_reason, content, expected} <- cases do
+      choice = %{"message" => %{"content" => content}}
+      choice = if finish_reason, do: Map.put(choice, "finish_reason", finish_reason), else: choice
+      body = :json.encode(%{"choices" => [choice]}) |> IO.iodata_to_binary()
+
+      assert OpenAICompatibleResponse.decode(%OpenAICompatibleResponse{status: 200, body: body}) ==
+               expected
+    end
+  end
+
+  test "rejects malformed safe completion metadata" do
+    valid_choice = %{
+      "finish_reason" => "stop",
+      "message" => %{"content" => "Visible output."}
+    }
+
+    invalid = [
+      %{"choices" => [%{valid_choice | "finish_reason" => "private_reason"}]},
+      %{"choices" => [%{valid_choice | "finish_reason" => 1}]},
+      %{"choices" => [valid_choice], "usage" => "private usage"},
+      %{"choices" => [valid_choice], "usage" => %{"completion_tokens" => -1}},
+      %{"choices" => [valid_choice], "usage" => %{"completion_tokens" => 1.0}},
+      %{
+        "choices" => [valid_choice],
+        "usage" => %{"completion_tokens" => 4, "completion_tokens_details" => "private"}
+      },
+      %{
+        "choices" => [valid_choice],
+        "usage" => %{
+          "completion_tokens" => 4,
+          "completion_tokens_details" => %{"reasoning_tokens" => -1}
+        }
+      },
+      %{
+        "choices" => [valid_choice],
+        "usage" => %{
+          "completion_tokens" => 4,
+          "completion_tokens_details" => %{"reasoning_tokens" => 5}
+        }
+      }
+    ]
+
+    for decoded <- invalid do
+      body = :json.encode(decoded) |> IO.iodata_to_binary()
+
+      assert OpenAICompatibleResponse.decode(%OpenAICompatibleResponse{status: 200, body: body}) ==
+               {:error, :invalid_response}
+    end
+  end
+
+  test "accepts compatible responses that omit safe usage fields" do
+    choices = [
+      %{
+        "finish_reason" => "stop",
+        "message" => %{"content" => "Visible output."}
+      }
+    ]
+
+    for usage <- [
+          %{},
+          %{"prompt_tokens" => 10},
+          %{"completion_tokens_details" => %{"reasoning_tokens" => 4}}
+        ] do
+      body = :json.encode(%{"choices" => choices, "usage" => usage}) |> IO.iodata_to_binary()
+
+      assert OpenAICompatibleResponse.decode(%OpenAICompatibleResponse{status: 200, body: body}) ==
+               {:ok, "Visible output."}
+    end
   end
 
   test "rejects malformed, duplicate-key, or unexpected success bodies" do
