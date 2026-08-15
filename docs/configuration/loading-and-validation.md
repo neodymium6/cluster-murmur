@@ -58,6 +58,9 @@ event_policy:
   dedupe_window: 5m
   retention: 90d
 
+presentation:
+  timezone: Asia/Tokyo
+
 llm:
   provider: openai_compatible
   base_url_env: CLUSTER_MURMUR_LLM_BASE_URL
@@ -81,8 +84,10 @@ includes:
 ```
 
 The version 1 manifest requires exactly `version`, `llm`, and `includes`, and
-optionally accepts exact `state_tracking`, `conversation_defaults`, and
-`event_policy` mappings. Omitting `event_policy` uses a five-minute dedupe
+optionally accepts exact `state_tracking`, `conversation_defaults`,
+`event_policy`, and `presentation` mappings. Omitting `presentation` uses
+`Etc/UTC`. Its timezone must be an IANA name from the embedded database and
+controls only prompt-facing timestamp representation. Omitting `event_policy` uses a five-minute dedupe
 window and 90-day retention. Both event durations must be positive, no longer
 than 365 days, and retention must be at least the dedupe window. Trigger
 authorization enforces the dedupe window. Fixed bounded retention paths can

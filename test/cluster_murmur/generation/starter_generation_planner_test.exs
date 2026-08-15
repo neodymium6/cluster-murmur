@@ -1,7 +1,16 @@
 defmodule ClusterMurmur.Generation.StarterGenerationPlannerTest do
   use ExUnit.Case, async: true
 
-  alias ClusterMurmur.Config.{Configuration, EventGroups, LLM, Routing, StateTracking, Triggers}
+  alias ClusterMurmur.Config.{
+    Configuration,
+    EventGroups,
+    LLM,
+    Presentation,
+    Routing,
+    StateTracking,
+    Triggers
+  }
+
   alias ClusterMurmur.Config.Bindings, as: BindingCatalog
   alias ClusterMurmur.Config.Personas, as: PersonaCatalog
   alias ClusterMurmur.Events.{Event, Matcher}
@@ -56,6 +65,17 @@ defmodule ClusterMurmur.Generation.StarterGenerationPlannerTest do
     assert {:ok, plan} = StarterGenerationPlanner.plan(started, configuration, %{})
     assert plan.context.creative_context.conversation_kind == "operations"
     assert plan.context.facts.group == "valid event group but not a portable id"
+  end
+
+  test "uses the deployment presentation timezone for prompt-facing event time" do
+    configuration = %{configuration() | presentation: %Presentation{timezone: "Asia/Tokyo"}}
+    started = started(configuration)
+
+    assert {:ok, plan} = StarterGenerationPlanner.plan(started, configuration, %{})
+
+    assert plan.context.facts.occurred_at == ~U[2026-08-07 01:59:59.000000Z]
+    assert plan.request.confirmed_facts["occurred_at"] == "2026-08-07T10:59:59.000000+09:00"
+    assert plan.request.confirmed_facts["occurred_at_timezone"] == "Asia/Tokyo"
   end
 
   test "rejects forged or stale start capabilities before prompt assembly" do

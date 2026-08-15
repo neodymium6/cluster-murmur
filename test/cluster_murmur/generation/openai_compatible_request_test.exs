@@ -71,6 +71,15 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequestTest do
         | confirmed_facts:
             Map.put(prompt.confirmed_facts, "occurred_at", String.duplicate("1", 100_000))
       },
+      %{
+        prompt
+        | confirmed_facts: Map.put(prompt.confirmed_facts, "occurred_at_timezone", "Asia/Tokyo")
+      },
+      %{
+        prompt
+        | confirmed_facts:
+            Map.put(prompt.confirmed_facts, "occurred_at_timezone", "private.invalid")
+      },
       %{prompt | creative_context: %{"mood" => "calm"}},
       %{prompt | conversation: List.duplicate(%{"content" => "line", "speaker" => "A"}, 13)},
       %{prompt | conversation: [%{"content" => <<0>>, "speaker" => "A"}]},
@@ -190,7 +199,8 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequestTest do
       | confirmed_facts: %{
           "details" => %{"attempt" => 2},
           "event_type" => "schedule.reminder",
-          "occurred_at" => "2026-08-05T12:00:00.000000Z"
+          "occurred_at" => "2026-08-05T12:00:00.000000Z",
+          "occurred_at_timezone" => "Etc/UTC"
         }
     }
 
@@ -227,6 +237,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequestTest do
         "event_type" => "observation.recovered",
         "group" => "recovery",
         "occurred_at" => "2026-08-05T12:00:00.000000Z",
+        "occurred_at_timezone" => "Etc/UTC",
         "previous_state" => %{"state" => "failed"},
         "severity" => "info",
         "subject" => "example-target"

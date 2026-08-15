@@ -38,7 +38,8 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequest do
   @required_fact_keys [
     "details",
     "event_type",
-    "occurred_at"
+    "occurred_at",
+    "occurred_at_timezone"
   ]
   @optional_fact_keys [
     "current_state",
@@ -242,7 +243,8 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequest do
            previous_state: value["previous_state"],
            current_state: value["current_state"],
            details: value["details"],
-           occurred_at: occurred_at
+           occurred_at: occurred_at,
+           occurred_at_timezone: value["occurred_at_timezone"]
          },
          {:ok, expected} <- FactProjectionValidator.to_prompt_map(projection) do
       expected == value
@@ -264,7 +266,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequest do
        when is_binary(value) and byte_size(value) in 1..64 do
     if String.valid?(value) do
       case DateTime.from_iso8601(value) do
-        {:ok, occurred_at, 0} -> {:ok, occurred_at}
+        {:ok, occurred_at, _offset} -> {:ok, occurred_at}
         _invalid -> {:error, :invalid_prompt_request}
       end
     else

@@ -8,7 +8,8 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
     EventPolicy,
     LLM,
     LoadedDocument,
-    Manifest
+    Manifest,
+    Presentation
   }
 
   alias ClusterMurmur.Config.StateTracking
@@ -38,6 +39,7 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
     assert configuration.state_tracking == StateTracking.default()
     assert configuration.conversation_defaults == ConversationDefaults.default()
     assert configuration.event_policy == EventPolicy.default()
+    assert configuration.presentation == Presentation.default()
     assert Configuration.validate(configuration) == :ok
   end
 
@@ -74,6 +76,17 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
              )
   end
 
+  test "carries explicit presentation settings into complete configuration", context do
+    presentation = %Presentation{timezone: "Asia/Tokyo"}
+    manifest = %{manifest() | presentation: presentation}
+
+    assert {:ok, %Configuration{presentation: ^presentation}} =
+             Configuration.parse(
+               context.config,
+               %DocumentSet{manifest: manifest, documents: valid_documents(context)}
+             )
+  end
+
   test "revalidates exact category values and catalog references", context do
     assert {:ok, configuration} = Configuration.parse(context.config, document_set(context))
 
@@ -85,6 +98,7 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
           :routing,
           :llm,
           :state_tracking,
+          :presentation,
           :conversation_defaults,
           :event_policy
         ] do
@@ -122,6 +136,10 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
           %{
             configuration
             | event_policy: %{configuration.event_policy | retention_ms: 1}
+          },
+          %{
+            configuration
+            | presentation: %{configuration.presentation | timezone: "private.invalid"}
           }
         ] do
       assert Configuration.validate(invalid) == {:error, :invalid_configuration}

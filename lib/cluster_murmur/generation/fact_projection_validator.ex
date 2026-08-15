@@ -6,6 +6,7 @@ defmodule ClusterMurmur.Generation.FactProjectionValidator do
 
   alias ClusterMurmur.Events.Event
   alias ClusterMurmur.Events.Validator, as: EventValidator
+  alias ClusterMurmur.Config.Presentation
   alias ClusterMurmur.Generation.FactProjection
 
   @projection_keys FactProjection.__struct__() |> Map.keys()
@@ -22,7 +23,8 @@ defmodule ClusterMurmur.Generation.FactProjectionValidator do
   def validate(%FactProjection{} = projection) do
     with true <- exact_projection?(projection),
          :ok <- EventValidator.validate(synthetic_event(projection)),
-         prompt <- prompt_map(projection),
+         :ok <- validate_presentation(projection.occurred_at_timezone),
+         {:ok, prompt} <- prompt_map(projection),
          {:ok, _nodes} <- validate_tree(prompt, 0, 0),
          {:ok, size} <- json_size(prompt),
          true <- size <= @max_serialized_bytes do
@@ -42,7 +44,7 @@ defmodule ClusterMurmur.Generation.FactProjectionValidator do
   @spec to_prompt_map(term()) :: {:ok, map()} | {:error, error()}
   def to_prompt_map(projection) do
     case validate(projection) do
-      :ok -> {:ok, prompt_map(projection)}
+      :ok -> prompt_map(projection)
       {:error, :invalid_fact_projection} -> {:error, :invalid_fact_projection}
     end
   end
@@ -51,7 +53,8 @@ defmodule ClusterMurmur.Generation.FactProjectionValidator do
   @spec serialized_size(term()) :: {:ok, non_neg_integer()} | {:error, error()}
   def serialized_size(projection) do
     with :ok <- validate(projection),
-         {:ok, size} <- json_size(prompt_map(projection)) do
+         {:ok, prompt} <- prompt_map(projection),
+         {:ok, size} <- json_size(prompt) do
       {:ok, size}
     else
       _failure -> {:error, :invalid_fact_projection}
@@ -83,17 +86,35 @@ defmodule ClusterMurmur.Generation.FactProjectionValidator do
   end
 
   defp prompt_map(projection) do
-    %{
-      "current_state" => projection.current_state,
-      "details" => projection.details,
-      "event_type" => projection.event_type,
-      "group" => projection.group,
-      "occurred_at" => DateTime.to_iso8601(projection.occurred_at),
-      "previous_state" => projection.previous_state,
-      "severity" => projection.severity,
-      "subject" => projection.subject
-    }
-    |> Map.reject(fn {_key, value} -> is_nil(value) end)
+    with {:ok, occurred_at} <-
+           DateTime.shift_zone(
+             projection.occurred_at,
+             projection.occurred_at_timezone,
+             TimeZoneInfo.TimeZoneDatabase
+           ) do
+      {:ok,
+       %{
+         "current_state" => projection.current_state,
+         "details" => projection.details,
+         "event_type" => projection.event_type,
+         "group" => projection.group,
+         "occurred_at" => DateTime.to_iso8601(occurred_at),
+         "occurred_at_timezone" => projection.occurred_at_timezone,
+         "previous_state" => projection.previous_state,
+         "severity" => projection.severity,
+         "subject" => projection.subject
+       }
+       |> Map.reject(fn {_key, value} -> is_nil(value) end)}
+    else
+      _failure -> {:error, :invalid_fact_projection}
+    end
+  end
+
+  defp validate_presentation(timezone) do
+    case Presentation.validate(%Presentation{timezone: timezone}) do
+      :ok -> :ok
+      {:error, :invalid_presentation_configuration} -> {:error, :invalid_fact_projection}
+    end
   end
 
   defp validate_tree(value, _depth, nodes)

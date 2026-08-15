@@ -7,6 +7,7 @@ defmodule ClusterMurmur.Config.ManifestTest do
     EventPolicy,
     LLM,
     Manifest,
+    Presentation,
     StateTracking
   }
 
@@ -34,6 +35,7 @@ defmodule ClusterMurmur.Config.ManifestTest do
             %Manifest{
               version: 1,
               llm: %LLM{timeout_ms: 20_000},
+              presentation: %Presentation{timezone: "Etc/UTC"},
               state_tracking: %StateTracking{failures_required: 2, successes_required: 2},
               conversation_defaults: %ConversationDefaults{
                 max_turns: 3,
@@ -177,6 +179,21 @@ defmodule ClusterMurmur.Config.ManifestTest do
 
     assert Manifest.parse(Map.put(valid_document(), "event_policy", %{})) ==
              {:error, {:event_policy, :invalid_event_policy}}
+  end
+
+  test "normalizes optional explicit presentation settings" do
+    document = Map.put(valid_document(), "presentation", %{"timezone" => "Asia/Tokyo"})
+
+    assert {:ok, %Manifest{presentation: %Presentation{timezone: "Asia/Tokyo"}}} =
+             Manifest.parse(document)
+
+    result =
+      valid_document()
+      |> Map.put("presentation", %{"timezone" => "private.invalid"})
+      |> Manifest.parse()
+
+    assert result == {:error, {:presentation, :invalid_presentation_configuration}}
+    refute inspect(result) =~ "private"
   end
 
   test "allows present categories to have no include patterns" do

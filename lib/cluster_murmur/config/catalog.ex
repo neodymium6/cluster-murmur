@@ -17,6 +17,7 @@ defmodule ClusterMurmur.Config.Catalog do
     LoadedDocument,
     Manifest,
     Personas,
+    Presentation,
     StateTracking
   }
 
@@ -84,7 +85,8 @@ defmodule ClusterMurmur.Config.Catalog do
            llm: llm,
            state_tracking: state_tracking,
            conversation_defaults: conversation_defaults,
-           event_policy: event_policy
+           event_policy: event_policy,
+           presentation: presentation
          } = manifest
        )
        when is_map(includes) do
@@ -97,6 +99,7 @@ defmodule ClusterMurmur.Config.Catalog do
            {:ok, conversation_defaults_document} <-
              ConversationDefaults.to_document(conversation_defaults),
            {:ok, event_policy_document} <- EventPolicy.to_document(event_policy),
+           {:ok, presentation_document} <- Presentation.to_document(presentation),
            {:ok, ^manifest} <-
              Manifest.parse(%{
                "version" => 1,
@@ -104,7 +107,8 @@ defmodule ClusterMurmur.Config.Catalog do
                "llm" => llm_document,
                "state_tracking" => state_tracking_document,
                "conversation_defaults" => conversation_defaults_document,
-               "event_policy" => event_policy_document
+               "event_policy" => event_policy_document,
+               "presentation" => presentation_document
              }) do
         :ok
       else

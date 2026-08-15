@@ -33,6 +33,7 @@ defmodule ClusterMurmur.Generation.PromptAssemblerTest do
              "event_type" => "observation.recovered",
              "group" => "recovery",
              "occurred_at" => "2026-08-05T12:00:00.000000Z",
+             "occurred_at_timezone" => "Etc/UTC",
              "previous_state" => %{"state" => "failed"},
              "severity" => "info",
              "subject" => "example-target"
@@ -111,7 +112,8 @@ defmodule ClusterMurmur.Generation.PromptAssemblerTest do
             previous_state: %{"state" => "failed"},
             current_state: %{"state" => "healthy"},
             details: %{"attempt" => 2},
-            occurred_at: ~U[2026-08-05 12:00:00.000000Z]
+            occurred_at: ~U[2026-08-05 12:00:00.000000Z],
+            occurred_at_timezone: "Etc/UTC"
           },
           creative_context: %CreativeContext{
             conversation_kind: "recovery",

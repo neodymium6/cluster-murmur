@@ -2,6 +2,7 @@ defmodule ClusterMurmur.Generation.FactProjectorTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Events.Event
+  alias ClusterMurmur.Config.Presentation
 
   alias ClusterMurmur.Generation.{
     FactProjection,
@@ -31,6 +32,7 @@ defmodule ClusterMurmur.Generation.FactProjectorTest do
              "event_type" => "observation.recovered",
              "group" => "recovery",
              "occurred_at" => "2026-08-05T12:00:00.000000Z",
+             "occurred_at_timezone" => "Etc/UTC",
              "previous_state" => %{"state" => "failed"},
              "severity" => "info",
              "subject" => "example-target"
@@ -61,7 +63,8 @@ defmodule ClusterMurmur.Generation.FactProjectorTest do
     assert prompt_facts == %{
              "details" => %{},
              "event_type" => "observation.recovered",
-             "occurred_at" => "2026-08-05T12:00:00.000000Z"
+             "occurred_at" => "2026-08-05T12:00:00.000000Z",
+             "occurred_at_timezone" => "Etc/UTC"
            }
 
     for omitted <- [
@@ -72,6 +75,41 @@ defmodule ClusterMurmur.Generation.FactProjectorTest do
           "current_state"
         ] do
       refute Map.has_key?(prompt_facts, omitted)
+    end
+  end
+
+  test "shifts only prompt-facing timestamps into the presentation timezone" do
+    canonical = ~U[2026-08-15 12:00:00.000000Z]
+
+    assert {:ok, projection} =
+             FactProjector.project(
+               event(occurred_at: canonical),
+               %Presentation{timezone: "Asia/Tokyo"}
+             )
+
+    assert projection.occurred_at == canonical
+    assert projection.occurred_at_timezone == "Asia/Tokyo"
+    assert {:ok, prompt_facts} = FactProjectionValidator.to_prompt_map(projection)
+    assert prompt_facts["occurred_at"] == "2026-08-15T21:00:00.000000+09:00"
+    assert prompt_facts["occurred_at_timezone"] == "Asia/Tokyo"
+  end
+
+  test "uses embedded daylight-saving periods at the transition" do
+    expectations = [
+      {~U[2026-03-08 06:59:00.000000Z], "2026-03-08T01:59:00.000000-05:00"},
+      {~U[2026-03-08 07:00:00.000000Z], "2026-03-08T03:00:00.000000-04:00"}
+    ]
+
+    for {canonical, expected} <- expectations do
+      assert {:ok, projection} =
+               FactProjector.project(
+                 event(occurred_at: canonical),
+                 %Presentation{timezone: "America/New_York"}
+               )
+
+      assert {:ok, prompt_facts} = FactProjectionValidator.to_prompt_map(projection)
+      assert prompt_facts["occurred_at"] == expected
+      assert prompt_facts["occurred_at_timezone"] == "America/New_York"
     end
   end
 
@@ -144,7 +182,8 @@ defmodule ClusterMurmur.Generation.FactProjectorTest do
       previous_state: %{"state" => "failed"},
       current_state: %{"state" => "healthy"},
       details: %{},
-      occurred_at: ~U[2026-08-05 12:00:00.000000Z]
+      occurred_at: ~U[2026-08-05 12:00:00.000000Z],
+      occurred_at_timezone: "Etc/UTC"
     }
   end
 

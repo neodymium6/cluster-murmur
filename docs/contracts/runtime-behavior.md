@@ -122,6 +122,12 @@ Prompt-facing fact maps omit optional fields whose values are absent. They do
 not encode absence as JSON `null`, a string such as `unknown`, or a synthesized
 state. Non-null transition states remain present.
 
+Canonical event timestamps remain UTC for persistence, ordering,
+deduplication, and identity. Generation shifts only the prompt-facing
+`occurred_at` value into the deployment-wide presentation timezone, serializes
+it with its ISO 8601 offset, and supplies the IANA name separately as
+`occurred_at_timezone`.
+
 The LLM may add humor, metaphor, light irony, fictional emotion, or short
 in-world dialogue. It must not invent a cause, measurement, repair, recovery,
 credential, endpoint, or MCP action.

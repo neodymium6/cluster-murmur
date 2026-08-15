@@ -15,7 +15,8 @@ defmodule ClusterMurmur.Generation.FactProjection do
     :previous_state,
     :current_state,
     :details,
-    :occurred_at
+    :occurred_at,
+    :occurred_at_timezone
   ]
   defstruct [
     :event_type,
@@ -25,7 +26,8 @@ defmodule ClusterMurmur.Generation.FactProjection do
     :previous_state,
     :current_state,
     :details,
-    :occurred_at
+    :occurred_at,
+    :occurred_at_timezone
   ]
 
   @type t :: %__MODULE__{
@@ -36,6 +38,7 @@ defmodule ClusterMurmur.Generation.FactProjection do
           previous_state: term(),
           current_state: term(),
           details: map(),
-          occurred_at: DateTime.t()
+          occurred_at: DateTime.t(),
+          occurred_at_timezone: Calendar.time_zone()
         }
 end
