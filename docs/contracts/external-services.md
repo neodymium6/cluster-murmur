@@ -141,10 +141,10 @@ output under Discord's content limit. Accepted output becomes an unpublished
 `llm` message. After response decoding, the pure result resolver distinguishes
 accepted output, provider-failure fallback, and output-normalization fallback.
 Normalization rejection uses only fixed content-free classes for blank output,
-the character limit, invalid Unicode, unsafe output form, or an otherwise
-invalid provider result. It never returns rejected content or provider
-diagnostics. Every fallback class still becomes the same fixed deterministic
-fallback message. Immediately after successful resolution, generation
+the character limit, invalid Unicode, or an otherwise invalid provider result.
+It never returns rejected content or provider diagnostics. Every fallback class
+still becomes the same fixed deterministic fallback message. Immediately after
+successful resolution, generation
 orchestration emits one fixed accepted-or-fallback decision event containing
 only a count and the finite decision class. Rejected content and all provider
 values remain outside its metric and structured log.

@@ -145,8 +145,9 @@ environment variable; secret values never appear in YAML.
 
 The prompt separates persona instructions, confirmed facts, creative context,
 and bounded recent conversation. The validator rejects empty or oversized
-output, suppresses Discord mentions and URLs, removes control characters, and
-reduces redundant self-identification. Generated text may use humor, metaphor,
+output, requires valid Unicode, handles control characters mechanically, and
+reduces redundant self-identification. Network- and mention-looking strings are
+inert text rather than capabilities. Generated text may use humor, metaphor,
 light irony, fictional emotion, and short in-world dialogue. It may not invent
 causes, measurements, remediation, recovery, credentials, endpoints, or MCP
 activity. Provider failures fall back to a deterministic template generator.

@@ -136,10 +136,9 @@ success or are one of `invalid_cycle`, `poll_failed`, `dispatch_failed`,
 
 The generation component is `model_generation`. Its outcome is `accepted` with
 no error class, or `fallback` with one of `provider_failure`, `blank_output`,
-`character_limit_exceeded`, `invalid_unicode`, `unsafe_output_form`, or
-`invalid_provider_output`. These values identify the resolution stage and a
-content-free normalization reason; they never contain model output or provider
-diagnostics.
+`character_limit_exceeded`, `invalid_unicode`, or `invalid_provider_output`.
+These values identify the resolution stage and a content-free normalization
+reason; they never contain model output or provider diagnostics.
 
 The release also emits `runtime cycle completed`, `external request completed`,
 and `generation decision completed` through Logger with the same structured

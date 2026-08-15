@@ -42,7 +42,10 @@ Runtime deployments must:
 - make only the SQLite data path and a bounded temporary path writable;
 - keep every SQLite path ancestor controlled by the operator and unwritable by
   untrusted principals;
-- suppress Discord mentions and URLs in generated content by default;
+- disable Discord mention expansion and never derive network or tool
+  capabilities from generated text;
+- exclude credentials, private endpoints, and other deployment-owned values
+  from observation fields and generation plans;
 - enforce output, context, conversation, timeout, and rate limits; and
 - avoid logging secrets, complete prompts, complete MCP responses, private
   endpoints, or unrelated user messages.

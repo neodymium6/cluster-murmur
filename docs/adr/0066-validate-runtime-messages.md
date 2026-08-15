@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted. Amended by [ADR 0228](0228-disambiguate-japanese-sentence-full-stops.md).
+Accepted. Amended by [ADR 0229](0229-treat-generated-text-as-inert-content.md).
 
 ## Context
 

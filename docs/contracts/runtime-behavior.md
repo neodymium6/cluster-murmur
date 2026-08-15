@@ -126,25 +126,22 @@ Before publication, deterministic validation must:
 
 - reject empty output;
 - enforce a configured character limit;
-- suppress Discord user, role, and broadcast mentions;
-- suppress URLs, domain-like forms, and IP addresses, including forms that use
-  Unicode domain separators;
-- remove control characters; and
+- require valid UTF-8;
+- normalize provider control characters mechanically and reject forbidden
+  controls at the stored-message boundary; and
 - reduce redundant use of the speaker's own display name.
 
-For domain detection, a complete line containing two or more closed Japanese
-sentences made only from Japanese scripts and bounded Japanese punctuation may
-use ideographic full stops as sentence boundaries. Latin characters, fixed
-Japanese network-reference cues, inter-sentence whitespace, or path punctuation
-keep the line under domain detection. All other ideographic, fullwidth, and
-halfwidth dot forms remain equivalent to an ASCII dot for domain detection, and
-every such form remains equivalent to an ASCII dot for URL and IP-address
-detection. This narrow structural exception admits ordinary Japanese prose
-without removing the default Unicode-dot rejection.
+Validation does not classify URLs, domain names, IP addresses, or Discord
+mention-like forms as unsafe. They remain inert generated text: no generation
+or publication component follows a link, opens a connection, resolves a name,
+or grants the LLM a capability based on message content. Observation field
+allowlists and generation-plan construction remain responsible for keeping
+sensitive deployment data out of model context.
 
-Provider failure, timeout, malformed response, or rejected output falls back
-to a deterministic template generated only from confirmed facts. Fallbacks
-consume conversation budgets and must pass the same output validator.
+Provider failure, timeout, malformed response, blank output, invalid Unicode,
+or output outside the configured bounds falls back to a deterministic template
+generated only from confirmed facts. Fallbacks consume conversation budgets
+and must pass the same output validator.
 
 ## Discord publication
 
