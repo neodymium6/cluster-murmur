@@ -7,6 +7,22 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## Unreleased
 
+## [0.2.0-alpha.12](docs/release-notes-v0.2.0-alpha.12.md) - 2026-08-16
+
+### Ambient conversations
+
+- Made generation conversation-first and removed stochastic activation metadata
+  from model requests.
+- Allowed bounded persona-driven fictional dialogue while preserving factual,
+  capability, sensitive-data, and execution boundaries.
+
+### Stochastic scheduling
+
+- Separated a stochastic schedule's durable identity from its actual occurrence
+  time.
+- Resampled overdue active-window schedules instead of repeatedly claiming an
+  ineligible instant after restart or clock advancement.
+
 ## [0.2.0-alpha.11](docs/release-notes-v0.2.0-alpha.11.md) - 2026-08-15
 
 ### Generation facts
