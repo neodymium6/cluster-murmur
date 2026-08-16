@@ -55,7 +55,6 @@ defmodule ClusterMurmur.Triggers.StochasticScheduleCalculator do
     else
       {:ok, true} -> {:error, :already_active}
       {:error, reason} -> {:error, reason}
-      _failure -> {:error, :no_next_run}
     end
   rescue
     _error -> {:error, :no_next_run}
