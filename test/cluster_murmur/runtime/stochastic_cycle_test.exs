@@ -85,6 +85,7 @@ defmodule ClusterMurmur.Runtime.StochasticCycleTest do
 
     def commit(plan, event, recorded_at) do
       trace({:commit, plan.claim.trigger_id, event.type, recorded_at})
+      Process.put({Test, :event}, event)
       {:ok, Test.commit_result(plan, event)}
     end
 
@@ -161,6 +162,8 @@ defmodule ClusterMurmur.Runtime.StochasticCycleTest do
            ]
 
     refute inspect(result) =~ "active"
+    assert Process.get({__MODULE__, :event}).occurred_at == @now
+    refute Process.get({__MODULE__, :event}).occurred_at == schedule("active").next_run_at
   end
 
   test "continues a prevalidated batch after one claim conflict" do

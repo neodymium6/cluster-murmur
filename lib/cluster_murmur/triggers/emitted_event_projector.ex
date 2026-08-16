@@ -2,11 +2,12 @@ defmodule ClusterMurmur.Triggers.EmittedEventProjector do
   @moduledoc """
   Purely projects one configured trigger template into a bounded event.
 
-  The event identity and occurrence time are derived from the scheduled UTC
-  instant rather than an execution attempt. Retrying the same scheduled
-  version with the exact same configured template therefore produces the same
-  immutable event. Template drift deliberately preserves the event ID so
-  idempotent persistence rejects changed facts for that durable version.
+  Event identity is derived from the scheduled UTC instant rather than an
+  execution attempt. Scheduled events use that instant as their occurrence
+  time. Stochastic callers may supply a later durable execution instant as the
+  occurrence time without changing identity. Template or occurrence drift
+  deliberately preserves the event ID so idempotent persistence rejects
+  conflicting facts for one durable schedule version.
   """
 
   alias ClusterMurmur.Config.Value
@@ -25,11 +26,36 @@ defmodule ClusterMurmur.Triggers.EmittedEventProjector do
   @spec project(term(), term(), term(), term()) ::
           {:ok, Event.t()} | {:error, error()}
   def project(kind, trigger_id, %EmittedEvent{} = template, %DateTime{} = scheduled_at) do
+    project(kind, trigger_id, template, scheduled_at, scheduled_at)
+  end
+
+  def project(_kind, _trigger_id, _template, _scheduled_at),
+    do: {:error, :invalid_emitted_event}
+
+  @doc "Returns one event with separate durable identity and occurrence instants."
+  @spec project(term(), term(), term(), term(), term()) ::
+          {:ok, Event.t()} | {:error, error()}
+  def project(
+        kind,
+        trigger_id,
+        %EmittedEvent{} = template,
+        %DateTime{} = scheduled_at,
+        %DateTime{} = occurred_at
+      ) do
     with true <- kind in @kinds,
          {:ok, trigger_id} <- Value.id(trigger_id),
          :ok <- validate_template(template),
-         :ok <- DateTimeValidator.validate_storage_utc(scheduled_at) do
-      event = build(kind, trigger_id, template, normalize_precision(scheduled_at))
+         :ok <- DateTimeValidator.validate_storage_utc(scheduled_at),
+         :ok <- DateTimeValidator.validate_storage_utc(occurred_at),
+         true <- valid_occurrence?(kind, scheduled_at, occurred_at) do
+      event =
+        build(
+          kind,
+          trigger_id,
+          template,
+          normalize_precision(scheduled_at),
+          normalize_precision(occurred_at)
+        )
 
       case Validator.validate(event) do
         :ok -> {:ok, event}
@@ -44,7 +70,7 @@ defmodule ClusterMurmur.Triggers.EmittedEventProjector do
     _kind, _reason -> {:error, :invalid_emitted_event}
   end
 
-  def project(_kind, _trigger_id, _template, _scheduled_at),
+  def project(_kind, _trigger_id, _template, _scheduled_at, _occurred_at),
     do: {:error, :invalid_emitted_event}
 
   defp validate_template(template) do
@@ -58,7 +84,7 @@ defmodule ClusterMurmur.Triggers.EmittedEventProjector do
     end
   end
 
-  defp build(kind, trigger_id, template, scheduled_at) do
+  defp build(kind, trigger_id, template, scheduled_at, occurred_at) do
     source = Atom.to_string(kind)
 
     %Event{
@@ -70,7 +96,7 @@ defmodule ClusterMurmur.Triggers.EmittedEventProjector do
       severity: "info",
       previous: nil,
       current: nil,
-      occurred_at: scheduled_at,
+      occurred_at: occurred_at,
       observed_at: nil,
       dedupe_key: source <> ":" <> digest([trigger_id]),
       correlation_key: nil,
@@ -81,6 +107,12 @@ defmodule ClusterMurmur.Triggers.EmittedEventProjector do
 
   defp scheduled_at_key(scheduled_at),
     do: Integer.to_string(DateTime.to_unix(scheduled_at, :microsecond))
+
+  defp valid_occurrence?(:schedule, scheduled_at, occurred_at),
+    do: DateTime.compare(occurred_at, scheduled_at) == :eq
+
+  defp valid_occurrence?(:stochastic, scheduled_at, occurred_at),
+    do: DateTime.compare(occurred_at, scheduled_at) in [:eq, :gt]
 
   defp digest(parts) do
     :crypto.hash(:sha256, Enum.intersperse(parts, <<0>>))

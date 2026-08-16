@@ -104,6 +104,32 @@ defmodule ClusterMurmur.Triggers.EmittedEventProjectorTest do
     assert changed.subject == "changed-ambient-conversation"
   end
 
+  test "separates stochastic occurrence time from durable schedule identity" do
+    executed_at = DateTime.add(@scheduled_at, 8, :hour)
+
+    assert {:ok, scheduled} =
+             EmittedEventProjector.project(
+               :stochastic,
+               "occasional-murmur",
+               template(),
+               @scheduled_at
+             )
+
+    assert {:ok, delayed} =
+             EmittedEventProjector.project(
+               :stochastic,
+               "occasional-murmur",
+               template(),
+               @scheduled_at,
+               executed_at
+             )
+
+    assert delayed.id == scheduled.id
+    assert delayed.dedupe_key == scheduled.dedupe_key
+    assert delayed.occurred_at == %{executed_at | microsecond: {123_000, 6}}
+    refute delayed == scheduled
+  end
+
   test "rejects malformed inputs without returning configured identifiers" do
     forged_time = %{~U[2026-08-08 13:15:00Z] | hour: 24}
 
@@ -113,7 +139,13 @@ defmodule ClusterMurmur.Triggers.EmittedEventProjectorTest do
       {:stochastic, "occasional-murmur", %{template() | group: "invalid group"}, @scheduled_at},
       {:stochastic, "occasional-murmur", Map.put(template(), :private, true), @scheduled_at},
       {:stochastic, "occasional-murmur", template(), forged_time},
-      {:stochastic, "occasional-murmur", template(), nil}
+      {:stochastic, "occasional-murmur", template(), nil},
+      {:stochastic, "occasional-murmur", template(), @scheduled_at, forged_time},
+      {:stochastic, "occasional-murmur", template(), @scheduled_at, nil},
+      {:stochastic, "occasional-murmur", template(), @scheduled_at,
+       DateTime.add(@scheduled_at, -1, :microsecond)},
+      {:schedule, "occasional-murmur", template(), @scheduled_at,
+       DateTime.add(@scheduled_at, 1, :microsecond)}
     ]
 
     for arguments <- invalid do

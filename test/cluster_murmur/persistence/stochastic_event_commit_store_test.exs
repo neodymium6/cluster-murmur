@@ -72,6 +72,8 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStoreTest do
 
     assert {:ok, result} = StochasticEventCommitStore.commit(plan, event, @recorded_at)
     assert result.event.id == event.id
+    assert result.event.occurred_at == @executed_at
+    refute result.event.occurred_at == @scheduled_at
     assert result.dispatch.event_id == event.id
     assert result.dispatch.status == :pending
     assert result.dispatch.enqueued_at == @recorded_at
@@ -194,7 +196,8 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStoreTest do
       :stochastic,
       plan.claim.trigger_id,
       plan.event,
-      plan.claim.expected_next_run_at
+      plan.claim.expected_next_run_at,
+      plan.executed_at
     )
   end
 
