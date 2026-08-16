@@ -15,8 +15,10 @@ messages. It does not own infrastructure credentials, raw infrastructure APIs,
 probe execution, mutation, remediation, or unrestricted tool use.
 
 Factual decisions such as failure, recovery, severity, and state transitions
-must be made by deterministic application code. LLMs may only turn supplied
-facts into persona-specific language. Tool access must remain disabled by
+must be made by deterministic application code. LLMs may produce bounded
+persona-driven dialogue; supplied operational facts remain authoritative but
+need not be repeated. Generated text is not a capability and must not claim
+real tool use or external side effects. Tool access must remain disabled by
 default and, if introduced later, must use application-enforced allowlists and
 strict call, round, timeout, and concurrency limits.
 

@@ -200,6 +200,7 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequest do
          true <- valid_persona?(prompt.persona),
          true <- valid_facts?(prompt.confirmed_facts),
          true <- valid_creative_context?(prompt.creative_context),
+         true <- valid_fact_policy?(prompt.confirmed_facts, prompt.creative_context),
          true <- valid_conversation?(prompt.conversation),
          {:ok, _nodes, text_bytes} <- validate_tree(data, 0, 0, 0),
          true <- text_bytes <= @max_total_text_bytes do
@@ -231,6 +232,8 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequest do
       false
     end
   end
+
+  defp valid_facts?(value) when value == %{}, do: true
 
   defp valid_facts?(value) do
     with true <- valid_fact_keys?(value),
@@ -280,6 +283,14 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequest do
     exact_map_keys?(value, @creative_keys) and
       valid_kind?(value["conversation_kind"]) and valid_mood?(value["mood"])
   end
+
+  defp valid_fact_policy?(%{}, %{
+         "conversation_kind" => "ambient",
+         "mood" => mood
+       }),
+       do: mood in ["open", "engaged"]
+
+  defp valid_fact_policy?(facts, _creative_context), do: facts != %{}
 
   defp valid_conversation_line?(value) do
     exact_map_keys?(value, @conversation_line_keys) and valid_speaker?(value["speaker"]) and

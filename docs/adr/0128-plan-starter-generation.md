@@ -1,5 +1,10 @@
 # ADR 0128: Plan Starter Generation
 
+## Status
+
+Accepted. Amended by
+[ADR 0233](0233-make-generation-conversation-first.md).
+
 ## Context
 
 An event-trigger action can now atomically consume its durable authorization and

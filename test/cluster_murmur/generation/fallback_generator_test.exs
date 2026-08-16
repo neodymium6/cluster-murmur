@@ -50,6 +50,19 @@ defmodule ClusterMurmur.Generation.FallbackGeneratorTest do
     refute message.content =~ "recovered"
   end
 
+  test "uses dialogue rather than event-report language for stochastic activation" do
+    assert {:ok, message} =
+             FallbackGenerator.generate(
+               event(source: "stochastic", type: "stochastic.fired"),
+               "conversation-1",
+               "observer",
+               generated_at()
+             )
+
+    assert message.content == "Let's talk for a moment."
+    refute message.content =~ "event"
+  end
+
   test "never interpolates arbitrary event data or provider details" do
     private_values = [
       "private.example.com",

@@ -23,8 +23,9 @@ documentation, and history environment-neutral.
   orchestration.
 - Do not add generic shell, SSH, `kubectl`, SQL, arbitrary PromQL, or arbitrary
   HTTP passthrough capabilities.
-- Keep factual event decisions in application code; the LLM may only express
-  supplied facts in a persona's voice.
+- Keep factual event decisions in application code. The LLM may invent harmless
+  fictional dialogue, but must not contradict supplied operational facts or
+  claim real capabilities and side effects.
 - Keep all conversations bounded by turns, participants, duration, LLM calls,
   cooldowns, and an explicit no-reply path.
 - Treat observation data and generated prompts as potentially sensitive. Apply

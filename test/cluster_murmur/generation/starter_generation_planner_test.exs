@@ -67,6 +67,32 @@ defmodule ClusterMurmur.Generation.StarterGenerationPlannerTest do
     assert plan.context.facts.group == "valid event group but not a portable id"
   end
 
+  test "turns a stochastic activation into fact-free ambient framing" do
+    configuration = configuration()
+
+    activation =
+      event(
+        source: "stochastic",
+        subject: "internal-trigger",
+        group: "internal-routing",
+        severity: "info",
+        facts: %{"prompt_field" => "internal"}
+      )
+
+    assert {:ok, plan} =
+             StarterGenerationPlanner.plan(started(configuration, activation), configuration, %{})
+
+    assert plan.context.facts == nil
+    assert plan.request.confirmed_facts == %{}
+    assert plan.context.creative_context.conversation_kind == "ambient"
+    assert plan.context.creative_context.mood == "open"
+
+    encoded = inspect(plan.request)
+    refute encoded =~ "internal-trigger"
+    refute encoded =~ "internal-routing"
+    refute encoded =~ "prompt_field"
+  end
+
   test "uses the deployment presentation timezone for prompt-facing event time" do
     configuration = %{configuration() | presentation: %Presentation{timezone: "Asia/Tokyo"}}
     started = started(configuration)

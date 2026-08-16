@@ -18,6 +18,14 @@ defmodule ClusterMurmur.Generation.ContextValidatorTest do
     assert {:ok, _serialized_size} = FactProjectionValidator.serialized_size(value.facts)
   end
 
+  test "accepts a fact-free ambient generation context" do
+    ambient = %CreativeContext{conversation_kind: "ambient", mood: "open"}
+    assert ContextValidator.validate(context(facts: nil, creative_context: ambient)) == :ok
+
+    assert ContextValidator.validate(context(facts: nil)) ==
+             {:error, :invalid_generation_context}
+  end
+
   test "accepts at most twelve chronological conversation lines" do
     lines =
       Enum.map(1..12, fn index ->

@@ -1,6 +1,6 @@
 defmodule ClusterMurmur.Generation.Provider do
   @moduledoc """
-  Boundary for generating an expression from application-supplied facts.
+  Boundary for generating dialogue from a bounded structured prompt.
 
   Successful responses contain only normalized generated text. Raw provider
   payloads and errors do not cross this boundary. Implementations receive only

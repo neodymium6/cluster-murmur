@@ -130,10 +130,12 @@ and completed-execution records correlated with the authorized event and
 planned start instant may cross into later generation orchestration.
 For the first turn, that capability is projected into one exact redacted
 generation plan containing only the selected persona's display identity and
-instructions, allowlisted confirmed event facts, fixed application-owned
-creative framing derived from the validated binding group, and empty
-conversation history. The plan contains a
-provider-neutral structured request and performs no external call.
+instructions, optional allowlisted confirmed event facts, fixed
+application-owned creative framing, and empty conversation history. A
+stochastic activation supplies no confirmed facts and uses `ambient`/`open`
+framing; other event sources retain their allowlisted fact projection and
+binding-derived attentive framing. The plan contains a provider-neutral
+structured request and performs no external call.
 Generation execution revalidates that plan and exact provider settings,
 including exact provider, timeout, and output-token correlation with current
 public configuration. It calls one injected provider exactly once and resolves
@@ -143,8 +145,9 @@ accepted output, provider-failure fallback, and output-normalization fallback.
 Normalization rejection uses only fixed content-free classes for blank output,
 the character limit, invalid Unicode, or an otherwise invalid provider result.
 It never returns rejected content or provider diagnostics. Every fallback class
-still becomes the same fixed deterministic fallback message. Immediately after
-successful resolution, generation
+becomes a fixed deterministic message selected by event source: stochastic
+activations use a neutral dialogue opener, while other events use the neutral
+event-recorded template. Immediately after successful resolution, generation
 orchestration emits one fixed accepted-or-fallback decision event containing
 only a count and the finite decision class. Rejected content and all provider
 values remain outside its metric and structured log.

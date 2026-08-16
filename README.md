@@ -1,8 +1,9 @@
 # Cluster Murmur
 
 Cluster Murmur gives observed systems a cast of characters. When a read-only
-observer reports a meaningful change, configured personas comment on the
-supplied facts and may hold a short conversation in Discord.
+observer reports a meaningful change or an ambient activation fires, configured
+personas can begin a short bounded conversation in Discord. Operational facts can
+ground the dialogue without turning every exchange into a status report.
 
 It is ambient character software for experiencing what is happening around a
 running system. It is not a monitoring system, an incident-response tool, or an
@@ -20,8 +21,9 @@ Cluster Murmur can turn that fact into an exchange like this:
 > **Noa:** "I noticed it too. Let's see what happens next."
 
 This exchange is illustrative. The characters, tone, triggers, and destination
-come from deployment-owned configuration; the application supplies the facts
-that the characters are allowed to express.
+come from deployment-owned configuration. Application-supplied facts constrain
+claims about the real system, while personas may also produce harmless
+fictional conversation.
 
 The complete path is deliberately narrow:
 
@@ -35,7 +37,9 @@ read-only observation
 
 Application code decides whether an observation represents an event, which
 trigger matches, who may participate, and whether anything should be
-published. A model may express only the supplied facts in a persona's voice.
+published. A model receives only bounded, allowlisted context and writes
+conversation in a persona's voice. Confirmed operational facts constrain what
+it may claim about the real system without forcing every message to be a report.
 
 ## What it is for
 

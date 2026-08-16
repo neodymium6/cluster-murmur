@@ -36,9 +36,9 @@ defmodule ClusterMurmur.Generation.ContextValidator do
   def validate(%Context{} = context) do
     with true <- exact?(context, @context_keys, @context_key_count),
          :ok <- PersonaProjectionValidator.validate(context.persona),
-         :ok <- FactProjectionValidator.validate(context.facts),
-         {:ok, fact_bytes} <- FactProjectionValidator.serialized_size(context.facts),
+         {:ok, fact_bytes} <- validate_facts(context.facts),
          :ok <- validate_creative_context(context.creative_context),
+         :ok <- validate_fact_policy(context.facts, context.creative_context),
          {:ok, history_bytes} <- validate_conversation(context.conversation),
          true <- aggregate_bytes(context, fact_bytes, history_bytes) <= @max_context_bytes do
       :ok
@@ -52,6 +52,27 @@ defmodule ClusterMurmur.Generation.ContextValidator do
   end
 
   def validate(_context), do: {:error, :invalid_generation_context}
+
+  defp validate_facts(nil), do: {:ok, 0}
+
+  defp validate_facts(facts) do
+    with :ok <- FactProjectionValidator.validate(facts),
+         {:ok, fact_bytes} <- FactProjectionValidator.serialized_size(facts) do
+      {:ok, fact_bytes}
+    end
+  end
+
+  defp validate_fact_policy(nil, %CreativeContext{
+         conversation_kind: "ambient",
+         mood: mood
+       })
+       when mood in ["open", "engaged"],
+       do: :ok
+
+  defp validate_fact_policy(nil, %CreativeContext{}),
+    do: {:error, :invalid_generation_context}
+
+  defp validate_fact_policy(_facts, %CreativeContext{}), do: :ok
 
   defp validate_creative_context(%CreativeContext{} = creative) do
     if exact?(creative, @creative_keys, @creative_key_count) and

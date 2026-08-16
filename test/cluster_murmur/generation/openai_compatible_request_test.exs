@@ -214,6 +214,25 @@ defmodule ClusterMurmur.Generation.OpenAICompatibleRequestTest do
     refute Map.has_key?(decoded["confirmed_facts"], "current_state")
   end
 
+  test "round-trips a fact-free ambient prompt" do
+    prompt = %{
+      prompt()
+      | confirmed_facts: %{},
+        creative_context: %{"conversation_kind" => "ambient", "mood" => "open"}
+    }
+
+    assert {:ok, request} = OpenAICompatibleRequest.encode(prompt, settings())
+    assert OpenAICompatibleRequest.validate_for_transport(request, settings()) == :ok
+
+    [_, user] = request.json["messages"]
+    assert :json.decode(user["content"])["confirmed_facts"] == %{}
+
+    assert OpenAICompatibleRequest.encode(
+             %{prompt | creative_context: %{"conversation_kind" => "recovery", "mood" => "open"}},
+             settings()
+           ) == {:error, :invalid_prompt_request}
+  end
+
   test "rejects explicit null and unknown optional fact fields" do
     for facts <- [
           Map.put(prompt().confirmed_facts, "previous_state", nil),

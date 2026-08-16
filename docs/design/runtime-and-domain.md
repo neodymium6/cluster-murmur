@@ -147,10 +147,13 @@ The prompt separates persona instructions, confirmed facts, creative context,
 and bounded recent conversation. The validator rejects empty or oversized
 output, requires valid Unicode, handles control characters mechanically, and
 reduces redundant self-identification. Network- and mention-looking strings are
-inert text rather than capabilities. Generated text may use humor, metaphor,
-light irony, fictional emotion, and short in-world dialogue. It may not invent
-causes, measurements, remediation, recovery, credentials, endpoints, or MCP
-activity. Provider failures fall back to a deterministic template generator.
+inert text rather than capabilities. Generated text may use fictional topics,
+opinions, feelings, relationships, disagreement, humor, and metaphor. Supplied
+operational facts are optional grounding and must not be contradicted. The model
+may not claim that a character can, will, or did use tools, access credentials,
+change configuration, or cause external side effects. Provider failures fall
+back to a deterministic template generator, including a neutral dialogue opener
+for ambient stochastic events.
 
 ## Discord and memory
 
