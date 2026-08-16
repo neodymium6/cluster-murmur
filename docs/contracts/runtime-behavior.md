@@ -128,6 +128,10 @@ deduplication, and identity. Generation shifts only the prompt-facing
 it with its ISO 8601 offset, and supplies the IANA name separately as
 `occurred_at_timezone`.
 
+For stochastic events, the durable sampled schedule instant determines event
+identity while `occurred_at` records the later validated execution instant.
+Recurring schedule events continue to use their scheduled instant for both.
+
 The LLM may add humor, metaphor, light irony, fictional emotion, or short
 in-world dialogue. It must not invent a cause, measurement, repair, recovery,
 credential, endpoint, or MCP action.

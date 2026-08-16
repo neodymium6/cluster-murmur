@@ -75,7 +75,8 @@ defmodule ClusterMurmur.Persistence.StochasticEventCommitStore do
              :stochastic,
              plan.claim.trigger_id,
              plan.event,
-             plan.claim.expected_next_run_at
+             plan.claim.expected_next_run_at,
+             plan.executed_at
            ),
          true <- event == expected_event,
          true <- DateTime.compare(plan.next_run_at, plan.executed_at) == :gt do

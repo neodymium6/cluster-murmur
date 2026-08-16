@@ -303,7 +303,8 @@ defmodule ClusterMurmur.Runtime.StochasticCycle do
              :stochastic,
              trigger.id,
              plan.event,
-             schedule.next_run_at
+             schedule.next_run_at,
+             plan.executed_at
            ),
          {:ok, %CommitResult{} = committed} <- adapters.commits.commit(plan, event, now),
          :ok <- validate_commit_correlation(committed, event, plan, schedule) do

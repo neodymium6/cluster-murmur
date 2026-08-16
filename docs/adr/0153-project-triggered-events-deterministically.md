@@ -4,7 +4,8 @@ Date: 2026-08-08
 
 ## Status
 
-Accepted
+Accepted. Amended by
+[ADR 0231](0231-separate-stochastic-identity-and-occurrence-time.md).
 
 ## Context
 
