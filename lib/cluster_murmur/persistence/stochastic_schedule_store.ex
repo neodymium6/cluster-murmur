@@ -4,8 +4,8 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStore do
 
   Existing durable state always wins over a newly calculated initial run. Due
   schedules can be claimed through a fixed bounded lease, and only that opaque
-  claim can authorize the corresponding completion update. Action execution and
-  resampling remain outside this store. Retirement accepts only one bounded
+  claim can authorize the corresponding completion or deferral update. Random
+  sampling remains outside this store. Retirement accepts only one bounded
   active-trigger allowlist and deletes one bounded page.
   """
 
@@ -97,6 +97,21 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStore do
   def record_execution(claim, executed_at, recorded_at, next_run_at, local_date) do
     if valid_execution_input?(claim, executed_at, recorded_at, next_run_at, local_date) do
       record_execution_transaction(claim, executed_at, recorded_at, next_run_at, local_date)
+    else
+      {:error, :invalid_schedule}
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  @doc "Moves one claimed, unexecuted schedule to an already sampled future run."
+  @spec reschedule(term(), term(), term()) ::
+          {:ok, StochasticSchedule.t()} | {:error, error()}
+  def reschedule(claim, rescheduled_at, next_run_at) do
+    if valid_reschedule_input?(claim, rescheduled_at, next_run_at) do
+      reschedule_transaction(claim, rescheduled_at, next_run_at)
     else
       {:error, :invalid_schedule}
     end
@@ -300,6 +315,14 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStore do
   defp valid_execution_input?(_claim, _executed_at, _recorded_at, _next_run_at, _local_date),
     do: false
 
+  defp valid_reschedule_input?(%StochasticScheduleClaim{} = claim, rescheduled_at, next_run_at) do
+    valid_claim?(claim) and valid_storage_datetime?(rescheduled_at) and
+      valid_storage_datetime?(next_run_at) and
+      DateTime.compare(next_run_at, rescheduled_at) == :gt
+  end
+
+  defp valid_reschedule_input?(_claim, _rescheduled_at, _next_run_at), do: false
+
   defp record_execution_transaction(claim, executed_at, recorded_at, next_run_at, local_date) do
     result =
       Repo.transaction(fn ->
@@ -316,6 +339,37 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStore do
 
       _failure ->
         {:error, :storage_unavailable}
+    end
+  end
+
+  defp reschedule_transaction(claim, rescheduled_at, next_run_at) do
+    result =
+      Repo.transaction(fn ->
+        query =
+          from schedule in StochasticSchedule,
+            where:
+              schedule.trigger_id == ^claim.trigger_id and
+                schedule.next_run_at == ^claim.expected_next_run_at and
+                schedule.claim_token == ^claim.token
+
+        case Repo.one(query) do
+          %StochasticSchedule{} = schedule ->
+            if claimed_for_reschedule?(schedule, claim, rescheduled_at) do
+              persist_reschedule(schedule, next_run_at)
+            else
+              Repo.rollback(:schedule_conflict)
+            end
+
+          nil ->
+            Repo.rollback(:schedule_conflict)
+        end
+      end)
+
+    case result do
+      {:ok, %StochasticSchedule{} = schedule} -> {:ok, schedule}
+      {:error, :invalid_schedule} -> {:error, :invalid_schedule}
+      {:error, :schedule_conflict} -> {:error, :schedule_conflict}
+      _failure -> {:error, :storage_unavailable}
     end
   end
 
@@ -347,6 +401,28 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStore do
       DateTime.compare(recorded_at, claim.expires_at) == :lt and
       DateTime.compare(schedule.claim_started_at, claim.started_at) == :eq and
       DateTime.compare(schedule.claim_expires_at, claim.expires_at) == :eq
+  end
+
+  defp claimed_for_reschedule?(schedule, claim, rescheduled_at) do
+    DateTime.compare(claim.expected_next_run_at, claim.started_at) in [:lt, :eq] and
+      DateTime.compare(claim.started_at, rescheduled_at) in [:lt, :eq] and
+      DateTime.compare(rescheduled_at, claim.expires_at) == :lt and
+      DateTime.compare(schedule.claim_started_at, claim.started_at) == :eq and
+      DateTime.compare(schedule.claim_expires_at, claim.expires_at) == :eq
+  end
+
+  defp persist_reschedule(schedule, next_run_at) do
+    case schedule
+         |> StochasticSchedule.changeset(%{
+           next_run_at: next_run_at,
+           claim_token: nil,
+           claim_started_at: nil,
+           claim_expires_at: nil
+         })
+         |> Repo.update() do
+      {:ok, updated} -> updated
+      {:error, _changeset} -> Repo.rollback(:invalid_schedule)
+    end
   end
 
   defp persist_execution(schedule, executed_at, next_run_at, local_date) do

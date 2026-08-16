@@ -4,7 +4,8 @@ Date: 2026-08-08
 
 ## Status
 
-Accepted
+Accepted. Amended by
+[ADR 0232](0232-resample-overdue-stochastic-active-windows.md).
 
 ## Context
 

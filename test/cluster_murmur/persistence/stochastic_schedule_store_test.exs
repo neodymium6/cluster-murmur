@@ -492,6 +492,55 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
            } = advanced
   end
 
+  test "atomically reschedules a claimed event without consuming its daily limit" do
+    assert {:ok, initial} =
+             StochasticScheduleStore.restore_or_initialize(
+               "ambient",
+               ~U[2026-08-04 14:00:00.000000Z]
+             )
+
+    assert {:ok, _existing_state} =
+             initial
+             |> StochasticSchedule.changeset(%{
+               last_run_at: ~U[2026-08-04 10:00:00.000000Z],
+               daily_count: 2,
+               daily_count_date: ~D[2026-08-04]
+             })
+             |> Repo.update()
+
+    claim =
+      claim_due!(
+        "ambient",
+        ~U[2026-08-04 14:00:00.000000Z],
+        ~U[2026-08-04 14:00:00.000000Z]
+      )
+
+    assert {:ok, rescheduled} =
+             StochasticScheduleStore.reschedule(
+               claim,
+               ~U[2026-08-04 14:00:01.000000Z],
+               ~U[2026-08-04 18:00:00.000000Z]
+             )
+
+    assert %StochasticSchedule{
+             next_run_at: ~U[2026-08-04 18:00:00.000000Z],
+             last_run_at: ~U[2026-08-04 10:00:00.000000Z],
+             daily_count: 2,
+             daily_count_date: ~D[2026-08-04],
+             claim_token: nil,
+             claim_started_at: nil,
+             claim_expires_at: nil
+           } = rescheduled
+
+    assert StochasticScheduleStore.reschedule(
+             claim,
+             ~U[2026-08-04 14:00:01.000000Z],
+             ~U[2026-08-04 18:00:00.000000Z]
+           ) == {:error, :schedule_conflict}
+
+    assert Repo.get!(StochasticSchedule, "ambient") == rescheduled
+  end
+
   test "increments and rolls over local-date execution buckets" do
     assert {:ok, _initial} =
              StochasticScheduleStore.restore_or_initialize(
@@ -669,6 +718,27 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
     end
   end
 
+  test "rejects invalid reschedules before accessing storage" do
+    Repo.put_dynamic_repo(:missing_stochastic_schedule_repo)
+    claim = claim_fixture()
+    rescheduled_at = ~U[2026-08-04 14:00:01.000000Z]
+    next_run_at = ~U[2026-08-04 18:00:00.000000Z]
+
+    invalid = [
+      {nil, rescheduled_at, next_run_at},
+      {%{claim | trigger_id: "invalid id"}, rescheduled_at, next_run_at},
+      {%{claim | token: "invalid"}, rescheduled_at, next_run_at},
+      {claim, nil, next_run_at},
+      {claim, rescheduled_at, nil},
+      {claim, rescheduled_at, rescheduled_at}
+    ]
+
+    for arguments <- invalid do
+      assert apply(StochasticScheduleStore, :reschedule, Tuple.to_list(arguments)) ==
+               {:error, :invalid_schedule}
+    end
+  end
+
   test "classifies unavailable execution writes" do
     Repo.put_dynamic_repo(:missing_stochastic_schedule_repo)
 
@@ -678,6 +748,16 @@ defmodule ClusterMurmur.Persistence.StochasticScheduleStoreTest do
              ~U[2026-08-04 14:00:01.000000Z],
              ~U[2026-08-04 18:00:00.000000Z],
              nil
+           ) == {:error, :storage_unavailable}
+  end
+
+  test "classifies unavailable reschedule writes" do
+    Repo.put_dynamic_repo(:missing_stochastic_schedule_repo)
+
+    assert StochasticScheduleStore.reschedule(
+             claim_fixture("private-trigger"),
+             ~U[2026-08-04 14:00:01.000000Z],
+             ~U[2026-08-04 18:00:00.000000Z]
            ) == {:error, :storage_unavailable}
   end
 

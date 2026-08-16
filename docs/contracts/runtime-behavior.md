@@ -39,6 +39,12 @@ Triggers are limited to event, schedule, and stochastic types. Correlation is
 reserved for later work. Matchers use only the operators defined in the
 configuration reference and never execute embedded code.
 
+A stochastic schedule that becomes due outside its configured active hours is
+claimed and moved once to a newly sampled instant strictly inside the next
+active window. The durable replacement survives restarts, does not emit an
+event, and does not consume or reset its daily execution count. Daily-limit
+ineligibility remains an unclaimed skip.
+
 Starter candidates come from the matched binding. A candidate on cooldown is
 normally excluded. With one eligible candidate, that persona is selected.
 With multiple candidates, the selector computes a non-negative weight from:
