@@ -22,6 +22,14 @@ defmodule ClusterMurmur.Runtime.StochasticCycleTest do
     def uniform, do: 0.0
   end
 
+  defmodule SequenceRandom do
+    def uniform do
+      [value | rest] = Process.get(:stochastic_cycle_random_values)
+      Process.put(:stochastic_cycle_random_values, rest)
+      value
+    end
+  end
+
   defmodule Schedules do
     alias ClusterMurmur.Runtime.StochasticCycleTest, as: Test
 
@@ -29,17 +37,24 @@ defmodule ClusterMurmur.Runtime.StochasticCycleTest do
       trace({:list_due, now})
 
       case Process.get({Test, :schedules}, {:ok, []}) do
-        {:ok, schedules} -> {:ok, Enum.take(schedules, 100)}
-        failure -> failure
+        {:ok, schedules} ->
+          {:ok, schedules |> Enum.filter(&due?(&1, now)) |> Enum.take(100)}
+
+        failure ->
+          failure
       end
     end
 
-    def list_due_after(_now, cursor) do
+    def list_due_after(now, cursor) do
       trace({:list_due_after, elem(cursor, 1)})
 
       case Process.get({Test, :schedules}, {:ok, []}) do
         {:ok, schedules} ->
-          {:ok, schedules |> Enum.filter(&after_cursor?(&1, cursor)) |> Enum.take(100)}
+          {:ok,
+           schedules
+           |> Enum.filter(&due?(&1, now))
+           |> Enum.filter(&after_cursor?(&1, cursor))
+           |> Enum.take(100)}
 
         failure ->
           failure
@@ -65,6 +80,43 @@ defmodule ClusterMurmur.Runtime.StochasticCycleTest do
       end
     end
 
+    def reschedule(claim, rescheduled_at, next_run_at) do
+      trace({:reschedule, claim.trigger_id, next_run_at})
+
+      case Process.get({Test, :schedules}, {:ok, []}) do
+        {:ok, schedules} ->
+          {matched, updated} =
+            Enum.map_reduce(schedules, false, fn schedule, matched ->
+              if schedule.trigger_id == claim.trigger_id and
+                   schedule.next_run_at == claim.expected_next_run_at do
+                {%{
+                   schedule
+                   | next_run_at: next_run_at,
+                     claim_token: nil,
+                     claim_started_at: nil,
+                     claim_expires_at: nil
+                 }, true}
+              else
+                {schedule, matched}
+              end
+            end)
+
+          Process.put({Test, :schedules}, {:ok, matched})
+
+          case Enum.find(matched, &(&1.trigger_id == claim.trigger_id)) do
+            %StochasticSchedule{} = schedule
+            when updated and rescheduled_at == claim.started_at ->
+              {:ok, schedule}
+
+            _failure ->
+              {:error, :schedule_conflict}
+          end
+
+        failure ->
+          failure
+      end
+    end
+
     defp token(trigger_id),
       do: :sha256 |> :crypto.hash(trigger_id) |> Base.url_encode64(padding: false)
 
@@ -75,6 +127,8 @@ defmodule ClusterMurmur.Runtime.StochasticCycleTest do
         :lt -> false
       end
     end
+
+    defp due?(schedule, now), do: DateTime.compare(schedule.next_run_at, now) in [:lt, :eq]
 
     defp trace(entry), do: Process.put({Test, :trace}, trace() ++ [entry])
     defp trace, do: Process.get({Test, :trace}, [])
@@ -98,6 +152,7 @@ defmodule ClusterMurmur.Runtime.StochasticCycleTest do
 
     defdelegate list_due(now), to: Schedules
     defdelegate list_due_after(now, cursor), to: Schedules
+    defdelegate reschedule(claim, rescheduled_at, next_run_at), to: Schedules
 
     def claim_due(trigger_id, next_run_at, claimed_at) do
       with {:ok, claim} <- Schedules.claim_due(trigger_id, next_run_at, claimed_at) do
@@ -143,7 +198,7 @@ defmodule ClusterMurmur.Runtime.StochasticCycleTest do
     :ok
   end
 
-  test "claims and commits eligible schedules while leaving ineligible work unclaimed" do
+  test "claims and commits eligible schedules while durably rescheduling inactive work" do
     configuration = configuration([trigger("active", nil), trigger("inactive", inactive_hours())])
     Process.put({__MODULE__, :schedules}, {:ok, [schedule("active"), schedule("inactive")]})
 
@@ -158,12 +213,51 @@ defmodule ClusterMurmur.Runtime.StochasticCycleTest do
     assert Process.get({__MODULE__, :trace}) == [
              {:list_due, @now},
              {:claim, "active"},
-             {:commit, "active", "stochastic.fired", @now}
+             {:commit, "active", "stochastic.fired", @now},
+             {:claim, "inactive"},
+             {:reschedule, "inactive", ~U[2026-08-08 13:00:02.000000Z]}
            ]
 
     refute inspect(result) =~ "active"
     assert Process.get({__MODULE__, :event}).occurred_at == @now
     refute Process.get({__MODULE__, :event}).occurred_at == schedule("active").next_run_at
+  end
+
+  test "does not execute or move the persisted replacement at the opening boundary" do
+    configuration = configuration([trigger("inactive", inactive_hours())])
+    Process.put({__MODULE__, :schedules}, {:ok, [schedule("inactive")]})
+
+    assert {:ok, first} = StochasticCycle.run(configuration, @now, ZeroRandom, adapters())
+    assert first == %Result{due_count: 1, executed_count: 0, skipped_count: 1, failure_count: 0}
+
+    opening = ~U[2026-08-08 13:00:00.000000Z]
+    assert {:ok, second} = StochasticCycle.run(configuration, opening, ZeroRandom, adapters())
+    assert second == %Result{due_count: 0, executed_count: 0, skipped_count: 0, failure_count: 0}
+
+    assert {:ok, [persisted]} = Process.get({__MODULE__, :schedules})
+    assert persisted.next_run_at == ~U[2026-08-08 13:00:02.000000Z]
+
+    assert Enum.count(Process.get({__MODULE__, :trace}), fn
+             {:reschedule, "inactive", _next_run_at} -> true
+             _entry -> false
+           end) == 1
+  end
+
+  test "samples independent replacement times for multiple inactive triggers" do
+    configuration =
+      configuration([trigger("first", inactive_hours()), trigger("second", inactive_hours())])
+
+    Process.put({__MODULE__, :schedules}, {:ok, [schedule("first"), schedule("second")]})
+    Process.put(:stochastic_cycle_random_values, [0.0, 0.5])
+
+    assert {:ok, result} = StochasticCycle.run(configuration, @now, SequenceRandom, adapters())
+    assert result.skipped_count == 2
+    assert result.failure_count == 0
+
+    assert {:ok, [first, second]} = Process.get({__MODULE__, :schedules})
+    refute first.next_run_at == second.next_run_at
+    assert DateTime.compare(first.next_run_at, ~U[2026-08-08 13:00:00Z]) == :gt
+    assert DateTime.compare(second.next_run_at, ~U[2026-08-08 14:00:00Z]) == :lt
   end
 
   test "continues a prevalidated batch after one claim conflict" do

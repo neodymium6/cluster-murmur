@@ -27,6 +27,7 @@ defmodule ClusterMurmur.Runtime.StochasticCycle do
     EmittedEventProjector,
     StochasticDueEvaluator,
     StochasticExecutionPlanner,
+    StochasticScheduleCalculator,
     StochasticTrigger
   }
 
@@ -151,7 +152,8 @@ defmodule ClusterMurmur.Runtime.StochasticCycle do
            validate_adapter(adapters.schedules,
              list_due: 1,
              list_due_after: 2,
-             claim_due: 3
+             claim_due: 3,
+             reschedule: 3
            ),
          :ok <- validate_adapter(adapters.commits, commit: 3) do
       :ok
@@ -275,6 +277,13 @@ defmodule ClusterMurmur.Runtime.StochasticCycle do
   defp execute_entries(entries, now, random, adapters) do
     {executed, skipped, failures} =
       Enum.reduce(entries, {0, 0, 0}, fn
+        {trigger, schedule, %Decision{eligible: false, reason: :outside_active_hours}},
+        {executed, skipped, failures} ->
+          case reschedule_one(trigger, schedule, now, random, adapters.schedules) do
+            :ok -> {executed, skipped + 1, failures}
+            :error -> {executed, skipped, failures + 1}
+          end
+
         {_trigger, _schedule, %Decision{eligible: false}}, {executed, skipped, failures} ->
           {executed, skipped + 1, failures}
 
@@ -291,6 +300,25 @@ defmodule ClusterMurmur.Runtime.StochasticCycle do
       skipped_count: skipped,
       failure_count: failures
     }
+  end
+
+  defp reschedule_one(trigger, schedule, now, random, schedules) do
+    with {:ok, next_run_at} <-
+           StochasticScheduleCalculator.next_active_run(trigger, now, random),
+         {:ok, %StochasticScheduleClaim{} = claim} <-
+           schedules.claim_due(trigger.id, schedule.next_run_at, now),
+         :ok <- validate_claim_correlation(claim, trigger, schedule, now),
+         {:ok, %StochasticSchedule{} = rescheduled} <-
+           schedules.reschedule(claim, now, next_run_at),
+         :ok <- validate_reschedule_correlation(rescheduled, schedule, next_run_at) do
+      :ok
+    else
+      _failure -> :error
+    end
+  rescue
+    _error -> :error
+  catch
+    _kind, _reason -> :error
   end
 
   defp execute_one(trigger, schedule, now, random, adapters) do
@@ -323,6 +351,23 @@ defmodule ClusterMurmur.Runtime.StochasticCycle do
          claim.expected_next_run_at == schedule.next_run_at and claim.started_at == now,
        do: :ok,
        else: {:error, :invalid_stochastic_cycle}
+  end
+
+  defp validate_reschedule_correlation(rescheduled, original, next_run_at) do
+    expected = %{
+      trigger_id: original.trigger_id,
+      next_run_at: next_run_at,
+      last_run_at: original.last_run_at,
+      daily_count: original.daily_count,
+      daily_count_date: original.daily_count_date,
+      claim_token: nil,
+      claim_started_at: nil,
+      claim_expires_at: nil
+    }
+
+    if Map.take(rescheduled, @schedule_fields) == expected,
+      do: :ok,
+      else: {:error, :invalid_stochastic_cycle}
   end
 
   defp validate_commit_correlation(
