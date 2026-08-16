@@ -4,7 +4,8 @@ Date: 2026-08-15
 
 ## Status
 
-Accepted. Amended by [ADR 0229](0229-treat-generated-text-as-inert-content.md).
+Accepted. Amended by [ADR 0229](0229-treat-generated-text-as-inert-content.md)
+and [ADR 0233](0233-make-generation-conversation-first.md).
 
 ## Context
 

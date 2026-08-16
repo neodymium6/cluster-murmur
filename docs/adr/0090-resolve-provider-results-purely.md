@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted. Amended by [ADR 0226](0226-classify-provider-output-rejections.md).
+Accepted. Amended by [ADR 0226](0226-classify-provider-output-rejections.md)
+and [ADR 0233](0233-make-generation-conversation-first.md).
 
 ## Context
 

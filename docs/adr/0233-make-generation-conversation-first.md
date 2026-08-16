@@ -4,8 +4,11 @@
 
 Accepted. Amends [ADR 0086](0086-validate-prompt-fact-projections.md),
 [ADR 0087](0087-validate-bounded-generation-context.md),
-[ADR 0088](0088-assemble-separated-generation-prompts.md), and
-[ADR 0128](0128-plan-starter-generation.md). It also amends
+[ADR 0088](0088-assemble-separated-generation-prompts.md),
+[ADR 0090](0090-resolve-provider-results-purely.md),
+[ADR 0128](0128-plan-starter-generation.md),
+[ADR 0226](0226-classify-provider-output-rejections.md), and
+[ADR 0227](0227-emit-redacted-generation-decisions.md). It also amends
 [ADR 0005](0005-keep-facts-outside-llm.md) and
 [ADR 0077](0077-generate-deterministic-factual-fallbacks.md).
 
