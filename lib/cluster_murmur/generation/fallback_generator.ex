@@ -2,7 +2,8 @@ defmodule ClusterMurmur.Generation.FallbackGenerator do
   @moduledoc """
   Generates one deterministic safe message from an application-confirmed event.
 
-  One neutral template confirms only that a validated event was recorded.
+  One neutral operational template confirms only that a validated event was
+  recorded. A stochastic activation uses a neutral dialogue opening instead.
   Arbitrary types, subjects, facts, labels, identifiers, and provider errors are
   never interpreted or interpolated into output. The generator is pure and does
   not read a clock, call an LLM, access storage, or publish a message.
@@ -14,7 +15,8 @@ defmodule ClusterMurmur.Generation.FallbackGenerator do
   alias ClusterMurmur.Messages.Message
   alias ClusterMurmur.Messages.Validator, as: MessageValidator
 
-  @content "A confirmed event was recorded."
+  @event_content "A confirmed event was recorded."
+  @ambient_content "Let's talk for a moment."
 
   @type error :: :invalid_datetime | :invalid_event | :invalid_message
 
@@ -56,14 +58,17 @@ defmodule ClusterMurmur.Generation.FallbackGenerator do
     if DateTime.compare(observed_at, occurred_at) == :lt, do: occurred_at, else: observed_at
   end
 
-  defp build_message(_event, conversation_id, persona_id, inserted_at) do
+  defp build_message(event, conversation_id, persona_id, inserted_at) do
     %Message{
       conversation_id: conversation_id,
       persona_id: persona_id,
       origin: :fallback,
-      content: @content,
+      content: fallback_content(event),
       discord_message_id: nil,
       inserted_at: inserted_at
     }
   end
+
+  defp fallback_content(%Event{source: "stochastic"}), do: @ambient_content
+  defp fallback_content(%Event{}), do: @event_content
 end

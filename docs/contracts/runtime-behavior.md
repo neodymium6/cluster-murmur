@@ -138,9 +138,18 @@ For stochastic events, the durable sampled schedule instant determines event
 identity while `occurred_at` records the later validated execution instant.
 Recurring schedule events continue to use their scheduled instant for both.
 
-The LLM may add humor, metaphor, light irony, fictional emotion, or short
-in-world dialogue. It must not invent a cause, measurement, repair, recovery,
-credential, endpoint, or MCP action.
+Generation is conversation-first. Confirmed operational facts are optional
+grounding: a response must not contradict them, but need not enumerate or
+mention them. The LLM may invent harmless fictional topics, opinions, feelings,
+relationships, disagreement, humor, metaphor, and in-world dialogue. It must
+not claim that the character can, will, or did use tools, access credentials,
+change configuration, or cause external side effects.
+
+For a stochastic activation, `confirmed_facts` is an empty map and the creative
+context uses fixed application-owned ambient framing. Synthetic event type,
+trigger subject, routing group, severity, timestamp, and details do not enter
+the model request. Observation and schedule events retain the fixed allowlisted
+fact projection.
 
 Before publication, deterministic validation must:
 
@@ -160,8 +169,9 @@ sensitive deployment data out of model context.
 
 Provider failure, timeout, malformed response, blank output, invalid Unicode,
 or output outside the configured bounds falls back to a deterministic template
-generated only from confirmed facts. Fallbacks consume conversation budgets
-and must pass the same output validator.
+that never interpolates event data. Stochastic activations use a neutral
+dialogue opening rather than event-report language. Fallbacks consume
+conversation budgets and must pass the same output validator.
 
 ## Discord publication
 

@@ -78,6 +78,20 @@ defmodule ClusterMurmur.Generation.FactProjectorTest do
     end
   end
 
+  test "omits every internal stochastic activation fact from generation" do
+    activation =
+      event(
+        source: "stochastic",
+        type: "stochastic.fired",
+        subject: "internal-trigger",
+        group: "internal-routing",
+        severity: "info",
+        facts: %{"prompt_field" => "internal"}
+      )
+
+    assert FactProjector.project_for_generation(activation, Presentation.default()) == {:ok, nil}
+  end
+
   test "shifts only prompt-facing timestamps into the presentation timezone" do
     canonical = ~U[2026-08-15 12:00:00.000000Z]
 

@@ -322,7 +322,11 @@ defmodule ClusterMurmur.TestSupport.RuntimeFixture do
   end
 
   def responder_input(configuration \\ responder_configuration()) do
-    recorded = recorded(configuration)
+    responder_input(configuration, event())
+  end
+
+  def responder_input(configuration, event) do
+    recorded = recorded(configuration, event)
     settings = webhook_settings()
 
     {:continue, :reply, continuation} =

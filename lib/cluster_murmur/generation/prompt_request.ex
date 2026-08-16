@@ -2,9 +2,9 @@ defmodule ClusterMurmur.Generation.PromptRequest do
   @moduledoc """
   Provider-neutral structured prompt assembled from validated generation input.
 
-  The fixed application instruction, persona instruction, confirmed facts,
-  creative context, and conversation history remain separate fields so data is
-  never interpreted as a section delimiter during assembly.
+  The fixed application instruction, persona instruction, optional confirmed
+  facts, creative context, and conversation history remain separate fields so
+  data is never interpreted as a section delimiter during assembly.
   """
 
   @derive {Inspect, only: []}

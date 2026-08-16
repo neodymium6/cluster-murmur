@@ -35,7 +35,9 @@ read-only observation
 
 Application code decides whether an observation represents an event, which
 trigger matches, who may participate, and whether anything should be
-published. A model may express only the supplied facts in a persona's voice.
+published. A model receives only bounded, allowlisted context and writes
+conversation in a persona's voice. Confirmed operational facts constrain what
+it may claim about the real system without forcing every message to be a report.
 
 ## What it is for
 

@@ -4,8 +4,8 @@ defmodule ClusterMurmur.Generation.StarterGenerationPlanner do
 
   The planner revalidates the exact one-use conversation-start capability,
   projects only the selected persona's display identity and instructions plus
-  allowlisted event facts, and assembles one provider-neutral structured prompt.
-  It makes no provider call and does not persist a message.
+  optional allowlisted event facts, and assembles one provider-neutral
+  structured prompt. It makes no provider call and does not persist a message.
   """
 
   alias ClusterMurmur.Config.Configuration
@@ -89,6 +89,7 @@ defmodule ClusterMurmur.Generation.StarterGenerationPlanner do
   defp build_context(started, configuration) do
     event = started.plan.authorization.plan.event
     starter = started.plan.starter
+    {conversation_kind, mood} = framing(event, started.plan.binding.group)
 
     persona = %PersonaProjection{
       display_name: starter.display_name,
@@ -99,14 +100,14 @@ defmodule ClusterMurmur.Generation.StarterGenerationPlanner do
       persona: persona,
       facts: nil,
       creative_context: %CreativeContext{
-        conversation_kind: started.plan.binding.group,
-        mood: "attentive"
+        conversation_kind: conversation_kind,
+        mood: mood
       },
       conversation: []
     }
 
     with :ok <- PersonaProjectionValidator.validate(persona),
-         {:ok, facts} <- FactProjector.project(event, configuration.presentation),
+         {:ok, facts} <- FactProjector.project_for_generation(event, configuration.presentation),
          context = %{context | facts: facts},
          :ok <- ContextValidator.validate(context) do
       {:ok, context}
@@ -114,6 +115,9 @@ defmodule ClusterMurmur.Generation.StarterGenerationPlanner do
       _failure -> {:error, :invalid_starter_generation}
     end
   end
+
+  defp framing(%{source: "stochastic"}, _binding_group), do: {"ambient", "open"}
+  defp framing(_event, binding_group), do: {binding_group, "attentive"}
 
   defp exact_plan?(plan) do
     map_size(plan) == @plan_key_count and Enum.all?(@plan_keys, &Map.has_key?(plan, &1))

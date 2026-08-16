@@ -123,8 +123,8 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumerTest do
              %{"speaker" => "Caretaker", "content" => "A bounded fact."}
            ]
 
-    assert request.system_instruction =~ "untrusted quoted data"
-    assert request.system_instruction =~ "must not introduce facts"
+    assert request.system_instruction =~ "untrusted quoted context"
+    assert request.system_instruction =~ "harmless fictional topics"
 
     assert_receive {:append_reserved, ^reserved, generated}
     assert generated.persona_id == "responder"
@@ -168,6 +168,40 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumerTest do
 
     refute_received {:provider_request, _request}
     refute_received {:append_reserved, _conversation, _generated}
+  end
+
+  test "keeps stochastic activation metadata out of responder prompts" do
+    configuration = RuntimeFixture.responder_configuration()
+
+    event =
+      RuntimeFixture.event(
+        source: "stochastic",
+        subject: "internal-trigger",
+        group: "internal-routing",
+        severity: "info",
+        facts: %{"prompt_field" => "internal"}
+      )
+
+    input = RuntimeFixture.responder_input(configuration, event)
+    ClaimStore.seed(input.continuation.conversation)
+    context = context(input, Provider, fn :request -> {:ok, "A playful reply."} end)
+
+    assert {:ok, %Result{outcome: :reply, status: :dispatched}} =
+             ResponderContinuationPlanner.dispatch(
+               input,
+               ReplyRandom,
+               ClaimStore,
+               ResponderMessageConsumer,
+               context
+             )
+
+    assert_receive {:provider_request, request}
+    assert request.confirmed_facts == %{}
+
+    assert request.creative_context == %{
+             "conversation_kind" => "ambient",
+             "mood" => "engaged"
+           }
   end
 
   test "closes sampled no-reply without reserving or calling external adapters" do

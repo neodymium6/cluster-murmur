@@ -4,9 +4,10 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
 
   The continuation dispatcher reserves a reply's LLM call durably before this
   trusted boundary receives the sampled plan. This consumer then projects only
-  bounded history and allowlisted event facts, calls one provider with a safe
-  fallback, and appends the message without counting the reservation twice. A
-  no-reply plan has already closed its conversation and performs no I/O here.
+  bounded history and optional allowlisted event facts, calls one provider with
+  a safe fallback, and appends the message without counting the reservation
+  twice. A no-reply plan has already closed its conversation and performs no I/O
+  here.
   """
 
   @behaviour ClusterMurmur.Conversations.ResponderContinuationConsumer
@@ -178,27 +179,30 @@ defmodule ClusterMurmur.Generation.ResponderMessageConsumer do
       instructions: plan.responder.prompt
     }
 
-    context = %Context{
-      persona: persona,
-      facts: nil,
-      creative_context: %CreativeContext{
-        conversation_kind: plan.binding.group,
-        mood: "responsive"
-      },
-      conversation: []
-    }
-
     with {:ok, event} <- root_event(input.continuation),
          :ok <- PersonaProjectionValidator.validate(persona),
-         {:ok, facts} <- FactProjector.project(event, input.configuration.presentation),
+         {:ok, facts} <-
+           FactProjector.project_for_generation(event, input.configuration.presentation),
          {:ok, history} <- project_history(input.conversation.messages, input.configuration),
-         context = %{context | facts: facts, conversation: history},
+         {conversation_kind, mood} <- framing(event, plan.binding.group),
+         context = %Context{
+           persona: persona,
+           facts: facts,
+           creative_context: %CreativeContext{
+             conversation_kind: conversation_kind,
+             mood: mood
+           },
+           conversation: history
+         },
          :ok <- ContextValidator.validate(context) do
       {:ok, context}
     else
       _failure -> {:error, :responder_message_failed}
     end
   end
+
+  defp framing(%{source: "stochastic"}, _binding_group), do: {"ambient", "engaged"}
+  defp framing(_event, binding_group), do: {binding_group, "responsive"}
 
   defp project_history(messages, configuration) do
     Enum.reduce_while(messages, {:ok, []}, fn message, {:ok, lines} ->

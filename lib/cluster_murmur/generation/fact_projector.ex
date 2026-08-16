@@ -1,6 +1,6 @@
 defmodule ClusterMurmur.Generation.FactProjector do
   @moduledoc """
-  Projects an application-validated event into fixed allowlisted prompt facts.
+  Projects an application-validated event into optional allowlisted prompt facts.
   """
 
   alias ClusterMurmur.Events.Event
@@ -28,6 +28,25 @@ defmodule ClusterMurmur.Generation.FactProjector do
   catch
     _kind, _reason -> {:error, :invalid_fact_projection}
   end
+
+  @doc "Returns optional facts for generation, omitting stochastic activation metadata."
+  @spec project_for_generation(term(), term()) ::
+          {:ok, FactProjection.t() | nil} | {:error, error()}
+  def project_for_generation(%Event{source: "stochastic"} = event, presentation) do
+    with :ok <- EventValidator.validate(event),
+         :ok <- Presentation.validate(presentation) do
+      {:ok, nil}
+    else
+      {:error, :invalid_event} -> {:error, :invalid_event}
+      _failure -> {:error, :invalid_fact_projection}
+    end
+  rescue
+    _error -> {:error, :invalid_fact_projection}
+  catch
+    _kind, _reason -> {:error, :invalid_fact_projection}
+  end
+
+  def project_for_generation(event, presentation), do: project(event, presentation)
 
   defp build(%Event{} = event, %Presentation{} = presentation) do
     %FactProjection{

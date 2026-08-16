@@ -9,7 +9,7 @@ defmodule ClusterMurmur.Generation.Context do
 
   @type t :: %__MODULE__{
           persona: ClusterMurmur.Generation.PersonaProjection.t(),
-          facts: ClusterMurmur.Generation.FactProjection.t(),
+          facts: ClusterMurmur.Generation.FactProjection.t() | nil,
           creative_context: ClusterMurmur.Generation.CreativeContext.t(),
           conversation: [ClusterMurmur.Generation.ConversationLine.t()]
         }

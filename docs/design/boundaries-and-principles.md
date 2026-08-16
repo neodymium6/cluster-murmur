@@ -76,9 +76,11 @@ LLM providers, and correlation events are post-MVP extensions.
 ### Separate facts from expression
 
 Application code determines observations, state transitions, failures,
-recoveries, severity, and trigger decisions. The LLM only expresses confirmed
-facts in a persona's voice. It never decides whether an incident exists, who
-speaks, whether the conversation continues, or which MCP tool may run.
+recoveries, severity, and trigger decisions. The LLM produces bounded
+persona-driven dialogue and may use supplied operational facts as optional
+grounding without contradicting them. It never decides whether an incident
+exists, who speaks, whether the conversation continues, or which MCP tool may
+run.
 
 ### Separate personas, events, and bindings
 
