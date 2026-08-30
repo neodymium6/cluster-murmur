@@ -75,6 +75,23 @@ defmodule ClusterMurmur.Persistence.EventDispatchStoreTest do
     refute inspect(first) =~ "2026"
   end
 
+  test "restores a claim-free receipt without changing outbox state" do
+    event = event("event-a")
+    assert {:ok, _record} = EventStore.insert(event)
+    assert EventDispatchStore.fetch_receipt(event) == {:error, :dispatch_not_found}
+    assert {:ok, pending} = EventDispatchStore.enqueue(event, @enqueued_at)
+    assert EventDispatchStore.fetch_receipt(event) == {:ok, pending}
+
+    assert {:ok, [candidate]} = EventDispatchStore.list_available(@enqueued_at)
+    assert {:ok, _claim} = EventDispatchStore.claim(candidate, @enqueued_at)
+    assert {:ok, claimed} = EventDispatchStore.fetch_receipt(event)
+    assert claimed.status == :claimed
+    refute Map.has_key?(claimed, :claim_token)
+
+    changed = %{event | type: "observation.recovered"}
+    assert EventDispatchStore.fetch_receipt(changed) == {:error, :event_conflict}
+  end
+
   test "lists available entries deterministically without claim material and caps at 100" do
     for number <- 0..100 do
       id = "event-#{String.pad_leading(Integer.to_string(number), 3, "0")}"
