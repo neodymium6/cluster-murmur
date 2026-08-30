@@ -48,6 +48,7 @@ defmodule ClusterMurmur.Persistence.EventDispatchStore do
 
   @type error ::
           :dispatch_conflict
+          | :dispatch_not_found
           | :event_conflict
           | :event_not_found
           | :invalid_datetime
@@ -82,6 +83,28 @@ defmodule ClusterMurmur.Persistence.EventDispatchStore do
 
   def enqueue(%Event{}, _enqueued_at), do: {:error, :invalid_datetime}
   def enqueue(_event, _enqueued_at), do: {:error, :invalid_event}
+
+  @doc "Restores one claim-free receipt for an exact committed event."
+  @spec fetch_receipt(term()) :: {:ok, EventDispatchReceipt.t()} | {:error, error()}
+  def fetch_receipt(%Event{} = event) do
+    with :ok <- Validator.validate(event),
+         {:ok, persisted} <- EventStore.fetch(event.id),
+         true <- identical_event?(persisted, event) do
+      restore_receipt(event.id)
+    else
+      {:error, :event_not_found} -> {:error, :event_not_found}
+      {:error, :invalid_event} -> {:error, :invalid_event}
+      {:error, :storage_unavailable} -> {:error, :storage_unavailable}
+      false -> {:error, :event_conflict}
+      _failure -> {:error, :invalid_dispatch}
+    end
+  rescue
+    _error -> {:error, :storage_unavailable}
+  catch
+    :exit, _reason -> {:error, :storage_unavailable}
+  end
+
+  def fetch_receipt(_event), do: {:error, :invalid_event}
 
   @doc "Lists at most 100 pending or expired-claim entries without claim material."
   @spec list_available(term()) ::
@@ -173,6 +196,25 @@ defmodule ClusterMurmur.Persistence.EventDispatchStore do
 
       _failure ->
         {:error, :storage_unavailable}
+    end
+  end
+
+  defp restore_receipt(event_id) do
+    case Repo.get(EventDispatch, event_id) do
+      %EventDispatch{} = dispatch ->
+        if valid_dispatch?(dispatch) do
+          {:ok,
+           %EventDispatchReceipt{
+             event_id: dispatch.event_id,
+             status: dispatch.status,
+             enqueued_at: dispatch.enqueued_at
+           }}
+        else
+          {:error, :invalid_dispatch}
+        end
+
+      nil ->
+        {:error, :dispatch_not_found}
     end
   end
 
