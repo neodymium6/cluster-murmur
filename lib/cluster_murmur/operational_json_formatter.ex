@@ -127,10 +127,8 @@ defmodule ClusterMurmur.OperationalJSONFormatter do
 
   defp ingestion_identity_fields(_message, _metadata), do: []
 
-  defp boolean_field(_key, nil), do: []
   defp boolean_field(key, true), do: [[~s("#{key}":), "true"]]
   defp boolean_field(key, false), do: [[~s("#{key}":), "false"]]
-  defp boolean_field(_key, _value), do: []
 
   defp allowed(value, allowed, fallback), do: if(value in allowed, do: value, else: fallback)
 

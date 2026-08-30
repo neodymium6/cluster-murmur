@@ -301,7 +301,7 @@ defmodule ClusterMurmur.Runtime.ExternalIngestionServer do
     end
   end
 
-  defp parse_head(head) when is_binary(head) do
+  defp parse_head(head) do
     with true <- String.valid?(head),
          [request_line | header_lines] <- :binary.split(head, "\r\n", [:global]),
          :ok <- validate_request_line(request_line),
@@ -320,8 +320,6 @@ defmodule ClusterMurmur.Runtime.ExternalIngestionServer do
       _failure -> {:error, 400}
     end
   end
-
-  defp parse_head(_head), do: {:error, 400}
 
   defp validate_request_line("POST /v1/events HTTP/1.1"), do: :ok
   defp validate_request_line(_request_line), do: {:error, 404}
