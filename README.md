@@ -25,10 +25,11 @@ come from deployment-owned configuration. Application-supplied facts constrain
 claims about the real system, while personas may also produce harmless
 fictional conversation.
 
-The complete path is deliberately narrow:
+The complete path is deliberately narrow. A reviewed adapter may supply the
+same application-owned event shape through the authenticated loopback boundary:
 
 ```text
-read-only observation
+read-only observation or normalized external event
         -> application-defined event
         -> matching trigger and personas
         -> short, bounded conversation
@@ -91,10 +92,11 @@ Cluster Murmur is a public standalone alpha. The current source version is
 `0.2.0-alpha.12`; published artifacts are listed on the
 [GitHub Releases page](https://github.com/neodymium6/cluster-murmur/releases).
 
-The standalone alpha includes fixed observer, OpenAI-compatible, and Discord
-transports; bounded orchestration; durable SQLite state; restart recovery;
-operational probes; and packaged release artifacts. Credentials, endpoints,
-routing, storage, and rollout policy remain deployment-owned inputs.
+The standalone alpha includes fixed observer, authenticated external-event,
+OpenAI-compatible, and Discord transports; bounded orchestration; durable
+SQLite state; restart recovery; operational probes; and packaged release
+artifacts. Credentials, endpoints, routing, storage, and rollout policy remain
+deployment-owned inputs.
 
 Do not connect this revision to production, sensitive infrastructure, model
 providers, or Discord without reviewing the exact deployment configuration,

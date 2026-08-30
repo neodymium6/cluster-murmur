@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-murmur
+spec:
+  template:
+    spec:
+      containers:
+        - name: cluster-murmur
+          env:
+            - name: CLUSTER_MURMUR_INGESTION_PORT
+              value: "18081"
+            - name: CLUSTER_MURMUR_INGESTION_TOKEN_FILE
+              value: /var/run/secrets/cluster-murmur-ingestion/token
+          volumeMounts:
+            - name: ingestion-auth
+              mountPath: /var/run/secrets/cluster-murmur-ingestion
+              readOnly: true
+        - name: external-event-adapter
+          image: registry.example.invalid/external-event-adapter@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NORMALIZED_EVENT_URL
+              value: http://127.0.0.1:18081/v1/events
+            - name: NORMALIZED_EVENT_TOKEN_FILE
+              value: /var/run/secrets/cluster-murmur-ingestion/token
+            - name: ADAPTER_TLS_CERT_FILE
+              value: /var/run/secrets/external-event-adapter/tls.crt
+            - name: ADAPTER_TLS_KEY_FILE
+              value: /var/run/secrets/external-event-adapter/tls.key
+          ports:
+            - name: adapter-https
+              containerPort: 18443
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: ingestion-auth
+              mountPath: /var/run/secrets/cluster-murmur-ingestion
+              readOnly: true
+            - name: adapter-tls
+              mountPath: /var/run/secrets/external-event-adapter
+              readOnly: true
+            - name: adapter-temporary
+              mountPath: /tmp
+      volumes:
+        - name: ingestion-auth
+          secret:
+            secretName: cluster-murmur-ingestion
+            defaultMode: 0444
+            items:
+              - key: token
+                path: token
+        - name: adapter-tls
+          secret:
+            secretName: external-event-adapter-tls
+            defaultMode: 0444
+        - name: adapter-temporary
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi

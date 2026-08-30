@@ -113,6 +113,33 @@ Do not expose this port through a public Service or ingress. Network policy must
 limit it to orchestrator probes. The endpoint contains no metrics or diagnostics
 and must not be extended with arbitrary handlers.
 
+## External event ingestion
+
+When `external_ingestion.sources` is non-empty, the runtime opens a separate
+listener on the configured port at `127.0.0.1`. It accepts only authenticated
+`POST /v1/events` requests; it is not part of the health listener and must not be
+published directly by a Service or ingress. Put a reviewed normalizing adapter
+in the same Pod or equivalent trusted network namespace. That adapter owns any
+remote TLS endpoint and source-specific interpretation, then submits only the
+documented normalized contract over loopback.
+
+The fixed listener admits at most 16 concurrent connections and 20 requests per
+second, allows 8 KiB of headers and 64 KiB of body, and gives each request one
+second to arrive. Authentication is checked before the body is read. Accepted
+events and their dispatch record are committed atomically before the existing
+trigger pipeline sees them; the caller cannot invoke a trigger or conversation
+directly. Preserve one `idempotency_key` across retries after an ambiguous
+network result and never reuse it for changed content.
+
+Mount the same ingestion token only into Cluster Murmur and its adapter. Keep
+the adapter narrowly scoped: allowlist its inbound senders, cap its own input,
+normalize firing and resolved semantics deterministically, and do not pass raw
+alerts, instructions, credentials, endpoints, prompts, or routing choices into
+event facts. The optional Kubernetes patch in the
+[hardened example](../../deploy/kubernetes/README.md#external-event-adapter)
+shows the container and secret boundary without selecting a vendor or exposing
+a deployable endpoint.
+
 ## Metrics and operational logs
 
 The runtime emits `[:cluster_murmur, :runtime, :cycle, :stop]` for every poll,
@@ -127,9 +154,9 @@ trusted metrics handler.
 
 Cycle components are `poll`, `event_dispatch`, `recurring_schedule`,
 `stochastic_schedule`, and `event_retention`; external components are
-`observer_mcp`, `model_provider`, and `discord_webhook`. Outcomes are `ok`,
-`error`, `rejected`, `not_sent`, and `unknown`. Error classes are absent on
-success or are one of `invalid_cycle`, `poll_failed`, `dispatch_failed`,
+`observer_mcp`, `model_provider`, and `discord_webhook`. Their outcomes are
+`ok`, `error`, `rejected`, `not_sent`, and `unknown`. Error classes are absent
+on success or are one of `invalid_cycle`, `poll_failed`, `dispatch_failed`,
 `retention_failed`, `authentication_failed`, `invalid_request`, `rate_limited`,
 `timeout`, `token_exhausted`, `unavailable`, `invalid_response`, and
 `outcome_unknown`.
@@ -141,18 +168,25 @@ These values identify the resolution stage and a content-free normalization
 reason; they never contain model output or provider diagnostics.
 
 The release also emits `runtime cycle completed`, `external request completed`,
-and `generation decision completed` through Logger with the same structured
-fields. Model and Discord HTTP responses are classified before logging, so a
-non-success response is not reported as `ok`. Successful or accepted outcomes
-use `info`; other terminal outcomes use `warning`. A model response with blank
-content and a `length` finish reason is reported as
+`generation decision completed`, and `external ingestion request completed`
+through Logger with fixed structured fields. Model and Discord HTTP responses
+are classified before logging, so a non-success response is not reported as
+`ok`. Successful or accepted outcomes use `info`; other terminal outcomes use
+`warning`. A model response with blank content and a `length` finish reason is reported as
 `outcome=error error_class=token_exhausted`; output rejected later by
 normalization retains the provider's `ok` transport outcome and adds a separate
 `fallback` generation decision. Token counts, finish reasons, response bodies,
 and rejected content are not logged.
 
+The external ingestion log records only its fixed component, outcome, stable
+error class, application-derived hashed event identity after acceptance, and
+whether an accepted commit was an exact duplicate. It never logs authorization,
+request bodies, facts, labels, source idempotency keys, or parser diagnostics.
+It is a Logger event, not an `[:cluster_murmur, :external, :request, :stop]`
+Telemetry event.
+
 Production formats each log as one JSON object per line. The formatter retains
-only time, level, the three fixed operational messages, and allowlisted telemetry
+only time, level, the four fixed operational messages, and allowlisted telemetry
 metadata. It replaces every other message with `application event` and drops
 all other metadata rather than serializing it. No result, request, response,
 exception, endpoint, credential, prompt, observation, event, participant, or
