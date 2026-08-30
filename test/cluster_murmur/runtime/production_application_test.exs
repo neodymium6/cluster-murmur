@@ -2,6 +2,7 @@ defmodule ClusterMurmur.Runtime.ProductionApplicationTest do
   use ExUnit.Case, async: true
 
   alias ClusterMurmur.Runtime.{
+    ExternalIngestionServer,
     HealthServer,
     HealthSettings,
     ProductionApplication,
@@ -25,15 +26,41 @@ defmodule ClusterMurmur.Runtime.ProductionApplicationTest do
         webhook_secret_file_env: DISCORD_WEBHOOK_SECRET_FILE
     """)
 
+    File.write!(Path.join(config_root, "event-groups.yaml"), """
+    event_groups:
+      operations:
+        reply_probability: 0.25
+    """)
+
     context = %{
       config_path: config_path,
       api_key_path: write(root, "api-key", "clearly-fake-api-key\n"),
+      ingestion_token_path:
+        write(root, "ingestion-token", "clearly-fake-ingestion-token-123456\n"),
       observer_token_path: write(root, "observer-token", "clearly-fake-observer-token\n"),
       webhook_path: write(root, "webhook", webhook_url() <> "\n")
     }
 
     on_exit(fn -> File.rm_rf!(root) end)
     context
+  end
+
+  test "adds ingestion after persistence only when sources are enabled", context do
+    File.write!(context.config_path, enabled_manifest())
+
+    assert {:ok,
+            [
+              {HealthServer, %HealthSettings{port: 18_080}},
+              {ReadyMarker, :production},
+              ClusterMurmur.Repo,
+              {ExternalIngestionServer, %ExternalIngestionServer.Options{} = ingestion},
+              {RecoveredRuntimeSupervisor, %RecoveredRuntimeSupervisor.Options{}}
+            ]} = result = ProductionApplication.child_specs(environment(context))
+
+    assert ingestion.settings.port == 18_081
+    assert ExternalIngestionServer.validate_options(ingestion) == :ok
+    refute inspect(result) =~ "clearly-fake-ingestion-token-123456"
+    refute inspect(result) =~ Base.encode16(ingestion.settings.token_digest)
   end
 
   test "builds the complete ordered production child list without starting it", context do
@@ -49,11 +76,13 @@ defmodule ClusterMurmur.Runtime.ProductionApplicationTest do
 
     for hidden <- [
           "clearly-fake-api-key",
+          "clearly-fake-ingestion-token-123456",
           "clearly-fake-observer-token",
           "observer.example.invalid",
           "llm.example.invalid",
           webhook_url(),
           context.config_path,
+          context.ingestion_token_path,
           context.webhook_path
         ] do
       refute inspect(result) =~ hidden
@@ -71,6 +100,20 @@ defmodule ClusterMurmur.Runtime.ProductionApplicationTest do
 
     for candidate <- invalid_values do
       assert ProductionApplication.child_specs(environment(candidate)) ==
+               {:error, :invalid_production_application}
+    end
+  end
+
+  test "requires complete private listener settings only for enabled sources", context do
+    File.write!(context.config_path, enabled_manifest())
+    values = environment_values(context)
+
+    for invalid <- [
+          Map.delete(values, "CLUSTER_MURMUR_INGESTION_PORT"),
+          Map.put(values, "CLUSTER_MURMUR_INGESTION_PORT", "0"),
+          Map.delete(values, "CLUSTER_MURMUR_INGESTION_TOKEN_FILE")
+        ] do
+      assert ProductionApplication.child_specs(environment(invalid)) ==
                {:error, :invalid_production_application}
     end
   end
@@ -109,6 +152,8 @@ defmodule ClusterMurmur.Runtime.ProductionApplicationTest do
     %{
       "CLUSTER_MURMUR_CONFIG_PATH" => context.config_path,
       "CLUSTER_MURMUR_HEALTH_PORT" => "18080",
+      "CLUSTER_MURMUR_INGESTION_PORT" => "18081",
+      "CLUSTER_MURMUR_INGESTION_TOKEN_FILE" => context.ingestion_token_path,
       "CLUSTER_MURMUR_OBSERVER_MCP_URL" => "https://observer.example.invalid/mcp",
       "CLUSTER_MURMUR_OBSERVER_MCP_TOKEN_FILE" => context.observer_token_path,
       "LLM_BASE_URL" => "https://llm.example.invalid/v1",
@@ -142,6 +187,42 @@ defmodule ClusterMurmur.Runtime.ProductionApplicationTest do
       max_output_tokens: 300
     includes:
       event_groups: []
+      personas: []
+      bindings: []
+      triggers: []
+      routing:
+        - routing.yaml
+    """
+  end
+
+  defp enabled_manifest do
+    """
+    version: 1
+    state_tracking:
+      failures_required: 3
+      successes_required: 4
+    llm:
+      provider: openai_compatible
+      base_url_env: LLM_BASE_URL
+      model_env: LLM_MODEL
+      api_key_file_env: LLM_API_KEY_FILE
+      timeout: 20s
+      max_output_tokens: 300
+    external_ingestion:
+      sources:
+        alert-adapter:
+          event_types:
+            - component.failed
+          groups:
+            - operations
+          subjects:
+            - example-component
+          fact_keys:
+            - state
+          label_keys: []
+    includes:
+      event_groups:
+        - event-groups.yaml
       personas: []
       bindings: []
       triggers: []

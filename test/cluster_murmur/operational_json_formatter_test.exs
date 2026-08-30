@@ -104,6 +104,73 @@ defmodule ClusterMurmur.OperationalJSONFormatterTest do
     refute encoded =~ "must-not-appear"
   end
 
+  test "allows only a derived external identity and duplicate flag for ingestion" do
+    event_id = "external-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+    encoded =
+      %{
+        level: :info,
+        msg: {:string, "external ingestion request completed"},
+        meta: %{
+          time: 1_723_456_789,
+          component: :external_ingestion,
+          outcome: :accepted,
+          event_id: event_id,
+          duplicate: false,
+          body: "must-not-appear"
+        }
+      }
+      |> OperationalJSONFormatter.format(%{})
+      |> IO.iodata_to_binary()
+
+    assert Jason.decode!(encoded) == %{
+             "time" => 1_723_456_789,
+             "level" => "info",
+             "message" => "external ingestion request completed",
+             "component" => "external_ingestion",
+             "outcome" => "accepted",
+             "event_id" => event_id,
+             "duplicate" => false
+           }
+
+    refute encoded =~ "must-not-appear"
+
+    rejected =
+      %{
+        level: :info,
+        msg: {:string, "external ingestion request completed"},
+        meta: %{event_id: "private"}
+      }
+      |> OperationalJSONFormatter.format(%{})
+      |> IO.iodata_to_binary()
+
+    refute rejected =~ "private"
+
+    for metadata <- [
+          %{
+            component: :external_ingestion,
+            outcome: :rejected,
+            event_id: event_id,
+            duplicate: false
+          },
+          %{component: :poll, outcome: :accepted, event_id: event_id, duplicate: false},
+          %{
+            component: :external_ingestion,
+            outcome: :accepted,
+            event_id: event_id,
+            duplicate: "false"
+          }
+        ] do
+      encoded =
+        %{level: :info, msg: {:string, "external ingestion request completed"}, meta: metadata}
+        |> OperationalJSONFormatter.format(%{})
+        |> IO.iodata_to_binary()
+
+      refute encoded =~ event_id
+      refute encoded =~ "duplicate"
+    end
+  end
+
   test "accepts no formatter configuration or malformed event shape" do
     assert OperationalJSONFormatter.check_config(%{}) == :ok
 

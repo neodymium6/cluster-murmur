@@ -11,13 +11,17 @@ defmodule ClusterMurmur.Runtime.ProductionApplication do
   """
 
   alias ClusterMurmur.Runtime.{
+    ExternalIngestionServer,
     HealthServer,
     HealthSettings,
     ProductionRecoveredRuntimeOptions,
     ReadyMarker,
-    RecoveredRuntimeSupervisor
+    RecoveredRuntimeSupervisor,
+    SystemClock
   }
 
+  alias ClusterMurmur.Ingestion.HTTPSettings
+  alias ClusterMurmur.Persistence.ExternalEventCommitStore
   alias ClusterMurmur.Startup
 
   @config_path_environment "CLUSTER_MURMUR_CONFIG_PATH"
@@ -35,14 +39,17 @@ defmodule ClusterMurmur.Runtime.ProductionApplication do
     with {:ok, config_path} <- read_config_path(environment_reader),
          {:ok, prepared} <- Startup.prepare(config_path, environment_reader),
          {:ok, options} <- ProductionRecoveredRuntimeOptions.build(prepared),
-         {:ok, health_settings} <- HealthSettings.load(environment_reader) do
+         {:ok, health_settings} <- HealthSettings.load(environment_reader),
+         {:ok, ingestion_settings} <-
+           HTTPSettings.load(prepared.configuration.external_ingestion, environment_reader) do
       {:ok,
        [
          {HealthServer, health_settings},
          {ReadyMarker, :production},
-         ClusterMurmur.Repo,
-         {RecoveredRuntimeSupervisor, options}
-       ]}
+         ClusterMurmur.Repo
+       ] ++
+         ingestion_children(ingestion_settings, prepared.configuration.external_ingestion) ++
+         [{RecoveredRuntimeSupervisor, options}]}
     else
       _failure -> {:error, :invalid_production_application}
     end
@@ -53,6 +60,19 @@ defmodule ClusterMurmur.Runtime.ProductionApplication do
   end
 
   def child_specs(_environment_reader), do: {:error, :invalid_production_application}
+
+  defp ingestion_children(:disabled, _configuration), do: []
+
+  defp ingestion_children(%HTTPSettings{} = settings, configuration) do
+    options = %ExternalIngestionServer.Options{
+      settings: settings,
+      configuration: configuration,
+      clock: SystemClock,
+      commit: &ExternalEventCommitStore.commit/3
+    }
+
+    [{ExternalIngestionServer, options}]
+  end
 
   defp read_config_path(environment_reader) do
     case environment_reader.(@config_path_environment) do

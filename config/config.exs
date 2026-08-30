@@ -8,7 +8,8 @@ config :time_zone_info, update: :disabled
 if config_env() == :prod do
   config :logger, :default_handler, formatter: {ClusterMurmur.OperationalJSONFormatter, %{}}
 else
-  config :logger, :default_formatter, metadata: [:component, :outcome, :error_class]
+  config :logger, :default_formatter,
+    metadata: [:component, :outcome, :error_class, :event_id, :duplicate]
 end
 
 config :cluster_murmur,

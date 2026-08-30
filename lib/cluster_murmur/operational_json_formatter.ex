@@ -10,6 +10,7 @@ defmodule ClusterMurmur.OperationalJSONFormatter do
 
   @levels [:alert, :critical, :debug, :emergency, :error, :info, :notice, :warning]
   @messages [
+    "external ingestion request completed",
     "external request completed",
     "generation decision completed",
     "runtime cycle completed"
@@ -18,6 +19,7 @@ defmodule ClusterMurmur.OperationalJSONFormatter do
     :discord_webhook,
     :event_dispatch,
     :event_retention,
+    :external_ingestion,
     :model_generation,
     :model_provider,
     :observer_mcp,
@@ -25,7 +27,18 @@ defmodule ClusterMurmur.OperationalJSONFormatter do
     :recurring_schedule,
     :stochastic_schedule
   ]
-  @outcomes [:accepted, :error, :fallback, :not_sent, :ok, :rejected, :unknown]
+  @outcomes [
+    :accepted,
+    :conflict,
+    :error,
+    :fallback,
+    :invalid,
+    :not_sent,
+    :ok,
+    :rejected,
+    :unavailable,
+    :unknown
+  ]
   @error_classes [
     :authentication_failed,
     :blank_output,
@@ -53,17 +66,20 @@ defmodule ClusterMurmur.OperationalJSONFormatter do
   @impl true
   def format(%{level: level, msg: message, meta: metadata}, config)
       when is_map(metadata) and is_map(config) do
+    message = safe_message(message)
+
     fields = [
       number_field("time", safe_time(metadata)),
       string_field("level", allowed(level, @levels, :unknown)),
-      string_field("message", safe_message(message))
+      string_field("message", message)
     ]
 
     fields =
       fields ++
         optional_field("component", metadata[:component], @components) ++
         optional_field("outcome", metadata[:outcome], @outcomes) ++
-        optional_field("error_class", metadata[:error_class], @error_classes)
+        optional_field("error_class", metadata[:error_class], @error_classes) ++
+        ingestion_identity_fields(message, metadata)
 
     ["{", Enum.intersperse(fields, ","), "}\n"]
   rescue
@@ -85,6 +101,34 @@ defmodule ClusterMurmur.OperationalJSONFormatter do
   defp optional_field(key, value, allowed) do
     if value in allowed, do: [string_field(key, value)], else: []
   end
+
+  defp event_id_field("external-" <> digest = event_id) when byte_size(digest) == 64 do
+    if digest
+       |> :binary.bin_to_list()
+       |> Enum.all?(fn byte -> byte in ?0..?9 or byte in ?a..?f end) do
+      [string_field("event_id", event_id)]
+    else
+      []
+    end
+  end
+
+  defp event_id_field(_event_id), do: []
+
+  defp ingestion_identity_fields(
+         "external ingestion request completed",
+         %{component: :external_ingestion, outcome: :accepted, duplicate: duplicate} = metadata
+       )
+       when is_boolean(duplicate) do
+    case event_id_field(metadata[:event_id]) do
+      [] -> []
+      event_id -> event_id ++ boolean_field("duplicate", duplicate)
+    end
+  end
+
+  defp ingestion_identity_fields(_message, _metadata), do: []
+
+  defp boolean_field(key, true), do: [[~s("#{key}":), "true"]]
+  defp boolean_field(key, false), do: [[~s("#{key}":), "false"]]
 
   defp allowed(value, allowed, fallback), do: if(value in allowed, do: value, else: fallback)
 
