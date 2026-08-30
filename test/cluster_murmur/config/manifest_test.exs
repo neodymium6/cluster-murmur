@@ -5,11 +5,14 @@ defmodule ClusterMurmur.Config.ManifestTest do
     ConversationDefaults,
     DocumentDecoder,
     EventPolicy,
+    ExternalIngestion,
     LLM,
     Manifest,
     Presentation,
     StateTracking
   }
+
+  alias ClusterMurmur.Config.ExternalIngestion.Source
 
   test "accepts the bounded decoder output" do
     yaml = """
@@ -50,7 +53,8 @@ defmodule ClusterMurmur.Config.ManifestTest do
               event_policy: %EventPolicy{
                 dedupe_window_ms: 300_000,
                 retention_ms: 7_776_000_000
-              }
+              },
+              external_ingestion: %ExternalIngestion{sources: %{}}
             }} =
              Manifest.parse(document)
   end
@@ -179,6 +183,45 @@ defmodule ClusterMurmur.Config.ManifestTest do
 
     assert Manifest.parse(Map.put(valid_document(), "event_policy", %{})) ==
              {:error, {:event_policy, :invalid_event_policy}}
+  end
+
+  test "normalizes optional source-scoped external ingestion allowlists" do
+    document =
+      Map.put(valid_document(), "external_ingestion", %{
+        "sources" => %{
+          "alert-adapter" => %{
+            "event_types" => ["component.failed"],
+            "groups" => ["operations"],
+            "subjects" => ["example-component"],
+            "fact_keys" => ["state"],
+            "label_keys" => []
+          }
+        }
+      })
+
+    assert {:ok,
+            %Manifest{
+              external_ingestion: %ExternalIngestion{
+                sources: %{
+                  "alert-adapter" => %Source{
+                    event_types: event_types,
+                    groups: groups,
+                    subjects: subjects,
+                    fact_keys: fact_keys,
+                    label_keys: label_keys
+                  }
+                }
+              }
+            }} = Manifest.parse(document)
+
+    assert event_types == MapSet.new(["component.failed"])
+    assert groups == MapSet.new(["operations"])
+    assert subjects == MapSet.new(["example-component"])
+    assert fact_keys == MapSet.new(["state"])
+    assert label_keys == MapSet.new()
+
+    result = Manifest.parse(Map.put(valid_document(), "external_ingestion", %{}))
+    assert result == {:error, {:external_ingestion, :invalid_external_ingestion_configuration}}
   end
 
   test "normalizes optional explicit presentation settings" do

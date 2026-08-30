@@ -3,7 +3,9 @@
 ## Status
 
 Accepted. The version 1 top-level field set is amended by ADR 0116 to require
-the closed `llm` mapping in addition to `version` and `includes`.
+the closed `llm` mapping in addition to `version` and `includes`, and by
+[ADR 0234](0234-define-normalized-external-event-ingestion.md) to accept the
+optional closed `external_ingestion` mapping.
 
 ## Context
 

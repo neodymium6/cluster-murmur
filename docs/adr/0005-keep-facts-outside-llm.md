@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted. Amended by [ADR 0233](0233-make-generation-conversation-first.md).
+Accepted. Amended by [ADR 0233](0233-make-generation-conversation-first.md)
+and [ADR 0234](0234-define-normalized-external-event-ingestion.md).
 
 ## Context
 

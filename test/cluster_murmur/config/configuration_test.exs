@@ -6,6 +6,7 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
     ConversationDefaults,
     DocumentSet,
     EventPolicy,
+    ExternalIngestion,
     LLM,
     LoadedDocument,
     Manifest,
@@ -39,6 +40,7 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
     assert configuration.state_tracking == StateTracking.default()
     assert configuration.conversation_defaults == ConversationDefaults.default()
     assert configuration.event_policy == EventPolicy.default()
+    assert configuration.external_ingestion == ExternalIngestion.default()
     assert configuration.presentation == Presentation.default()
     assert Configuration.validate(configuration) == :ok
   end
@@ -76,6 +78,40 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
              )
   end
 
+  test "carries external ingestion policy and resolves its groups", context do
+    {:ok, external_ingestion} =
+      ExternalIngestion.parse(%{
+        "sources" => %{
+          "alert-adapter" => %{
+            "event_types" => ["component.failed"],
+            "groups" => ["operations"],
+            "subjects" => ["example-component"],
+            "fact_keys" => ["state"],
+            "label_keys" => []
+          }
+        }
+      })
+
+    manifest = %{manifest() | external_ingestion: external_ingestion}
+
+    assert {:ok, %Configuration{external_ingestion: ^external_ingestion}} =
+             Configuration.parse(
+               context.config,
+               %DocumentSet{manifest: manifest, documents: valid_documents(context)}
+             )
+
+    unknown_group =
+      put_in(external_ingestion.sources["alert-adapter"].groups, MapSet.new(["missing"]))
+
+    assert Configuration.parse(
+             context.config,
+             %DocumentSet{
+               manifest: %{manifest | external_ingestion: unknown_group},
+               documents: valid_documents(context)
+             }
+           ) == {:error, :unknown_ingestion_group}
+  end
+
   test "carries explicit presentation settings into complete configuration", context do
     presentation = %Presentation{timezone: "Asia/Tokyo"}
     manifest = %{manifest() | presentation: presentation}
@@ -100,7 +136,8 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
           :state_tracking,
           :presentation,
           :conversation_defaults,
-          :event_policy
+          :event_policy,
+          :external_ingestion
         ] do
       assert configuration
              |> Map.put(field, nil)
@@ -140,6 +177,10 @@ defmodule ClusterMurmur.Config.ConfigurationTest do
           %{
             configuration
             | presentation: %{configuration.presentation | timezone: "private.invalid"}
+          },
+          %{
+            configuration
+            | external_ingestion: %ExternalIngestion{sources: %{"private" => nil}}
           }
         ] do
       assert Configuration.validate(invalid) == {:error, :invalid_configuration}

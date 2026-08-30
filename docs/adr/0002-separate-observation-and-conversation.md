@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted.
+Accepted. Amended by
+[ADR 0234](0234-define-normalized-external-event-ingestion.md).
 
 ## Context
 

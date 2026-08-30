@@ -14,6 +14,7 @@ defmodule ClusterMurmur.Config.Configuration do
     DocumentSet,
     EventPolicy,
     EventGroups,
+    ExternalIngestion,
     LLM,
     Presentation
   }
@@ -23,6 +24,7 @@ defmodule ClusterMurmur.Config.Configuration do
 
   @default_conversation_defaults ConversationDefaults.default()
   @default_event_policy EventPolicy.default()
+  @default_external_ingestion ExternalIngestion.default()
   @default_presentation Presentation.default()
 
   @derive {Inspect, only: [:version]}
@@ -47,7 +49,8 @@ defmodule ClusterMurmur.Config.Configuration do
     :state_tracking,
     presentation: @default_presentation,
     conversation_defaults: @default_conversation_defaults,
-    event_policy: @default_event_policy
+    event_policy: @default_event_policy,
+    external_ingestion: @default_external_ingestion
   ]
 
   @type t :: %__MODULE__{
@@ -61,11 +64,13 @@ defmodule ClusterMurmur.Config.Configuration do
           state_tracking: StateTracking.t(),
           presentation: Presentation.t(),
           conversation_defaults: ConversationDefaults.t(),
-          event_policy: EventPolicy.t()
+          event_policy: EventPolicy.t(),
+          external_ingestion: ExternalIngestion.t()
         }
 
   @type error ::
           :invalid_configuration
+          | :unknown_ingestion_group
           | :unknown_trigger_binding
           | :unknown_trigger_group
           | {:catalog, Catalog.error()}
@@ -80,7 +85,8 @@ defmodule ClusterMurmur.Config.Configuration do
          {:ok, triggers} <-
            annotate(Triggers.parse_documents(documents.triggers), :triggers),
          {:ok, routing} <- annotate(Routing.parse_documents(documents.routing), :routing),
-         :ok <- validate_trigger_references(triggers, catalog.bindings, catalog.event_groups) do
+         :ok <- validate_trigger_references(triggers, catalog.bindings, catalog.event_groups),
+         :ok <- validate_ingestion_references(document_set.manifest, catalog.event_groups) do
       {:ok,
        %__MODULE__{
          version: 1,
@@ -93,7 +99,8 @@ defmodule ClusterMurmur.Config.Configuration do
          state_tracking: document_set.manifest.state_tracking,
          presentation: document_set.manifest.presentation,
          conversation_defaults: document_set.manifest.conversation_defaults,
-         event_policy: document_set.manifest.event_policy
+         event_policy: document_set.manifest.event_policy,
+         external_ingestion: document_set.manifest.external_ingestion
        }}
     end
   end
@@ -117,6 +124,16 @@ defmodule ClusterMurmur.Config.Configuration do
 
       {_id, _trigger}, :ok ->
         {:halt, {:error, :invalid_configuration}}
+    end)
+  end
+
+  defp validate_ingestion_references(manifest, event_groups) do
+    manifest.external_ingestion.sources
+    |> Enum.sort_by(&elem(&1, 0))
+    |> Enum.reduce_while(:ok, fn {_source, policy}, :ok ->
+      if Enum.all?(policy.groups, &Map.has_key?(event_groups.groups, &1)),
+        do: {:cont, :ok},
+        else: {:halt, {:error, :unknown_ingestion_group}}
     end)
   end
 

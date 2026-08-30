@@ -13,6 +13,7 @@ defmodule ClusterMurmur.Config.Catalog do
     DocumentSet,
     EventPolicy,
     EventGroups,
+    ExternalIngestion,
     LLM,
     LoadedDocument,
     Manifest,
@@ -86,6 +87,7 @@ defmodule ClusterMurmur.Config.Catalog do
            state_tracking: state_tracking,
            conversation_defaults: conversation_defaults,
            event_policy: event_policy,
+           external_ingestion: external_ingestion,
            presentation: presentation
          } = manifest
        )
@@ -99,6 +101,8 @@ defmodule ClusterMurmur.Config.Catalog do
            {:ok, conversation_defaults_document} <-
              ConversationDefaults.to_document(conversation_defaults),
            {:ok, event_policy_document} <- EventPolicy.to_document(event_policy),
+           {:ok, external_ingestion_document} <-
+             ExternalIngestion.to_document(external_ingestion),
            {:ok, presentation_document} <- Presentation.to_document(presentation),
            {:ok, ^manifest} <-
              Manifest.parse(%{
@@ -108,6 +112,7 @@ defmodule ClusterMurmur.Config.Catalog do
                "state_tracking" => state_tracking_document,
                "conversation_defaults" => conversation_defaults_document,
                "event_policy" => event_policy_document,
+               "external_ingestion" => external_ingestion_document,
                "presentation" => presentation_document
              }) do
         :ok

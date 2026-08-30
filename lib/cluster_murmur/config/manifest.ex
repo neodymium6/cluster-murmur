@@ -19,6 +19,7 @@ defmodule ClusterMurmur.Config.Manifest do
   @fields [
     "conversation_defaults",
     "event_policy",
+    "external_ingestion",
     "includes",
     "llm",
     "presentation",
@@ -29,6 +30,7 @@ defmodule ClusterMurmur.Config.Manifest do
   @default_state_tracking ClusterMurmur.Config.StateTracking.default()
   @default_conversation_defaults ClusterMurmur.Config.ConversationDefaults.default()
   @default_event_policy ClusterMurmur.Config.EventPolicy.default()
+  @default_external_ingestion ClusterMurmur.Config.ExternalIngestion.default()
   @default_presentation ClusterMurmur.Config.Presentation.default()
 
   @derive {Inspect, only: [:version]}
@@ -40,7 +42,8 @@ defmodule ClusterMurmur.Config.Manifest do
     presentation: @default_presentation,
     state_tracking: @default_state_tracking,
     conversation_defaults: @default_conversation_defaults,
-    event_policy: @default_event_policy
+    event_policy: @default_event_policy,
+    external_ingestion: @default_external_ingestion
   ]
 
   @type category :: :event_groups | :personas | :bindings | :triggers | :routing
@@ -60,7 +63,8 @@ defmodule ClusterMurmur.Config.Manifest do
           presentation: ClusterMurmur.Config.Presentation.t(),
           state_tracking: ClusterMurmur.Config.StateTracking.t(),
           conversation_defaults: ClusterMurmur.Config.ConversationDefaults.t(),
-          event_policy: ClusterMurmur.Config.EventPolicy.t()
+          event_policy: ClusterMurmur.Config.EventPolicy.t(),
+          external_ingestion: ClusterMurmur.Config.ExternalIngestion.t()
         }
 
   @type error ::
@@ -78,6 +82,7 @@ defmodule ClusterMurmur.Config.Manifest do
           | {:presentation, ClusterMurmur.Config.Presentation.error()}
           | {:conversation_defaults, ClusterMurmur.Config.ConversationDefaults.error()}
           | {:event_policy, ClusterMurmur.Config.EventPolicy.error()}
+          | {:external_ingestion, ClusterMurmur.Config.ExternalIngestion.error()}
           | {:state_tracking, ClusterMurmur.Config.StateTracking.error()}
 
   @doc "Validates a decoded top-level configuration document."
@@ -90,7 +95,8 @@ defmodule ClusterMurmur.Config.Manifest do
          {:ok, presentation} <- parse_presentation(document),
          {:ok, state_tracking} <- parse_state_tracking(document),
          {:ok, conversation_defaults} <- parse_conversation_defaults(document),
-         {:ok, event_policy} <- parse_event_policy(document) do
+         {:ok, event_policy} <- parse_event_policy(document),
+         {:ok, external_ingestion} <- parse_external_ingestion(document) do
       {:ok,
        %__MODULE__{
          version: version,
@@ -99,7 +105,8 @@ defmodule ClusterMurmur.Config.Manifest do
          presentation: presentation,
          state_tracking: state_tracking,
          conversation_defaults: conversation_defaults,
-         event_policy: event_policy
+         event_policy: event_policy,
+         external_ingestion: external_ingestion
        }}
     end
   end
@@ -161,6 +168,19 @@ defmodule ClusterMurmur.Config.Manifest do
         case ClusterMurmur.Config.EventPolicy.parse(value) do
           {:ok, event_policy} -> {:ok, event_policy}
           {:error, reason} -> {:error, {:event_policy, reason}}
+        end
+    end
+  end
+
+  defp parse_external_ingestion(document) do
+    case Map.fetch(document, "external_ingestion") do
+      :error ->
+        {:ok, ClusterMurmur.Config.ExternalIngestion.default()}
+
+      {:ok, value} ->
+        case ClusterMurmur.Config.ExternalIngestion.parse(value) do
+          {:ok, configuration} -> {:ok, configuration}
+          {:error, reason} -> {:error, {:external_ingestion, reason}}
         end
     end
   end
