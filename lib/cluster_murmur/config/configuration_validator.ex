@@ -7,6 +7,7 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
     ConversationDefaults,
     EventPolicy,
     EventGroups,
+    ExternalIngestion,
     LLM,
     Personas,
     Presentation
@@ -41,6 +42,7 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
          :ok <- validate_state_tracking(configuration.state_tracking),
          :ok <- validate_conversation_defaults(configuration.conversation_defaults),
          :ok <- validate_event_policy(configuration.event_policy),
+         :ok <- validate_external_ingestion(configuration.external_ingestion),
          :ok <- validate_presentation(configuration.presentation),
          :ok <- validate_event_groups(configuration.event_groups),
          :ok <- validate_personas(configuration.personas),
@@ -50,6 +52,7 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
          :ok <- validate_routing(configuration.routing),
          :ok <- validate_llm(configuration.llm),
          :ok <- validate_catalog_references(configuration),
+         :ok <- validate_ingestion_references(configuration),
          :ok <- validate_trigger_references(configuration) do
       :ok
     else
@@ -82,6 +85,16 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
     case EventPolicy.validate(policy) do
       :ok -> :ok
       {:error, :invalid_event_policy} -> {:error, :invalid_configuration}
+    end
+  end
+
+  defp validate_external_ingestion(configuration) do
+    case ExternalIngestion.validate(configuration) do
+      :ok ->
+        :ok
+
+      {:error, :invalid_external_ingestion_configuration} ->
+        {:error, :invalid_configuration}
     end
   end
 
@@ -244,6 +257,16 @@ defmodule ClusterMurmur.Config.ConfigurationValidator do
       {_id, %trigger{event: %{group: group}}}, :ok
       when trigger in [ScheduleTrigger, StochasticTrigger] ->
         continue_if_known(configuration.event_groups.groups, group, :unknown_trigger_group)
+    end)
+  end
+
+  defp validate_ingestion_references(configuration) do
+    configuration.external_ingestion.sources
+    |> Enum.sort_by(&elem(&1, 0))
+    |> Enum.reduce_while(:ok, fn {_source, policy}, :ok ->
+      if Enum.all?(policy.groups, &Map.has_key?(configuration.event_groups.groups, &1)),
+        do: {:cont, :ok},
+        else: {:halt, {:error, :unknown_ingestion_group}}
     end)
   end
 

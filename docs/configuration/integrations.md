@@ -3,6 +3,42 @@
 This page defines fixed LLM, Discord, and observer integration settings. It is
 part of the normative [configuration reference](../configuration.md).
 
+## External event allowlists
+
+The optional top-level `external_ingestion` mapping declares which normalized
+events a later authenticated boundary may accept:
+
+```yaml
+external_ingestion:
+  sources:
+    alert-adapter:
+      event_types:
+        - component.failed
+        - component.recovered
+      groups:
+        - operations
+      subjects:
+        - example-component
+      fact_keys:
+        - state
+        - summary
+      label_keys:
+        - site
+```
+
+Omitting the mapping, or configuring an empty `sources` map, disables later
+external ingestion. The mapping contains no listener address, secret, endpoint,
+trigger, binding, persona, prompt, model, or publisher selection. It does not by
+itself start a listener or make any network boundary available.
+
+At most 32 sources are accepted. Each source has exactly the five allowlists
+shown above, with at most 256 unique portable identifiers in each list. Event
+types, groups, and subjects must be non-empty; fact and label key lists may be
+empty. Every group must reference the existing event-group catalog. A normalized
+event may contain only flat scalar facts and flat string labels whose keys are
+allowed for its exact source. Severity is limited to `info`, `warning`, or
+`critical`.
+
 ## LLM provider
 
 The first provider uses an OpenAI-compatible API:

@@ -1,6 +1,6 @@
 [
   # External library return types are narrower than the fail-closed runtime checks.
-  {"lib/cluster_murmur/config/configuration_validator.ex", :pattern_match_cov, {257, 7}},
+  {"lib/cluster_murmur/config/configuration_validator.ex", :pattern_match_cov, {280, 7}},
   {"lib/cluster_murmur/config/triggers.ex", :pattern_match_cov, {211, 7}},
   {"lib/cluster_murmur/config/triggers.ex", :pattern_match_cov, {493, 7}},
   {"lib/cluster_murmur/release.ex", :pattern_match_cov, {165, 7}},

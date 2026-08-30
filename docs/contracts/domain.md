@@ -68,6 +68,35 @@ defmodule ClusterMurmur.Events.Event do
 end
 ```
 
+An authenticated external adapter will use a narrower normalized value before
+application-owned identity projection:
+
+```elixir
+defmodule ClusterMurmur.Ingestion.EventEnvelope do
+  @enforce_keys [
+    :idempotency_key,
+    :type,
+    :source,
+    :subject,
+    :group,
+    :severity,
+    :occurred_at,
+    :facts,
+    :labels
+  ]
+
+  defstruct @enforce_keys
+end
+```
+
+The envelope cannot select a trigger, binding, persona, prompt, model,
+publisher, endpoint, tool, or credential. Its exact source must be configured,
+its type, group, subject, fact keys, and label keys must pass that source's
+allowlists, and its group must exist in the event-group catalog. Facts are a
+flat map of JSON scalars, labels are a flat string map, severity is `info`,
+`warning`, or `critical`, and occurrence time is canonical UTC. Defining this
+value does not expose a listener or durable ingestion capability.
+
 ```elixir
 defmodule ClusterMurmur.Personas.Persona do
   @enforce_keys [:id, :display_name]
