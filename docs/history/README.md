@@ -6,8 +6,11 @@ contract, or deployment guidance.
 
 ## Released standalone alpha
 
-- [`v0.2.0-alpha.12`](../release-notes-v0.2.0-alpha.12.md) is the current
+- [`v0.2.0-alpha.13`](../release-notes-v0.2.0-alpha.13.md) is the current
   standalone alpha.
+- [`v0.2.0-alpha.12`](../release-notes-v0.2.0-alpha.12.md) was superseded after
+  authenticated normalized external events gained a durable path through the
+  existing trigger and conversation pipeline.
 - [`v0.2.0-alpha.11`](../release-notes-v0.2.0-alpha.11.md) was superseded after
   stochastic scheduling gained accurate occurrence times and overdue-window
   resampling, and ambient generation became conversation-first.
