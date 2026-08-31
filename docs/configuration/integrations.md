@@ -6,7 +6,7 @@ part of the normative [configuration reference](../configuration.md).
 ## External event allowlists
 
 The optional top-level `external_ingestion` mapping declares which normalized
-events a later authenticated boundary may accept:
+events the authenticated loopback boundary may accept:
 
 ```yaml
 external_ingestion:
@@ -26,10 +26,13 @@ external_ingestion:
         - site
 ```
 
-Omitting the mapping, or configuring an empty `sources` map, disables later
-external ingestion. The mapping contains no listener address, secret, endpoint,
-trigger, binding, persona, prompt, model, or publisher selection. It does not by
-itself start a listener or make any network boundary available.
+Omitting the mapping, or configuring an empty `sources` map, disables external
+ingestion without reading a secret or opening a listener. A non-empty map also
+requires `CLUSTER_MURMUR_INGESTION_PORT` and
+`CLUSTER_MURMUR_INGESTION_TOKEN_FILE`. The latter names a mounted secret file;
+the token itself is never accepted in public configuration or an environment
+variable. The listener binds only to `127.0.0.1` and serves only
+`POST /v1/events` with `application/json` and Bearer authentication.
 
 At most 32 sources are accepted. Each source has exactly the five allowlists
 shown above, with at most 256 unique portable identifiers in each list. Event
@@ -38,6 +41,28 @@ empty. Every group must reference the existing event-group catalog. A normalized
 event may contain only flat scalar facts and flat string labels whose keys are
 allowed for its exact source. Severity is limited to `info`, `warning`, or
 `critical`.
+
+The request body has exactly these fields:
+
+```json
+{
+  "idempotency_key": "alert-20260830-001",
+  "type": "component.failed",
+  "source": "alert-adapter",
+  "subject": "example-component",
+  "group": "operations",
+  "severity": "warning",
+  "occurred_at": "2026-08-30T15:00:00.000000Z",
+  "facts": {"state": "failed", "summary": "bounded summary"},
+  "labels": {"site": "example-site"}
+}
+```
+
+Unknown, missing, duplicate, nested, malformed, or non-allowlisted input is
+rejected. An adapter retry must reuse the same source and `idempotency_key` with
+identical content. Exact retries return `202`; changed content for the same
+identity returns `409`. The caller cannot select a trigger, binding, persona,
+prompt, model, publisher, endpoint, credential, or tool.
 
 ## LLM provider
 

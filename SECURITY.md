@@ -58,6 +58,15 @@ application data or diagnostics, but it is still an inbound interface and must
 be reachable only by the orchestrator through deployment network policy. It
 must not be published through an ingress or public Service.
 
+Optional external event ingestion is a separate authenticated listener fixed to
+IPv4 loopback. Its Bearer credential comes from a mounted secret file, input is
+strictly bounded and allowlisted, and accepted data enters only the durable
+event pipeline. For remote senders, a reviewed same-Pod adapter must terminate
+TLS, authenticate its own callers, and deterministically normalize their schema;
+neither listener should be exposed as a generic webhook. Treat the adapter as a
+trusted factual producer, keep its permissions and inputs narrow, and never map
+untrusted text to prompts, tools, routing, personas, or transport settings.
+
 Generic schemas and environment-neutral examples belong in this public
 repository. Real deployment configuration, encrypted Secrets, endpoint
 inventories, and private overlays belong in a separate private repository.

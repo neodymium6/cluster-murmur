@@ -16,8 +16,9 @@ configuration tree, and a `cluster-murmur-secrets` Secret with these exact keys:
 - `model-api-key`; and
 - `discord-webhook`.
 
-Secret values, private endpoints, observer inventory, persona prompts, routing,
-and real egress ranges do not belong in this repository. Keep them in the
+Secret values, private endpoints, observer inventory, adapter configuration,
+persona prompts, routing, and real egress ranges do not belong in this
+repository. Keep them in the
 operator-owned private infrastructure repository. Validate the rendered YAML
 and its image digests before applying it.
 
@@ -48,6 +49,24 @@ A separately deployed observer is also supported when its endpoint is HTTPS,
 authenticated with the mounted bearer token, and restricted by network policy.
 Remove the sidecar and change only the documented observer endpoint in the
 private overlay.
+
+## External event adapter
+
+The optional
+[`external-ingestion-sidecar.example.yaml`](external-ingestion-sidecar.example.yaml)
+is a strategic-merge patch showing the intended trust boundary. It adds a
+placeholder normalizing adapter to the same Pod, gives both containers one
+dedicated ingestion token, and sends normalized events to the fixed loopback
+endpoint. It is deliberately absent from this base's `kustomization.yaml`.
+
+A private overlay may include the patch only after replacing the image digest,
+adapter-specific environment interface, TLS Secret, resource limits, and
+network policy. Add a Service or ingress only for the adapter's authenticated
+TLS port; never publish Cluster Murmur's loopback ingestion or health listener.
+The adapter must bound and authenticate its raw input, make firing/resolved
+decisions deterministically, and emit only the allowlisted normalized schema.
+It must not forward raw payloads or accept prompts, personas, routes, tools,
+credentials, or arbitrary destination URLs.
 
 ## Single-writer rollout
 

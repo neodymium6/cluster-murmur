@@ -89,8 +89,10 @@ includes:
 The version 1 manifest requires exactly `version`, `llm`, and `includes`, and
 optionally accepts exact `state_tracking`, `conversation_defaults`,
 `event_policy`, `external_ingestion`, and `presentation` mappings. Omitting
-`external_ingestion` uses an empty source allowlist and enables no listener,
-secret read, or network capability. Omitting `presentation` uses
+`external_ingestion` uses an empty source allowlist and opens no ingestion
+listener. A non-empty source map enables the separately configured authenticated
+loopback listener described in [external integrations](integrations.md).
+Omitting `presentation` uses
 `Etc/UTC`. Its timezone must be an IANA name from the embedded database and
 controls only prompt-facing timestamp representation. Omitting `event_policy` uses a five-minute dedupe
 window and 90-day retention. Both event durations must be positive, no longer

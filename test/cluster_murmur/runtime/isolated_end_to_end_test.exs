@@ -1,7 +1,7 @@
 defmodule ClusterMurmur.Runtime.IsolatedEndToEndTest do
   use ExUnit.Case, async: false
 
-  alias ClusterMurmur.Config.StateTracking
+  alias ClusterMurmur.Config.{ExternalIngestion, StateTracking}
 
   alias ClusterMurmur.Discord.{
     WebhookPublisher,
@@ -26,17 +26,29 @@ defmodule ClusterMurmur.Runtime.IsolatedEndToEndTest do
     ConversationRecord,
     ConversationStore,
     EntityStateRecord,
+    EventDispatch,
     EventRecord,
     EventTriggerConversationActionStore,
     MessageRecord,
     MessageStore,
+    PersonaCooldownRecord,
     PersonaCooldownStore,
     PublicationAttemptRecord,
     PublicationAttemptStore
   }
 
   alias ClusterMurmur.Repo
-  alias ClusterMurmur.Runtime.{PollStarterCycle, Recovery}
+  alias ClusterMurmur.Ingestion.{BearerAuthentication, HTTPSettings}
+
+  alias ClusterMurmur.Runtime.{
+    EventDispatchCycle,
+    ExternalIngestionServer,
+    PollStarterCycle,
+    Recovery
+  }
+
+  alias ClusterMurmur.Runtime.EventDispatchCycle.Context, as: EventDispatchContext
+  alias ClusterMurmur.Runtime.ExternalIngestionServer.Options, as: IngestionServerOptions
   alias ClusterMurmur.Runtime.PollStarterCycle.Context
   alias ClusterMurmur.TestSupport.RuntimeFixture
   alias ClusterMurmur.Triggers.AuthorizedStarterPipeline.{Adapters, SharedInput}
@@ -46,6 +58,7 @@ defmodule ClusterMurmur.Runtime.IsolatedEndToEndTest do
     CreateConversations,
     CreateEntityStates,
     CreateEventDedupeMarkers,
+    CreateEventDispatches,
     CreateEvents,
     CreateMessages,
     CreatePersonaCooldowns,
@@ -62,6 +75,7 @@ defmodule ClusterMurmur.Runtime.IsolatedEndToEndTest do
     {20_260_805_225_000, CreateEntityStates},
     {20_260_805_230_000, CreatePublicationAttempts},
     {20_260_805_231_000, AddPublicationAttemptDispatching},
+    {20_260_808_150_000, CreateEventDispatches},
     {20_260_809_020_000, CreateEventDedupeMarkers}
   ]
 
@@ -69,6 +83,11 @@ defmodule ClusterMurmur.Runtime.IsolatedEndToEndTest do
     @moduledoc false
     def weighted_choice(_choices), do: raise("one candidate must not sample")
     def uniform, do: raise("zero reply probability must not sample")
+  end
+
+  defmodule FixedClock do
+    @moduledoc false
+    def utc_now, do: ~U[2026-08-07 02:00:00.000000Z]
   end
 
   setup_all do
@@ -89,6 +108,24 @@ defmodule ClusterMurmur.Runtime.IsolatedEndToEndTest do
         )
       end
     end)
+
+    :ok
+  end
+
+  setup do
+    for table <- [
+          "publication_attempts",
+          "messages",
+          "persona_cooldowns",
+          "conversations",
+          "trigger_executions",
+          "event_dedupe_markers",
+          "entity_states",
+          "event_dispatches",
+          "events"
+        ] do
+      Ecto.Adapters.SQL.query!(Repo, "DELETE FROM #{table}", [], log: false)
+    end
 
     :ok
   end
@@ -227,10 +264,106 @@ defmodule ClusterMurmur.Runtime.IsolatedEndToEndTest do
     refute inspect(first) =~ "A bounded confirmed fact."
   end
 
-  defp adapters do
+  test "ingests HTTP events through durable dispatch, cooldown, and publication once" do
+    configuration = external_configuration()
+    publication_destination = start_supervised!({Agent, fn -> [] end})
+    token = "clearly-fake-ingestion-token-123456"
+    port = available_port()
+    {:ok, token_digest} = BearerAuthentication.digest(token)
+
+    options = %IngestionServerOptions{
+      settings: %HTTPSettings{port: port, token_digest: token_digest},
+      configuration: configuration.external_ingestion,
+      clock: FixedClock,
+      commit: &ClusterMurmur.Persistence.ExternalEventCommitStore.commit/3
+    }
+
+    start_supervised!({ExternalIngestionServer, options})
+
+    publication_transport = fn %WebhookRequest{} = request ->
+      Agent.update(publication_destination, &[request | &1])
+      {:ok, %WebhookResponse{status: 200, body: ~s({"id":"12345"})}}
+    end
+
+    context = %EventDispatchContext{
+      shared_input: %SharedInput{
+        configuration: configuration,
+        cooldowns: %{},
+        provider_settings: RuntimeFixture.provider_settings(),
+        webhook_settings: RuntimeFixture.webhook_settings(),
+        generation_transport: fn _request -> {:ok, "A bounded external fact."} end,
+        publication_transport: publication_transport
+      },
+      adapters: adapters(RuntimeFixture.FakeProvider)
+    }
+
+    assert post_event(port, token, external_event_body("retry-identity")) =~
+             "HTTP/1.1 202 Accepted\r\n"
+
+    assert post_event(port, token, external_event_body("retry-identity")) =~
+             "HTTP/1.1 202 Accepted\r\n"
+
+    assert Repo.aggregate(EventRecord, :count) == 1
+    assert Repo.aggregate(EventDispatch, :count) == 1
+
+    assert {:ok, first} =
+             EventDispatchCycle.run(
+               configuration,
+               ~U[2026-08-07 02:00:01.000000Z],
+               context
+             )
+
+    assert first.candidate_count == 1
+    assert first.planned_match_count == 1
+    assert first.dispatched_count == 1
+    assert first.completed_count == 1
+
+    assert %PersonaCooldownRecord{
+             persona_id: "caretaker",
+             last_spoken_at: ~U[2026-08-07 02:00:01.000000Z],
+             cooldown_until: ~U[2026-08-07 02:01:01.000000Z]
+           } = Repo.one!(PersonaCooldownRecord)
+
+    assert post_event(port, token, external_event_body("retry-identity")) =~
+             "HTTP/1.1 202 Accepted\r\n"
+
+    assert post_event(port, token, external_event_body("cooldown-identity")) =~
+             "HTTP/1.1 202 Accepted\r\n"
+
+    assert {:ok, cooldown} =
+             EventDispatchCycle.run(
+               configuration,
+               ~U[2026-08-07 02:00:02.000000Z],
+               context
+             )
+
+    assert cooldown.candidate_count == 1
+    assert cooldown.planned_match_count == 1
+    assert cooldown.dispatched_count == 0
+    assert cooldown.skipped_count == 1
+    assert cooldown.dedupe_suppressed_count == 0
+    assert cooldown.completed_count == 1
+
+    assert Repo.aggregate(EventRecord, :count) == 2
+    assert Repo.aggregate(EventDispatch, :count) == 2
+    assert Repo.aggregate(ConversationRecord, :count) == 1
+    assert Repo.aggregate(MessageRecord, :count) == 1
+    assert Repo.aggregate(PublicationAttemptRecord, :count) == 1
+
+    assert [%WebhookRequest{json: %{"content" => "A bounded external fact."}}] =
+             Agent.get(publication_destination, &Enum.reverse/1)
+
+    assert %ConversationRecord{status: :completed, turn_count: 1, llm_call_count: 1} =
+             Repo.one!(ConversationRecord)
+
+    assert %MessageRecord{content: "A bounded external fact.", discord_message_id: "12345"} =
+             Repo.one!(MessageRecord)
+  end
+
+  defp adapters(provider \\ OpenAICompatibleProvider) do
     %Adapters{
       conversation_action_store: EventTriggerConversationActionStore,
-      provider: OpenAICompatibleProvider,
+      provider: provider,
       message_store: MessageStore,
       publication_start_store: PublicationAttemptStore,
       publisher: WebhookPublisher,
@@ -240,6 +373,68 @@ defmodule ClusterMurmur.Runtime.IsolatedEndToEndTest do
       starter_random: NoRandomness,
       reply_random: NoRandomness
     }
+  end
+
+  defp external_configuration do
+    {:ok, external_ingestion} =
+      ExternalIngestion.parse(%{
+        "sources" => %{
+          "alert-adapter" => %{
+            "event_types" => ["observation.failed"],
+            "groups" => ["operations"],
+            "subjects" => ["example-target"],
+            "fact_keys" => ["detail"],
+            "label_keys" => ["site"]
+          }
+        }
+      })
+
+    %{RuntimeFixture.configuration() | external_ingestion: external_ingestion}
+  end
+
+  defp external_event_body(idempotency_key) do
+    encode_json(%{
+      "idempotency_key" => idempotency_key,
+      "type" => "observation.failed",
+      "source" => "alert-adapter",
+      "subject" => "example-target",
+      "group" => "operations",
+      "severity" => "warning",
+      "occurred_at" => "2026-08-07T01:59:59.000000Z",
+      "facts" => %{"detail" => "bounded external detail"},
+      "labels" => %{"site" => "example-site"}
+    })
+  end
+
+  defp post_event(port, token, body) do
+    request =
+      "POST /v1/events HTTP/1.1\r\n" <>
+        "host: example.invalid\r\n" <>
+        "authorization: Bearer #{token}\r\n" <>
+        "content-type: application/json\r\n" <>
+        "content-length: #{byte_size(body)}\r\n\r\n" <> body
+
+    {:ok, socket} =
+      :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false], 1_000)
+
+    :ok = :gen_tcp.send(socket, request)
+    response = receive_response(socket, <<>>)
+    :gen_tcp.close(socket)
+    response
+  end
+
+  defp receive_response(socket, response) do
+    case :gen_tcp.recv(socket, 0, 2_000) do
+      {:ok, chunk} -> receive_response(socket, response <> chunk)
+      {:error, :closed} -> response
+    end
+  end
+
+  defp available_port do
+    {:ok, socket} = :gen_tcp.listen(0, [:binary, active: false, ip: {127, 0, 0, 1}])
+    {:ok, {_address, port}} = :inet.sockname(socket)
+    :ok = :gen_tcp.close(socket)
+    port
   end
 
   defp serve_json(bodies) do
