@@ -7,6 +7,24 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## Unreleased
 
+## [0.2.0-alpha.13](docs/release-notes-v0.2.0-alpha.13.md) - 2026-08-31
+
+### External event ingestion
+
+- Added an authenticated, loopback-only endpoint for bounded normalized events
+  from reviewed sidecar adapters.
+- Persisted accepted events and dispatch records atomically with deterministic,
+  idempotent retry identity before the existing trigger pipeline.
+- Preserved trigger matching, cooldowns, conversation budgets, publication
+  controls, and the explicit no-action path for externally supplied events.
+
+### Ingestion operations
+
+- Added source-scoped schema allowlists, mounted-secret authentication, fixed
+  request, rate, concurrency, and deadline limits, and redacted outcome logs.
+- Documented the trust boundary and an environment-neutral same-Pod adapter
+  example, with end-to-end coverage through publication and cooldown handling.
+
 ## [0.2.0-alpha.12](docs/release-notes-v0.2.0-alpha.12.md) - 2026-08-16
 
 ### Ambient conversations

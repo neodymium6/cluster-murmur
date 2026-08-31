@@ -89,7 +89,7 @@ asserted lifecycle and isolation boundaries.
 ## Project status
 
 Cluster Murmur is a public standalone alpha. The current source version is
-`0.2.0-alpha.12`; published artifacts are listed on the
+`0.2.0-alpha.13`; published artifacts are listed on the
 [GitHub Releases page](https://github.com/neodymium6/cluster-murmur/releases).
 
 The standalone alpha includes fixed observer, authenticated external-event,
